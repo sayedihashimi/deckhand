@@ -154,9 +154,16 @@ func TestE2EShell(t *testing.T) {
 	h.send("n")
 	h.waitFor("New session", 5*time.Second)
 	h.waitFor("pwsh", 2*time.Second)
-	h.send("\t\tshell-one") // to the Name field
-	h.send("\r")
+	h.send("\r") // empty folder box: start in the current folder
 	h.waitFor("PS ", 15*time.Second)
+
+	// Rename it.
+	h.send("\x11") // ctrl+q
+	h.send("r")
+	h.waitFor("Rename:", 5*time.Second)
+	h.send("\x15shell-one\r") // ctrl+u clears, then the new name
+	h.send("\r")              // back into the session
+	h.waitFor("PS ", 5*time.Second)
 
 	h.send(`echo ("deck" + "hand" + 42)` + "\r")
 	h.waitFor("deckhand42", 10*time.Second)
@@ -183,6 +190,55 @@ func TestE2EShell(t *testing.T) {
 	h.waitExit(10 * time.Second)
 }
 
+func TestE2EFolderPicker(t *testing.T) {
+	exe := buildDeckhand(t)
+	pwsh, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh not found")
+	}
+	path := filepath.Dir(pwsh) + ";" + os.Getenv("SystemRoot") + `\System32`
+	root := t.TempDir()
+	for _, d := range []string{`alpha\beta`, `alps`, `zeta`} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	home := t.TempDir()
+	h := startHarness(t, exe, envWith(home, path), root)
+
+	h.waitFor("No sessions yet", 10*time.Second)
+	h.send("n")
+	h.waitFor("Start in", 5*time.Second)
+	// Empty box lists the current folder's subfolders.
+	h.waitFor(`zeta\`, 3*time.Second)
+
+	h.send("alp")
+	h.waitFor(`alps\`, 3*time.Second)
+	if strings.Contains(h.screen(), `zeta\`) {
+		t.Fatalf("zeta shouldn't match 'alp'; screen:\n%s", h.screen())
+	}
+	h.send("\t") // completes to the first match, alpha\, and lists inside it
+	h.waitFor(`alpha\`, 3*time.Second)
+	h.waitFor(`beta\`, 3*time.Second)
+	t.Logf("picker after tab:\n%s", h.screen())
+	h.send("\x17") // ctrl+w: back up to the root
+	h.waitFor(`zeta\`, 3*time.Second)
+	h.send("\x1b[B\x1b[B\x1b[B") // ↓↓↓: alpha, alps, zeta
+	h.waitFor("Start in  "+filepath.Join(root, "zeta"), 3*time.Second)
+	h.send("\r")
+	h.waitFor("PS ", 15*time.Second)
+	h.waitFor("zeta  pwsh", 3*time.Second) // header: name and agent
+
+	// The folder is remembered for next time.
+	data, _ := os.ReadFile(filepath.Join(home, "prefs.json"))
+	if !strings.Contains(string(data), "zeta") || !strings.Contains(string(data), `"last_agent": "pwsh"`) {
+		t.Fatalf("prefs.json: %s", data)
+	}
+	h.send("\x11q")
+	h.send("y")
+	h.waitExit(10 * time.Second)
+}
+
 func TestE2EClaude(t *testing.T) {
 	if os.Getenv("DECKHAND_E2E_CLAUDE") != "1" {
 		t.Skip("set DECKHAND_E2E_CLAUDE=1 to run (sends one short prompt to Claude)")
@@ -198,7 +254,7 @@ func TestE2EClaude(t *testing.T) {
 	h.waitFor("No sessions yet", 10*time.Second)
 	h.send("n")
 	h.waitFor("New session", 5*time.Second)
-	h.send("\t\tclaude-e2e\r")
+	h.send("\r") // current folder
 
 	// Claude may ask whether to trust the folder first.
 	// The default choice is "No, exit", so move down to "Yes" first.

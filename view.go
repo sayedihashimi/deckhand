@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -91,7 +93,7 @@ func (m *model) renderSidebar(w, h int) []string {
 	lines = append(lines, fit(head, w), stBorder.Render(strings.Repeat("─", w)))
 
 	if len(m.sessions) == 0 {
-		lines = append(lines, "", fit(stMuted.Render(" No sessions yet."), w), fit(stMuted.Render(" Press n to start one."), w))
+		lines = append(lines, strings.Repeat(" ", w), fit(stMuted.Render(" No sessions yet."), w), fit(stMuted.Render(" Press n to start one."), w))
 	}
 
 	// Two lines per session; keep the selection in view.
@@ -226,30 +228,78 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 
 func (m *model) renderDialog(w int) []string {
 	d := m.dialog
-	label := func(i int, s string) string {
-		if d.field == i {
+	label := func(field int, s string) string {
+		if d.field == field {
 			return lipgloss.NewStyle().Foreground(colAccent).Bold(true).Render("› " + s)
 		}
 		return stMuted.Render("  " + s)
 	}
+
 	var agentParts []string
 	for i, a := range d.agents {
-		if i == d.agentIdx {
+		switch {
+		case i == d.agentIdx && d.field == fieldAgent:
+			agentParts = append(agentParts, lipgloss.NewStyle().Reverse(true).Foreground(colAccent).Render(" "+a.Name+" "))
+		case i == d.agentIdx:
 			agentParts = append(agentParts, lipgloss.NewStyle().Reverse(true).Render(" "+a.Name+" "))
-		} else {
-			agentParts = append(agentParts, " "+a.Name+" ")
+		default:
+			agentParts = append(agentParts, stMuted.Render(" "+a.Name+" "))
 		}
 	}
+	agentHint := ""
+	if d.field == fieldAgent {
+		agentHint = stMuted.Render("  ←/→ change · ↓ back to folder")
+	}
+
 	out := []string{
 		"",
-		fit(" "+label(0, "Agent  ")+"  "+strings.Join(agentParts, " "), w),
+		fit(" "+label(fieldAgent, "Agent ")+"  "+strings.Join(agentParts, " ")+agentHint, w),
 		"",
-		fit(" "+label(1, "Folder ")+"  "+d.dir.View(), w),
-		"",
-		fit(" "+label(2, "Name   ")+"  "+d.name.View(), w),
-		"",
-		fit(stMuted.Render("   tab next field · ←/→ change agent · enter start · esc cancel"), w),
+		fit(" "+label(fieldFolder, "Folder")+"  "+d.dir.View(), w),
 	}
+
+	// Suggestions, indented under the input.
+	const indent = "             "
+	if len(d.sugg) == 0 {
+		out = append(out, fit(stMuted.Render(indent+"no matching folders"), w))
+	}
+	home, _ := os.UserHomeDir()
+	for i, sg := range d.sugg {
+		// Folders in the listed directory show just their name; recent
+		// folders show their full path (with ~ for the home folder).
+		path := filepath.Base(sg.Path) + `\`
+		tag := ""
+		if sg.Recent {
+			tag = "  recent"
+			path = sg.Path
+			if home != "" && len(path) >= len(home) && strings.EqualFold(path[:len(home)], home) {
+				path = "~" + path[len(home):]
+			}
+		}
+		avail := w - len(indent) - 3 - len(tag)
+		if ansi.StringWidth(path) > avail && avail > 4 {
+			path = "…" + path[len(path)-avail+1:]
+		}
+		line := indent + "  " + path
+		style := lipgloss.NewStyle()
+		if i == d.hi {
+			line = indent + lipgloss.NewStyle().Foreground(colAccent).Render("▸ ") + path
+			style = style.Bold(true)
+		}
+		out = append(out, fit(style.Render(line)+stMuted.Render(tag), w))
+	}
+
+	// Exactly where the session will start.
+	target := d.target()
+	mark := lipgloss.NewStyle().Foreground(colIdle).Render("✓")
+	if fi, err := os.Stat(target); err != nil || !fi.IsDir() {
+		mark = lipgloss.NewStyle().Foreground(colError).Render("✗ not found")
+	}
+	out = append(out, "",
+		fit(stMuted.Render("   Start in  ")+target+"  "+mark, w),
+		"",
+		fit(stMuted.Render("   tab complete · ↑↓ choose · ctrl+w up a level · shift+tab agent · enter start · esc cancel"), w),
+	)
 	if d.err != "" {
 		out = append(out, "", fit(lipgloss.NewStyle().Foreground(colError).Render("   "+d.err), w))
 	}
@@ -259,6 +309,9 @@ func (m *model) renderDialog(w int) []string {
 func (m *model) renderFooter(w int) string {
 	if m.confirm != nil {
 		return fit(stWaitText.Render(" "+m.confirm.text), w)
+	}
+	if m.rename != nil {
+		return fit(m.rename.View()+stMuted.Render("   enter save · esc cancel"), w)
 	}
 	if m.flash != "" && time.Since(m.flashAt) < 4*time.Second {
 		return fit(lipgloss.NewStyle().Foreground(colError).Render(" "+m.flash), w)
@@ -270,7 +323,7 @@ func (m *model) renderFooter(w int) string {
 	case focusDialog:
 		help = " enter start · esc cancel"
 	default:
-		help = " ↑↓ select · enter open · n new · tab next needing you · K end · x remove · q quit"
+		help = " ↑↓ select · enter open · n new · tab next needing you · r rename · K end · x remove · q quit"
 	}
 	return fit(stMuted.Render(help), w)
 }

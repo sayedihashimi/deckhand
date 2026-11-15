@@ -40,7 +40,8 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 | enter | Type into the session; starts or resumes it if it isn't running |
 | 1–9 | Jump straight into session N |
 | tab | Select the next session that needs you, then the next one that finished |
-| n | New session: pick the agent, folder and name |
+| n | New session (see below) |
+| r | Rename the session |
 | K | End the session's process (it stays in the list) |
 | x | End and remove the session |
 | q | Quit (Claude sessions can be resumed next time) |
@@ -50,6 +51,21 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 | Key | Action |
 |---|---|
 | ctrl+q (or ctrl+]) | Back to the session list. Every other key goes to the agent. |
+
+**New session dialog**
+
+The folder box lists matching folders as you type. Recent folders come first, then the folders in the directory you're typing in. Matching ignores case and also finds letters typed in order (`dnw` finds `dotnet-new-web`). A plain word searches the current folder and your recent folders. The "Start in" line shows exactly which folder will be used.
+
+| Key | Action |
+|---|---|
+| tab | Complete the highlighted (or best) match and list its subfolders |
+| ↑/↓ | Choose from the list (↑ from the top moves to the agent row) |
+| ctrl+w | Up one level |
+| shift+tab | Switch to the agent row, then ←/→ to change agent |
+| enter | Start the session (with an empty box: the current folder) |
+| esc | Cancel |
+
+The last agent you used is preselected. Sessions are named after their folder; press `r` to rename one.
 
 ## Resuming
 

@@ -45,6 +45,7 @@ type model struct {
 	agents   []Agent
 	dialog   *newDialog
 	confirm  *confirmPrompt
+	rename   *textinput.Model
 	flash    string
 	flashAt  time.Time
 	quitting bool
@@ -135,6 +136,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, frameTick()
 
 	case tea.PasteMsg:
+		if m.rename != nil {
+			var cmd tea.Cmd
+			*m.rename, cmd = m.rename.Update(msg)
+			return m, cmd
+		}
 		switch m.focus {
 		case focusTerminal:
 			if s := m.current(); s != nil {
@@ -162,6 +168,28 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.confirm = nil
 		if key == "y" || key == "Y" {
 			return m, c.action(m)
+		}
+		return m, nil
+	}
+
+	if m.rename != nil {
+		switch key {
+		case "esc":
+			m.rename = nil
+		case "enter":
+			if s := m.current(); s != nil {
+				if name := strings.TrimSpace(m.rename.Value()); name != "" {
+					s.mu.Lock()
+					s.Name = name
+					s.mu.Unlock()
+					_ = saveSessions(m.sessions)
+				}
+			}
+			m.rename = nil
+		default:
+			var cmd tea.Cmd
+			*m.rename, cmd = m.rename.Update(k)
+			return m, cmd
 		}
 		return m, nil
 	}
@@ -218,9 +246,19 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		w, _ := m.termSize()
-		m.dialog = newNewDialog(m.agents, w)
+		m.dialog = newNewDialog(m.agents, w, m.sessions)
 		m.focus = focusDialog
 		return m, m.dialog.focusCmd()
+	case "r":
+		if s := m.current(); s != nil {
+			ti := textinput.New()
+			ti.Prompt = " Rename: "
+			ti.SetValue(s.Name)
+			ti.CursorEnd()
+			ti.SetWidth(40)
+			m.rename = &ti
+			return m, m.rename.Focus()
+		}
 	case "x", "delete":
 		if s := m.current(); s != nil {
 			name := s.Name
@@ -329,29 +367,13 @@ func (m *model) jumpToAttention() {
 
 func (m *model) createFromDialog() tea.Cmd {
 	d := m.dialog
-	dir := strings.TrimSpace(d.dir.Value())
-	if dir == "" {
-		dir, _ = os.Getwd()
-	}
-	if strings.HasPrefix(dir, "~") {
-		if home, err := os.UserHomeDir(); err == nil {
-			dir = filepath.Join(home, dir[1:])
-		}
-	}
-	abs, err := filepath.Abs(dir)
-	if err == nil {
-		dir = abs
-	}
+	dir := d.target()
 	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
 		d.err = "Folder not found: " + dir
 		return nil
 	}
-	name := strings.TrimSpace(d.name.Value())
-	if name == "" {
-		name = filepath.Base(dir)
-	}
 	agent := d.agents[d.agentIdx]
-	s := newSession(agent, dir, name)
+	s := newSession(agent, dir, sessionName(dir))
 	w, h := m.termSize()
 	if err := s.Start(w, h, false, m.dirty); err != nil {
 		d.err = err.Error()
@@ -362,7 +384,21 @@ func (m *model) createFromDialog() tea.Cmd {
 	m.dialog = nil
 	m.focus = focusTerminal
 	_ = saveSessions(m.sessions)
+
+	p := loadPrefs()
+	p.useDir(dir)
+	p.LastAgent = agent.Name
+	_ = p.save()
 	return nil
+}
+
+// sessionName is the folder name, or the drive for a drive root.
+func sessionName(dir string) string {
+	name := filepath.Base(dir)
+	if name == `\` || name == "." || name == "" {
+		return dir
+	}
+	return name
 }
 
 // toUVKey converts a key press for the session's emulator. The emulator
@@ -378,79 +414,157 @@ func toUVKey(k tea.KeyPressMsg) uv.KeyPressEvent {
 }
 
 // New-session dialog --------------------------------------------------------
+//
+// Two rows: the agent (←/→ to change) and a folder picker. The picker lists
+// matching folders as you type, recent ones first; tab completes like
+// PowerShell, ↑/↓ choose, ctrl+w goes up a level, enter starts.
+
+const maxFolderSuggestions = 8
+
+const (
+	fieldAgent = iota
+	fieldFolder
+)
 
 type newDialog struct {
 	agents   []Agent
 	agentIdx int
-	field    int // 0 agent, 1 folder, 2 name
+	field    int
 	dir      textinput.Model
-	name     textinput.Model
+	cwd      string
+	recents  []string
+	lister   *dirLister
+	sugg     []folderSuggestion
+	hi       int // highlighted suggestion, -1 for none (use what's typed)
 	err      string
 }
 
-func newNewDialog(agents []Agent, width int) *newDialog {
+func newNewDialog(agents []Agent, width int, sessions []*Session) *newDialog {
 	cwd, _ := os.Getwd()
-	d := &newDialog{agents: agents, dir: textinput.New(), name: textinput.New()}
-	d.dir.SetValue(cwd)
+	p := loadPrefs()
+	d := &newDialog{
+		agents:  agents,
+		field:   fieldFolder,
+		dir:     textinput.New(),
+		cwd:     cwd,
+		recents: recentDirs(p, sessions),
+		lister:  newDirLister(),
+		hi:      -1,
+	}
+	for i, a := range agents {
+		if a.Name == p.LastAgent {
+			d.agentIdx = i
+		}
+	}
 	d.dir.Prompt = ""
-	d.name.Prompt = ""
-	d.name.Placeholder = "defaults to the folder name"
+	d.dir.Placeholder = "type a path or a folder name; tab completes"
 	d.setWidth(width)
+	d.refresh()
 	return d
 }
 
 func (d *newDialog) setWidth(w int) {
-	iw := w - 16
-	if iw > 70 {
-		iw = 70
+	iw := w - 14
+	if iw > 90 {
+		iw = 90
 	}
 	if iw < 10 {
 		iw = 10
 	}
 	d.dir.SetWidth(iw)
-	d.name.SetWidth(iw)
 }
 
 func (d *newDialog) focusCmd() tea.Cmd {
-	d.dir.Blur()
-	d.name.Blur()
-	switch d.field {
-	case 1:
+	if d.field == fieldFolder {
 		return d.dir.Focus()
-	case 2:
-		return d.name.Focus()
 	}
+	d.dir.Blur()
 	return nil
 }
 
+func (d *newDialog) refresh() {
+	d.sugg = folderSuggestions(d.dir.Value(), d.cwd, d.recents, d.lister.list, maxFolderSuggestions)
+	if d.hi >= len(d.sugg) {
+		d.hi = len(d.sugg) - 1
+	}
+}
+
+// target is the folder the session will start in.
+func (d *newDialog) target() string {
+	if d.hi >= 0 && d.hi < len(d.sugg) {
+		return d.sugg[d.hi].Path
+	}
+	return resolvePath(d.dir.Value(), d.cwd)
+}
+
+func (d *newDialog) setInput(s string) {
+	d.dir.SetValue(s)
+	d.dir.CursorEnd()
+	d.hi = -1
+	d.err = ""
+	d.refresh()
+}
+
 func (d *newDialog) update(msg tea.Msg) tea.Cmd {
-	if k, ok := msg.(tea.KeyPressMsg); ok {
+	k, isKey := msg.(tea.KeyPressMsg)
+	if isKey && d.field == fieldAgent {
 		switch k.String() {
-		case "tab", "down":
-			d.field = (d.field + 1) % 3
+		case "left", "h":
+			d.agentIdx = (d.agentIdx + len(d.agents) - 1) % len(d.agents)
+			return nil
+		case "right", "l", "space":
+			d.agentIdx = (d.agentIdx + 1) % len(d.agents)
+			return nil
+		case "down", "tab", "shift+tab":
+			d.field = fieldFolder
 			return d.focusCmd()
-		case "shift+tab", "up":
-			d.field = (d.field + 2) % 3
-			return d.focusCmd()
-		case "left":
-			if d.field == 0 {
-				d.agentIdx = (d.agentIdx + len(d.agents) - 1) % len(d.agents)
+		}
+		// Anything else is typing: send it to the folder box.
+		d.field = fieldFolder
+		cmd := d.focusCmd()
+		return tea.Batch(cmd, d.update(msg))
+	}
+
+	if isKey {
+		switch k.String() {
+		case "tab":
+			// Complete the highlighted (or best) match and list what's inside it.
+			if len(d.sugg) > 0 {
+				i := d.hi
+				if i < 0 {
+					i = 0
+				}
+				d.setInput(withSep(d.sugg[i].Path))
+			}
+			return nil
+		case "down":
+			if d.hi < len(d.sugg)-1 {
+				d.hi++
+			}
+			return nil
+		case "up":
+			if d.hi >= 0 {
+				d.hi--
 				return nil
 			}
-		case "right", "space":
-			if d.field == 0 {
-				d.agentIdx = (d.agentIdx + 1) % len(d.agents)
-				return nil
-			}
+			d.field = fieldAgent
+			return d.focusCmd()
+		case "shift+tab":
+			d.field = fieldAgent
+			return d.focusCmd()
+		case "ctrl+w", "ctrl+backspace", "alt+backspace":
+			d.setInput(parentPath(d.dir.Value(), d.cwd))
+			return nil
 		}
 	}
+
+	before := d.dir.Value()
 	var cmd tea.Cmd
-	switch d.field {
-	case 1:
-		d.dir, cmd = d.dir.Update(msg)
+	d.dir, cmd = d.dir.Update(msg)
+	if d.dir.Value() != before {
+		d.hi = -1
 		d.err = ""
-	case 2:
-		d.name, cmd = d.name.Update(msg)
+		d.refresh()
 	}
 	return cmd
 }
