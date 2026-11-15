@@ -338,6 +338,103 @@ func TestE2EMouseForwarding(t *testing.T) {
 	h.waitExit(10 * time.Second)
 }
 
+// A custom agent that starts Claude through a PowerShell function (like a
+// profile's `smc`) still gets deckhand's hook settings via the claude shim,
+// without the function forwarding any arguments.
+func TestE2EPwshWrapper(t *testing.T) {
+	exe := buildDeckhand(t)
+	pwsh, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh not found")
+	}
+	bin := t.TempDir()
+	if out, err := exec.Command("go", "build", "-o", filepath.Join(bin, "claude.exe"), "./testdata/argsapp").CombinedOutput(); err != nil {
+		t.Fatalf("build argsapp: %v\n%s", err, out)
+	}
+	cfg := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(cfg, []byte(`
+[[agents]]
+name   = "wrap"
+pwsh   = "function Start-Wrapped { claude 'hello world' --name demo }; Start-Wrapped"
+type   = "claude"
+resume = "claude --resume {id}"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path := bin + ";" + filepath.Dir(pwsh) + ";" + os.Getenv("SystemRoot") + `\System32`
+	env := append(envWith(t.TempDir(), path), "DECKHAND_CONFIG="+cfg)
+	h := startHarness(t, exe, env, t.TempDir())
+
+	h.waitFor("No sessions yet", 10*time.Second)
+	h.send("n")
+	h.waitFor("wrap", 5*time.Second) // custom agent listed (and selected) first
+	h.send("\r")
+	h.waitFor("argsapp done", 20*time.Second)
+	s := h.screen()
+	for _, want := range []string{"arg: [--settings]", "arg: [--session-id]", "arg: [hello world]", "arg: [--name]"} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("missing %q; screen:\n%s", want, s)
+		}
+	}
+	t.Logf("first start:\n%s", s)
+
+	// End it, then resume: the shim must not add --session-id.
+	h.send("\x11")
+	h.send("K")
+	h.waitFor("End ", 3*time.Second)
+	h.send("y")
+	h.waitFor("exited · ⏎ resume", 10*time.Second)
+	h.send("\r")
+	h.waitFor("arg: [--resume]", 20*time.Second)
+	if strings.Contains(h.screen(), "arg: [--session-id]") {
+		t.Fatalf("resume shouldn't pass --session-id; screen:\n%s", h.screen())
+	}
+
+	h.send("\x11q")
+	h.send("y")
+	h.waitExit(10 * time.Second)
+}
+
+// TestE2ECustomClaudeAgent starts a real custom Claude agent from your own
+// config (for example a profile function) and checks that hook status
+// arrives. It sends no prompt.
+//
+//	DECKHAND_E2E_AGENT=smc DECKHAND_E2E_DIR=C:\some\project go test -tags e2e -run TestE2ECustomClaudeAgent -v
+func TestE2ECustomClaudeAgent(t *testing.T) {
+	agent, dir := os.Getenv("DECKHAND_E2E_AGENT"), os.Getenv("DECKHAND_E2E_DIR")
+	if agent == "" || dir == "" {
+		t.Skip("set DECKHAND_E2E_AGENT and DECKHAND_E2E_DIR to run")
+	}
+	exe := buildDeckhand(t)
+	home := t.TempDir()
+	h := startHarness(t, exe, envWith(home, ""), dir)
+
+	h.waitFor("No sessions yet", 10*time.Second)
+	h.send("n")
+	h.waitFor("Start in", 5*time.Second)
+	// Select the agent: move to the agent row and step right until it's chosen.
+	h.send("\x1b[Z") // shift+tab
+	for i := 0; i < 10 && !strings.Contains(h.screen(), "Agent    "+agent+" "); i++ {
+		h.send("\x1b[C")
+	}
+	h.send("\x1b[B\r") // back to the folder box, start in the current folder
+	if h.waitForAny(90*time.Second, "trust this folder", agent+" · ready") == "trust this folder" {
+		time.Sleep(2 * time.Second)
+		h.send("\x1b[B")
+		time.Sleep(500 * time.Millisecond)
+		h.send("\r")
+	}
+	h.waitFor(agent+" · ready", 90*time.Second)
+	t.Logf("screen:\n%s", h.screen())
+	if logs, _ := filepath.Glob(filepath.Join(home, "sessions", "*", "events.jsonl")); len(logs) == 1 {
+		data, _ := os.ReadFile(logs[0])
+		t.Logf("hook events:\n%s", data)
+	}
+	h.send("\x11q")
+	h.send("y")
+	h.waitExit(15 * time.Second)
+}
+
 func TestE2EClaude(t *testing.T) {
 	if os.Getenv("DECKHAND_E2E_CLAUDE") != "1" {
 		t.Skip("set DECKHAND_E2E_CLAUDE=1 to run (sends one short prompt to Claude)")

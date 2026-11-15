@@ -74,6 +74,30 @@ The folder box lists matching folders as you type. Recent folders come first, th
 
 The last agent you used is preselected. Sessions are named after their folder; press `r` to rename one.
 
+## Custom agents (your own scripts and profile functions)
+
+Define your own agents in `~/.config/deckhand/config.toml` (`deckhand config` prints the path and creates a commented sample). They appear first in the agent row.
+
+```toml
+# A PowerShell function or alias from your profile:
+[[agents]]
+name   = "smc"
+pwsh   = "smc"                # runs in PowerShell with your profile loaded
+type   = "claude"             # it starts Claude: status from hooks, resumable
+resume = "smc -Resume {id}"   # how to resume; {id} is the Claude session ID
+
+# A program (on PATH or a full path), .cmd/.bat or .ps1 script:
+[[agents]]
+name    = "claude-opus"
+command = "claude"
+args    = ["--model", "opus"]
+type    = "claude"
+```
+
+**How status works when your script starts Claude:** for a `pwsh` agent (and a `.ps1` script) with `type = "claude"`, deckhand defines a PowerShell function named `claude` for that session only (`%LOCALAPPDATA%\deckhand\claude-shim.ps1`). PowerShell prefers functions to programs, so when your function or script calls `claude`, it calls the shim. The shim runs the real `claude.exe` and adds deckhand's `--settings` (the hooks) and `--session-id`, leaving out `--session-id` when you're resuming. Your script doesn't need to forward arguments, and neither it nor `~/.claude/settings.json` is changed.
+
+A `command` agent that is a program or `.cmd` file gets the extra arguments on its command line, so it must pass them on to `claude`.
+
 ## Resuming
 
 The session list is saved in `%LOCALAPPDATA%\deckhand\sessions.json`. Each Claude session is started with its own `--session-id`, so after you quit and restart deckhand, pressing enter on a Claude session runs `claude --resume <id>`.

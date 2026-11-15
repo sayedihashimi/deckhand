@@ -439,7 +439,7 @@ func (m *model) openSelected() tea.Cmd {
 	}
 	if !s.Running() {
 		w, h := m.termSize()
-		resume := s.Agent == "claude" && s.Started
+		resume := s.Started // Start ignores it for agents that can't resume
 		if err := s.Start(w, h, resume, m.dirty); err != nil {
 			m.setFlash("Couldn't start: " + err.Error())
 			return nil

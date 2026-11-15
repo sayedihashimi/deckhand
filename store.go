@@ -26,9 +26,9 @@ func loadSessions() []*Session {
 			continue
 		}
 		s.status = StatusExited
-		s.detail = "enter to restart"
-		if s.Agent == "claude" && s.Started {
-			s.detail = "enter to resume"
+		s.detail = "⏎ restart"
+		if a, ok := agentByName(s.Agent); ok && a.CanResume() && s.Started {
+			s.detail = "⏎ resume"
 		}
 		out = append(out, s)
 	}

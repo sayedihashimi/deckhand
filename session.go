@@ -19,52 +19,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// Agent is a CLI that deckhand can run in a session.
-type Agent struct {
-	Name  string   // shown in the UI and stored with the session
-	Exe   string   // looked up on PATH
-	Args  []string // extra arguments
-	Hooks bool     // reports status through Claude Code hooks
-}
-
-var knownAgents = []Agent{
-	{Name: "claude", Exe: "claude", Hooks: true},
-	{Name: "codex", Exe: "codex"},
-	{Name: "gemini", Exe: "gemini"},
-	{Name: "pwsh", Exe: "pwsh", Args: []string{"-NoLogo"}},
-	{Name: "powershell", Exe: "powershell", Args: []string{"-NoLogo"}},
-	{Name: "cmd", Exe: "cmd"},
-}
-
-// availableAgents returns the agents found on PATH, keeping the order above
-// and dropping Windows PowerShell when PowerShell 7 is present.
-func availableAgents() []Agent {
-	var out []Agent
-	havePwsh := false
-	for _, a := range knownAgents {
-		if _, err := exec.LookPath(a.Exe); err != nil {
-			continue
-		}
-		if a.Name == "pwsh" {
-			havePwsh = true
-		}
-		if a.Name == "powershell" && havePwsh {
-			continue
-		}
-		out = append(out, a)
-	}
-	return out
-}
-
-func agentByName(name string) (Agent, bool) {
-	for _, a := range knownAgents {
-		if a.Name == name {
-			return a, true
-		}
-	}
-	return Agent{}, false
-}
-
 // Session is one agent CLI running in its own pseudo console.
 type Session struct {
 	ID              string    `json:"id"`
@@ -108,7 +62,7 @@ func newSession(agent Agent, dir, name string) *Session {
 		Dir:     dir,
 		Created: time.Now(),
 	}
-	if agent.Hooks {
+	if agent.Claude {
 		s.ClaudeSessionID = id
 	}
 	return s
@@ -119,47 +73,28 @@ func newSession(agent Agent, dir, name string) *Session {
 func (s *Session) Start(width, height int, resume bool, dirty *atomic.Bool) error {
 	agent, ok := agentByName(s.Agent)
 	if !ok {
-		return fmt.Errorf("unknown agent %q", s.Agent)
+		return fmt.Errorf("unknown agent %q (was it removed from the config?)", s.Agent)
 	}
-	exe, err := exec.LookPath(agent.Exe)
-	if err != nil {
-		return fmt.Errorf("%s not found on PATH", agent.Exe)
-	}
-	args := append([]string{}, agent.Args...)
-	if agent.Hooks {
-		settings, err := writeClaudeSettings(s.ID)
-		if err != nil {
-			return fmt.Errorf("write hook settings: %w", err)
-		}
+	resume = resume && agent.CanResume() && s.ClaudeSessionID != ""
+	if agent.Claude {
 		_ = os.Remove(filepath.Join(sessionDir(s.ID), "status.json"))
-		if resume && s.ClaudeSessionID != "" {
-			args = append(args, "--resume", s.ClaudeSessionID)
-		} else {
-			if s.ClaudeSessionID == "" {
-				s.ClaudeSessionID = s.ID
-			}
-			args = append(args, "--session-id", s.ClaudeSessionID)
+		if !resume && (s.ClaudeSessionID == "" || s.Started) {
+			// A fresh conversation needs an unused session ID.
+			s.ClaudeSessionID = uuid.NewString()
 		}
-		args = append(args, "--settings", settings)
 	}
-
-	// .cmd and .bat shims (e.g. npm installs) have to run through cmd.exe.
-	var cmd *exec.Cmd
-	switch strings.ToLower(filepath.Ext(exe)) {
-	case ".cmd", ".bat":
-		comspec := os.Getenv("ComSpec")
-		if comspec == "" {
-			comspec = `C:\Windows\System32\cmd.exe`
-		}
-		cmd = exec.Command(comspec, append([]string{"/c", exe}, args...)...)
-	default:
-		cmd = exec.Command(exe, args...)
+	spec, err := buildLaunch(agent, s.ID, s.ClaudeSessionID, resume)
+	if err != nil {
+		return err
 	}
+	cmd := exec.Command(spec.exe, spec.args...)
 	cmd.Dir = s.Dir
-	cmd.Env = append(sessionEnv(os.Environ()),
+	cmd.Env = append(sessionEnv(os.Environ()), spec.env...)
+	cmd.Env = append(cmd.Env,
 		"DECKHAND_SESSION_ID="+s.ID,
 		"DECKHAND_HOME="+dataDir(),
 	)
+	debugf("start %s: %s %q", s.ID[:8], spec.exe, spec.args)
 
 	if width < 10 {
 		width = 10
@@ -189,7 +124,7 @@ func (s *Session) Start(width, height int, resume bool, dirty *atomic.Bool) erro
 	})
 	if err := pty.Start(cmd); err != nil {
 		_ = pty.Close()
-		return fmt.Errorf("start %s: %w", agent.Exe, err)
+		return fmt.Errorf("start %s: %w", agent.Name, err)
 	}
 
 	s.mu.Lock()
@@ -275,8 +210,12 @@ func (s *Session) waitLoop(cmd *exec.Cmd, pty xpty.Pty) {
 	} else if cmd.ProcessState != nil && cmd.ProcessState.ExitCode() > 0 {
 		info = fmt.Sprintf("exited (%d)", cmd.ProcessState.ExitCode())
 	}
-	s.exitInfo = info
-	s.setStatusLocked(StatusExited, info)
+	s.exitInfo = info // full text for the header; the sidebar has little room
+	detail := "exited · ⏎ restart"
+	if a, ok := agentByName(s.Agent); ok && a.CanResume() {
+		detail = "exited · ⏎ resume"
+	}
+	s.setStatusLocked(StatusExited, detail)
 	s.mu.Unlock()
 	if s.dirty != nil {
 		s.dirty.Store(true)
@@ -302,7 +241,7 @@ func (s *Session) Refresh(now time.Time) {
 		return
 	}
 	agent, _ := agentByName(s.Agent)
-	if !agent.Hooks {
+	if !agent.Claude {
 		st, d := heuristicStatus(s.lastOutput, now, s.bell)
 		if st != StatusIdle || s.status != StatusStarting || now.Sub(s.since) > 3*time.Second {
 			s.setStatusLocked(st, d)
@@ -331,18 +270,19 @@ func (s *Session) Refresh(now time.Time) {
 
 // snapshot is a consistent copy of what the sidebar needs.
 type snapshot struct {
-	status  Status
-	detail  string
-	since   time.Time
-	unread  bool
-	running bool
-	title   string
+	status   Status
+	detail   string
+	since    time.Time
+	unread   bool
+	running  bool
+	title    string
+	exitInfo string
 }
 
 func (s *Session) Snapshot() snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return snapshot{s.status, s.detail, s.since, s.unread, s.running, s.title}
+	return snapshot{s.status, s.detail, s.since, s.unread, s.running, s.title, s.exitInfo}
 }
 
 // MarkSeen clears the unread flag and any bell.

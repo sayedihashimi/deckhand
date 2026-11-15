@@ -194,7 +194,13 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 	off := s.ScrollOffset()
 	header := " " + m.statusIcon(sn) + " " + lipgloss.NewStyle().Bold(true).Render(s.Name) +
 		stMuted.Render("  "+s.Agent+"  "+s.Dir)
-	if sn.title != "" {
+	if !sn.running && sn.exitInfo != "" {
+		verb := "restart"
+		if a, ok := agentByName(s.Agent); ok && a.CanResume() {
+			verb = "resume"
+		}
+		header += lipgloss.NewStyle().Foreground(colWorking).Render("  " + sn.exitInfo + " · press enter to " + verb)
+	} else if sn.title != "" {
 		header += stMuted.Render("  — " + sn.title)
 	}
 	if off > 0 {
@@ -208,7 +214,7 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 	emu := s.Emulator()
 	if emu == nil {
 		msg := "  Not running. Press enter to start it."
-		if s.Agent == "claude" && s.Started {
+		if a, ok := agentByName(s.Agent); ok && a.CanResume() && s.Started {
 			msg = "  Not running. Press enter to resume this Claude conversation."
 		}
 		lines = append(lines, "", fit(stMuted.Render(msg), w))

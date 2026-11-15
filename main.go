@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -17,6 +18,8 @@ func main() {
 		switch os.Args[1] {
 		case "hook":
 			os.Exit(runHook(os.Args[2:]))
+		case "config":
+			os.Exit(runConfig())
 		case "version", "--version", "-v":
 			fmt.Println("deckhand", version)
 			return
@@ -25,6 +28,7 @@ func main() {
 
 Usage:
   deckhand            start the TUI
+  deckhand config     print the config file path (creates a commented sample)
   deckhand version    print the version
   deckhand hook       (internal) receives Claude Code hook events
 
@@ -33,7 +37,14 @@ State is kept in %LOCALAPPDATA%\deckhand (override with DECKHAND_HOME).`)
 		}
 	}
 
-	if _, err := tea.NewProgram(newModel()).Run(); err != nil {
+	agents, cfgErr := loadAgents()
+	allAgents = agents
+	m := newModel()
+	if cfgErr != nil {
+		m.setFlash("Config error: " + cfgErr.Error())
+		m.flashAt = m.flashAt.Add(10 * time.Second) // keep it up longer
+	}
+	if _, err := tea.NewProgram(m).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "deckhand:", err)
 		os.Exit(1)
 	}
