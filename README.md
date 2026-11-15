@@ -58,6 +58,7 @@ The session list is saved in `%LOCALAPPDATA%\deckhand\sessions.json`. Each Claud
 ## Build
 
 ```powershell
+go install github.com/sayedihashimi/deckhand@latest          # or, from a clone:
 go build -ldflags "-X main.version=0.1.0" -o $HOME\.local\bin\deckhand.exe .
 go test ./...                                              # unit tests
 go test -tags e2e -run TestE2EShell -v                     # drives deckhand in a real ConPTY
