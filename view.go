@@ -9,7 +9,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/vt"
 )
 
 var (
@@ -189,10 +191,17 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 	}
 
 	sn := s.Snapshot()
+	off := s.ScrollOffset()
 	header := " " + m.statusIcon(sn) + " " + lipgloss.NewStyle().Bold(true).Render(s.Name) +
 		stMuted.Render("  "+s.Agent+"  "+s.Dir)
 	if sn.title != "" {
 		header += stMuted.Render("  — " + sn.title)
+	}
+	if off > 0 {
+		header = lipgloss.NewStyle().Foreground(colWorking).Bold(true).
+			Render(fmt.Sprintf(" ↑ %d lines back", off)) +
+			stMuted.Render(" · wheel down, shift+PgDn or any key to return") +
+			stMuted.Render("   "+s.Name)
 	}
 	lines = append(lines, fit(header, w))
 
@@ -210,6 +219,25 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 	}
 
 	screen := strings.Split(strings.ReplaceAll(emu.Render(), "\r\n", "\n"), "\n")
+	if off > 0 {
+		// The view is the scrollback followed by the screen; show h-1 rows
+		// ending `off` lines above the bottom.
+		sb := emu.ScrollbackLen()
+		top := sb - off
+		for i := 0; i < h-1; i++ {
+			row := top + i
+			l := ""
+			switch {
+			case row < 0:
+			case row < sb:
+				l = scrollbackLine(emu, row)
+			case row-sb < len(screen):
+				l = screen[row-sb]
+			}
+			lines = append(lines, fit(l, w)+"\x1b[0m")
+		}
+		return lines, nil
+	}
 	for i := 0; i < h-1; i++ {
 		l := ""
 		if i < len(screen) {
@@ -224,6 +252,20 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 		cur = tea.NewCursor(m.sidebarWidth()+1+p.X, 1+p.Y)
 	}
 	return lines, cur
+}
+
+// scrollbackLine renders one line of the emulator's scrollback with styles.
+func scrollbackLine(emu *vt.SafeEmulator, row int) string {
+	w := emu.Width()
+	line := make(uv.Line, w)
+	for x := 0; x < w; x++ {
+		if c := emu.ScrollbackCellAt(x, row); c != nil {
+			line[x] = *c
+		} else {
+			line[x] = uv.EmptyCell
+		}
+	}
+	return line.Render()
 }
 
 func (m *model) renderDialog(w int) []string {
@@ -357,6 +399,9 @@ func (m *model) View() tea.View {
 
 	v := tea.NewView(b.String())
 	v.AltScreen = true
+	// Mouse reporting is needed for the wheel. In Windows Terminal, hold
+	// shift while dragging to select text.
+	v.MouseMode = tea.MouseModeCellMotion
 	v.Cursor = cur
 	v.WindowTitle = m.windowTitle()
 	return v

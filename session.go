@@ -13,6 +13,7 @@ import (
 	"time"
 
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
 	"github.com/charmbracelet/x/xpty"
 	"github.com/google/uuid"
@@ -88,6 +89,12 @@ type Session struct {
 	unread     bool // finished or needs you, and not looked at yet
 	title      string
 	exitInfo   string
+
+	// Mouse and scrolling.
+	mouseModes map[ansi.Mode]bool // mouse reporting modes the app has turned on
+	altScroll  bool               // app asked for wheel-as-arrow-keys on the alt screen (mode 1007)
+	scrollOff  int                // lines scrolled back from the live view
+	scrollBase int                // scrollback length when scrollOff was last set
 
 	dirty *atomic.Bool // shared "screen changed" flag owned by the model
 }
@@ -177,6 +184,8 @@ func (s *Session) Start(width, height int, resume bool, dirty *atomic.Bool) erro
 			s.title = t
 			s.mu.Unlock()
 		},
+		EnableMode:  func(m ansi.Mode) { s.setMode(m, true) },
+		DisableMode: func(m ansi.Mode) { s.setMode(m, false) },
 	})
 	if err := pty.Start(cmd); err != nil {
 		_ = pty.Close()
@@ -185,6 +194,9 @@ func (s *Session) Start(width, height int, resume bool, dirty *atomic.Bool) erro
 
 	s.mu.Lock()
 	s.emu, s.pty, s.cmd, s.dirty = emu, pty, cmd, dirty
+	s.mouseModes = map[ansi.Mode]bool{}
+	s.altScroll = false
+	s.scrollOff = 0
 	s.running = true
 	s.Started = true
 	s.bell = false
@@ -382,6 +394,120 @@ func (s *Session) Resize(width, height int) {
 	if running && pty != nil {
 		_ = pty.Resize(width, height)
 	}
+}
+
+// modeAltScroll is DEC private mode 1007: on the alternate screen, the
+// terminal turns the mouse wheel into up/down arrow keys.
+var modeAltScroll = ansi.DECMode(1007)
+
+var mouseReportingModes = []ansi.Mode{
+	ansi.ModeMouseX10, ansi.ModeMouseNormal, ansi.ModeMouseHighlight,
+	ansi.ModeMouseButtonEvent, ansi.ModeMouseAnyEvent,
+}
+
+func (s *Session) setMode(m ansi.Mode, on bool) {
+	debugf("mode %v on=%v (%s)", m, on, s.ID[:8])
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if m == modeAltScroll {
+		s.altScroll = on
+		return
+	}
+	for _, mm := range mouseReportingModes {
+		if m == mm {
+			if s.mouseModes == nil {
+				s.mouseModes = map[ansi.Mode]bool{}
+			}
+			s.mouseModes[m] = on
+		}
+	}
+}
+
+// MouseReporting reports whether the app wants mouse events itself.
+func (s *Session) MouseReporting() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.running {
+		return false
+	}
+	for _, on := range s.mouseModes {
+		if on {
+			return true
+		}
+	}
+	return false
+}
+
+// SendMouse forwards a mouse event (in terminal coordinates) to the app.
+func (s *Session) SendMouse(ev uv.MouseEvent) {
+	if emu := s.Emulator(); emu != nil && s.Running() {
+		emu.SendMouse(ev)
+	}
+}
+
+// Scroll moves the scrollback view by delta lines (positive is back in
+// history). It returns false when there's nothing to scroll, e.g. on the
+// alternate screen, which has no scrollback.
+func (s *Session) Scroll(delta int) bool {
+	emu := s.Emulator()
+	if emu == nil || emu.IsAltScreen() {
+		return false
+	}
+	sb := emu.ScrollbackLen()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.scrollOff += delta
+	if s.scrollOff > sb {
+		s.scrollOff = sb
+	}
+	if s.scrollOff < 0 {
+		s.scrollOff = 0
+	}
+	s.scrollBase = sb
+	return true
+}
+
+// ScrollToBottom returns to the live view.
+func (s *Session) ScrollToBottom() {
+	s.mu.Lock()
+	s.scrollOff = 0
+	s.mu.Unlock()
+}
+
+// ScrollOffset returns how far back the view is. While scrolled back, new
+// output would push the content up, so the offset grows with the scrollback
+// to keep the same lines in view.
+func (s *Session) ScrollOffset() int {
+	emu := s.Emulator()
+	if emu == nil {
+		return 0
+	}
+	if emu.IsAltScreen() {
+		s.ScrollToBottom()
+		return 0
+	}
+	sb := emu.ScrollbackLen()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.scrollOff > 0 && sb > s.scrollBase {
+		s.scrollOff += sb - s.scrollBase
+	}
+	s.scrollBase = sb
+	if s.scrollOff > sb {
+		s.scrollOff = sb
+	}
+	return s.scrollOff
+}
+
+// AltScrollWanted reports whether the wheel should become arrow keys.
+func (s *Session) AltScrollWanted() bool {
+	emu := s.Emulator()
+	if emu == nil || !emu.IsAltScreen() {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.altScroll
 }
 
 // Kill ends the agent process.

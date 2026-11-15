@@ -144,6 +144,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.focus {
 		case focusTerminal:
 			if s := m.current(); s != nil {
+				s.ScrollToBottom()
 				s.Paste(msg.Content)
 			}
 		case focusDialog:
@@ -153,6 +154,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
+
+	case tea.MouseMsg:
+		return m, m.handleMouse(msg)
 	}
 	if m.focus == focusDialog && m.dialog != nil {
 		return m, m.dialog.update(msg)
@@ -205,6 +209,21 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.focus = focusSidebar
 				return m, nil
 			}
+			// shift+PgUp/PgDn scroll deckhand's scrollback (when the app
+			// isn't on the alternate screen, which has none).
+			_, th := m.termSize()
+			switch key {
+			case "shift+pgup":
+				if s.Scroll(th - 2) {
+					return m, nil
+				}
+			case "shift+pgdown":
+				if s.Scroll(-(th - 2)) {
+					return m, nil
+				}
+			}
+			// Typing returns to the live view.
+			s.ScrollToBottom()
 			debugf("key %q %+v", key, k)
 			s.SendKey(toUVKey(k))
 		}
@@ -301,6 +320,105 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// Mouse ----------------------------------------------------------------------
+
+const wheelLines = 3
+
+// handleMouse routes the wheel and clicks.
+//
+//   - Sidebar: the wheel moves the selection; a click selects a session.
+//   - Terminal, when the app has turned on mouse reporting (e.g. a
+//     fullscreen TUI): events are forwarded so the app scrolls itself.
+//   - Terminal otherwise: the wheel scrolls deckhand's scrollback; on the
+//     alternate screen it becomes arrow keys if the app asked for that.
+func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
+	ms := msg.Mouse()
+	sw := m.sidebarWidth()
+
+	if m.focus == focusDialog || m.rename != nil || m.confirm != nil {
+		return nil
+	}
+
+	// Sidebar.
+	if ms.X < sw {
+		switch msg.(type) {
+		case tea.MouseWheelMsg:
+			switch ms.Button {
+			case tea.MouseWheelUp:
+				if m.sel > 0 {
+					m.sel--
+				}
+			case tea.MouseWheelDown:
+				if m.sel < len(m.sessions)-1 {
+					m.sel++
+				}
+			}
+		case tea.MouseClickMsg:
+			if ms.Button == tea.MouseLeft && ms.Y >= 2 {
+				if i := m.scroll + (ms.Y-2)/2; i < len(m.sessions) {
+					m.sel = i
+					m.focus = focusSidebar
+				}
+			}
+		}
+		return nil
+	}
+
+	s := m.current()
+	if s == nil {
+		return nil
+	}
+	tx, ty := ms.X-sw-1, ms.Y-1 // terminal coordinates
+	inTerm := tx >= 0 && ty >= 0
+
+	if s.MouseReporting() && inTerm {
+		ev := uv.Mouse{X: tx, Y: ty, Button: ms.Button, Mod: ms.Mod}
+		switch msg.(type) {
+		case tea.MouseWheelMsg:
+			s.SendMouse(uv.MouseWheelEvent(ev))
+		case tea.MouseClickMsg:
+			m.focus = focusTerminal
+			s.SendMouse(uv.MouseClickEvent(ev))
+		case tea.MouseReleaseMsg:
+			s.SendMouse(uv.MouseReleaseEvent(ev))
+		case tea.MouseMotionMsg:
+			s.SendMouse(uv.MouseMotionEvent(ev))
+		}
+		return nil
+	}
+
+	switch msg.(type) {
+	case tea.MouseWheelMsg:
+		delta := 0
+		switch ms.Button {
+		case tea.MouseWheelUp:
+			delta = wheelLines
+		case tea.MouseWheelDown:
+			delta = -wheelLines
+		}
+		if delta == 0 {
+			return nil
+		}
+		if s.Scroll(delta) {
+			return nil
+		}
+		if s.AltScrollWanted() {
+			code := tea.KeyUp
+			if delta < 0 {
+				code = tea.KeyDown
+			}
+			for i := 0; i < wheelLines; i++ {
+				s.SendKey(uv.KeyPressEvent{Code: code})
+			}
+		}
+	case tea.MouseClickMsg:
+		if ms.Button == tea.MouseLeft && s.Running() {
+			m.focus = focusTerminal
+		}
+	}
+	return nil
 }
 
 func (m *model) quit() tea.Cmd {

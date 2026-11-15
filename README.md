@@ -51,6 +51,13 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 | Key | Action |
 |---|---|
 | ctrl+q (or ctrl+]) | Back to the session list. Every other key goes to the agent. |
+| shift+PgUp / shift+PgDn | Scroll back through the output a page at a time |
+
+**Mouse**
+
+- **Wheel over the terminal:** scrolls back through the output. Any key, or wheeling back down, returns to the live view. If the app turns on mouse reporting itself (a fullscreen TUI such as Claude's fullscreen renderer), the wheel and clicks go to the app instead, so it scrolls its own view.
+- **Wheel or click in the session list:** moves the selection. Clicking the terminal focuses it.
+- **Selecting text:** deckhand uses mouse reporting, so in Windows Terminal hold **shift** while dragging.
 
 **New session dialog**
 

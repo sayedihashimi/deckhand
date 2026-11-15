@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -234,6 +235,104 @@ func TestE2EFolderPicker(t *testing.T) {
 	if !strings.Contains(string(data), "zeta") || !strings.Contains(string(data), `"last_agent": "pwsh"`) {
 		t.Fatalf("prefs.json: %s", data)
 	}
+	h.send("\x11q")
+	h.send("y")
+	h.waitExit(10 * time.Second)
+}
+
+// wheel sends an SGR mouse wheel event at screen cell (x, y), 0-based.
+func (h *harness) wheel(up bool, x, y int) {
+	b := 65
+	if up {
+		b = 64
+	}
+	h.send(fmt.Sprintf("\x1b[<%d;%d;%dM", b, x+1, y+1))
+}
+
+func TestE2EScroll(t *testing.T) {
+	exe := buildDeckhand(t)
+	pwsh, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh not found")
+	}
+	path := filepath.Dir(pwsh) + ";" + os.Getenv("SystemRoot") + `\System32`
+	h := startHarness(t, exe, envWith(t.TempDir(), path), t.TempDir())
+
+	h.waitFor("No sessions yet", 10*time.Second)
+	h.send("n")
+	h.waitFor("Start in", 5*time.Second)
+	h.send("\r")
+	h.waitFor("PS ", 15*time.Second)
+	h.send(`1..300 | % { "line-$_" }` + "\r")
+	h.waitFor("line-300", 10*time.Second)
+	time.Sleep(500 * time.Millisecond)
+
+	// Wheel up over the terminal: 5 notches = 15 lines.
+	for i := 0; i < 5; i++ {
+		h.wheel(true, 80, 20)
+	}
+	h.waitFor("15 lines back", 3*time.Second)
+	if strings.Contains(h.screen(), "line-300") {
+		t.Fatalf("line-300 should be scrolled out of view; screen:\n%s", h.screen())
+	}
+	t.Logf("scrolled:\n%s", h.screen())
+
+	// Wheel back down to the live view.
+	for i := 0; i < 5; i++ {
+		h.wheel(false, 80, 20)
+	}
+	h.waitFor("line-300", 3*time.Second)
+	if strings.Contains(h.screen(), "lines back") {
+		t.Fatalf("should be back at the live view; screen:\n%s", h.screen())
+	}
+
+	// shift+PgUp scrolls a page; typing returns to the live view.
+	h.send("\x1b[5;2~")
+	h.waitFor("lines back", 3*time.Second)
+	h.send("x")
+	h.waitFor("line-300", 3*time.Second)
+	if strings.Contains(h.screen(), "lines back") {
+		t.Fatalf("typing should return to the live view; screen:\n%s", h.screen())
+	}
+
+	// Wheel over the sidebar doesn't scroll the terminal.
+	h.wheel(true, 5, 5)
+	time.Sleep(300 * time.Millisecond)
+	if strings.Contains(h.screen(), "lines back") {
+		t.Fatalf("sidebar wheel shouldn't scroll the terminal; screen:\n%s", h.screen())
+	}
+
+	h.send("\x11q")
+	h.send("y")
+	h.waitExit(10 * time.Second)
+}
+
+// A fullscreen app that turns on mouse reporting gets the wheel itself.
+func TestE2EMouseForwarding(t *testing.T) {
+	exe := buildDeckhand(t)
+	// Build the stand-in app as "pwsh.exe" so deckhand's pwsh agent runs it.
+	bin := t.TempDir()
+	if out, err := exec.Command("go", "build", "-o", filepath.Join(bin, "pwsh.exe"), "./testdata/mouseapp").CombinedOutput(); err != nil {
+		t.Fatalf("build mouseapp: %v\n%s", err, out)
+	}
+	path := bin + ";" + os.Getenv("SystemRoot") + `\System32`
+	h := startHarness(t, exe, envWith(t.TempDir(), path), t.TempDir())
+
+	h.waitFor("No sessions yet", 10*time.Second)
+	h.send("n")
+	h.waitFor("Start in", 5*time.Second)
+	h.send("\r")
+	h.waitFor("mouseapp ready", 10*time.Second)
+
+	// Terminal starts at screen column 33 (sidebar 32 + separator) and row 1.
+	h.wheel(true, 40, 6)
+	h.waitFor(`got "\x1b[<64;8;6M"`, 5*time.Second) // wheel up at terminal cell (7,5), 1-based
+	h.wheel(false, 40, 6)
+	h.waitFor(`got "\x1b[<65;8;6M"`, 5*time.Second)
+	if strings.Contains(h.screen(), "lines back") {
+		t.Fatalf("deckhand shouldn't scroll when the app handles the mouse; screen:\n%s", h.screen())
+	}
+
 	h.send("\x11q")
 	h.send("y")
 	h.waitExit(10 * time.Second)
