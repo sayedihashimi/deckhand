@@ -20,6 +20,8 @@ import (
 // screen as a PNG. The PR workflow posts it on each pull request.
 //
 //	$env:DECKHAND_SCREENSHOT="shot.png"; go test -tags e2e -run TestE2EScreenshot -v
+//
+// DECKHAND_SCREENSHOT_HELP also saves the help overlay to that PNG.
 func TestE2EScreenshot(t *testing.T) {
 	out := os.Getenv("DECKHAND_SCREENSHOT")
 	if out == "" {
@@ -141,6 +143,22 @@ event PreToolUse Bash | go test ./...
 		t.Fatal(err)
 	}
 	t.Logf("wrote %s\n%s", out, h.screen())
+
+	// Optionally the help overlay too (? in the list), to check it by hand.
+	if helpOut := os.Getenv("DECKHAND_SCREENSHOT_HELP"); helpOut != "" {
+		h.send("?")
+		h.waitFor("New-session dialog", 5*time.Second)
+		hf, err := os.Create(helpOut)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer hf.Close()
+		if err := termshot.Render(hf, screenFromEmulator(h.emu), termshot.Options{}); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("wrote %s", helpOut)
+		h.send("\x1b")
+	}
 
 	h.send("q")
 	h.send("y")

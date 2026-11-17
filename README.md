@@ -65,11 +65,14 @@ Run `deckhand notify-test` to check that notifications appear. If they don't, ch
 
 ## Keys
 
+Press `?` in the session list, or `F1` anywhere (also inside a session), for a summary of the keys, the status icons and where the config file is. `esc`, `?`, `F1` or `q` closes it.
+
 **Session list**
 
 | Key | Action |
 |---|---|
 | ↑/↓ or j/k | Select a session (its terminal shows on the right) |
+| home/end or g/G | Select the first or last session |
 | enter | Type into the session; starts or resumes it if it isn't running |
 | shift+enter | Start a new session with the same agent and folder, right below the selected one. The selected session is left as it is, so its conversation can still be resumed. Claude gets a fresh conversation; a custom agent runs its normal command, not its `resume` one. Where a terminal sends plain enter for shift+enter, it acts like enter |
 | 1–9 | Jump straight into session N |
@@ -83,15 +86,17 @@ Run `deckhand notify-test` to check that notifications appear. If they don't, ch
 | t | Open a new Windows Terminal tab in the session's folder |
 | r | Rename the session |
 | K | End the session's process (it stays in the list) |
-| x | End and remove the session |
+| x (or delete) | End and remove the session |
+| ? or F1 | Show the keys |
 | q | Quit (Claude sessions can be resumed next time) |
 
 **Inside a session**
 
 | Key | Action |
 |---|---|
-| ctrl+q (or ctrl+]) | Back to the session list. Every other key goes to the agent. |
+| ctrl+q (or ctrl+]) | Back to the session list. Every other key except F1 goes to the agent. |
 | shift+PgUp / shift+PgDn | Scroll back through the output a page at a time |
+| F1 | Show the keys. deckhand keeps F1, so it doesn't reach the agent. `?` is typed text and goes to the agent. |
 
 Modified keys that plain terminal input can't express, such as shift+enter (a new line in Claude), ctrl+enter and ctrl+tab, go to the agent in the keyboard protocol it asked for (kitty `CSI u`, or xterm modifyOtherKeys), and as plain enter/tab to apps that asked for neither. For deckhand to see those modifiers, the terminal it runs in has to report them. In Windows Terminal, deckhand turns on win32-input-mode for this. In other terminals, shift+enter may arrive as plain enter; Claude's `\` then enter still adds a new line.
 
