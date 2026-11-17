@@ -17,7 +17,8 @@ import (
 
 // TestE2EScreenshot sets up a scripted scene (four fake Claude sessions in
 // different states, in git repos (one in a worktree, run from a notes
-// folder), plus an exited shell) and saves deckhand's
+// folder; two with a pull request, from a fake gh), plus an exited shell)
+// and saves deckhand's
 // screen as a PNG, with the exited shell's restored output, the config
 // screen ("c") and the api session's diff preview ("d") below it. The PR
 // workflow posts it on each pull request.
@@ -44,6 +45,17 @@ func TestE2EScreenshot(t *testing.T) {
 	bin := t.TempDir()
 	if out, err := exec.Command("go", "build", "-o", filepath.Join(bin, "claude.exe"), "./testdata/hookapp").CombinedOutput(); err != nil {
 		t.Fatalf("build hookapp: %v\n%s", err, out)
+	}
+	// A fake gh with two pull requests, for the PR badges.
+	if out, err := exec.Command("go", "build", "-o", filepath.Join(bin, "gh.exe"), "./testdata/ghapp").CombinedOutput(); err != nil {
+		t.Fatalf("build ghapp: %v\n%s", err, out)
+	}
+	ghState := t.TempDir()
+	for name, pr := range map[string]string{
+		"pr-quiet-otter.json":   `{"number":12,"state":"OPEN","url":"https://github.com/example/cli/pull/12","statusCheckRollup":[{"__typename":"CheckRun","status":"COMPLETED","conclusion":"SUCCESS"}]}`,
+		"pr-feature_login.json": `{"number":7,"state":"OPEN","url":"https://github.com/example/api/pull/7","statusCheckRollup":[{"__typename":"CheckRun","status":"COMPLETED","conclusion":"FAILURE"}]}`,
+	} {
+		_ = os.WriteFile(filepath.Join(ghState, name), []byte(pr), 0o644)
 	}
 
 	src := filepath.Join(t.TempDir(), "src")
@@ -82,6 +94,7 @@ event PostToolUse Read
 event PermissionRequest Bash | npm test -- --watch=false
 `)
 	apiWork(t, gitExe, api)
+	onGitHub(t, gitExe, api, "api")
 	docs := repo("docs", "main", false, `sleep 1500
 event SessionStart
 reply 31000 Updated the README with the new install steps.
@@ -100,6 +113,7 @@ event PreToolUse Bash | go test ./...
 	notes := filepath.Join(src, "notes")
 	_ = os.MkdirAll(notes, 0o755)
 	plans, cli, wt := worktreeScene(t, gitExe, src)
+	onGitHub(t, gitExe, cli, "cli")
 
 	home := t.TempDir()
 	type saved struct {
@@ -176,7 +190,7 @@ editor = 'code "{dir}"'
 `), 0o644)
 
 	path := bin + ";" + filepath.Dir(pwsh) + ";" + filepath.Dir(gitExe) + ";" + os.Getenv("SystemRoot") + `\System32`
-	env := append(envWith(home, path), "DECKHAND_NOTIFY_LOG="+filepath.Join(home, "notify.log"), "DECKHAND_CONFIG="+cfg)
+	env := append(envWith(home, path), "DECKHAND_NOTIFY_LOG="+filepath.Join(home, "notify.log"), "DECKHAND_CONFIG="+cfg, "GHAPP_DIR="+ghState)
 	h := startHarnessSize(t, exe, env, src, 120, 32)
 
 	h.waitFor("notes", 10*time.Second)
@@ -191,6 +205,8 @@ editor = 'code "{dir}"'
 	h.waitFor("claude · Updated the", 15*time.Second)    // finished: the reply
 	h.waitFor("opus 5.5", 10*time.Second)
 	h.waitFor("⎇ cli:quiet-otter", 10*time.Second)
+	h.waitFor("#12✓", 10*time.Second) // the PR badges
+	h.waitFor("#7✗", 10*time.Second)
 	time.Sleep(3500 * time.Millisecond) // let every session's git details arrive
 
 	scene := screenFromEmulator(h.emu)
@@ -285,6 +301,15 @@ editor = 'code "{dir}"'
 	h.send("q")
 	h.send("y")
 	h.waitExit(10 * time.Second)
+}
+
+// onGitHub gives a repo an origin on GitHub, which is never fetched: the
+// fake gh answers for it.
+func onGitHub(t *testing.T, gitExe, dir, name string) {
+	t.Helper()
+	if out, err := exec.Command(gitExe, "-C", dir, "remote", "add", "origin", "https://github.com/example/"+name+".git").CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %v\n%s", err, out)
+	}
 }
 
 // worktreeScene makes the cli repo with a worktree, quiet-otter, that has

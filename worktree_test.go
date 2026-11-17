@@ -64,6 +64,12 @@ func testRepo(t *testing.T) string {
 	return clone
 }
 
+// Unit tests never run the real gh: without fakeGH, it's as if gh isn't
+// installed.
+func init() {
+	ghRun = func(string, ...string) (string, error) { return "", errNoGH }
+}
+
 // fakeGH replaces ghRun for a test.
 func fakeGH(t *testing.T, f func(dir string, args ...string) (string, error)) {
 	t.Helper()
@@ -270,7 +276,7 @@ func TestCheckMergedSquash(t *testing.T) {
 	if !c.merged || !c.safe() || c.how != "PR #7 merged" || len(c.commits) != 2 {
 		t.Errorf("squash-merged: %+v", c)
 	}
-	if strings.Join(asked, " ") != "pr view "+w.branch+" --json number,state,headRefOid,url" {
+	if strings.Join(asked, " ") != "pr view "+w.branch+" --json "+prFields {
 		t.Errorf("gh called with %q", asked)
 	}
 

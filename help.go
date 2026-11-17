@@ -54,7 +54,7 @@ var helpGroups = []helpGroup{
 		{keys: "n W", desc: "new session; W: new worktree", match: []string{"n", "W"}, footer: "n new"},
 		{keys: "1–9", desc: "jump into session N", match: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9"}},
 		{keys: "tab", desc: "next one that needs you", match: []string{"tab"}, footer: "tab next"},
-		{keys: "d", desc: "diff vs the default branch", match: []string{"d"}, footer: "d diff", short: "-"},
+		{keys: "d p", desc: "diff; p: push and open a PR", match: []string{"d", "p"}, footer: "d diff", short: "-"},
 		{keys: "v", desc: "last output / conversation", match: []string{"v"}, footer: "v switch view", short: "v view", when: hintHistory},
 		{keys: "⇧PgUp/Dn", desc: "scroll an exited session", match: []string{"shift+pgup", "shift+pgdown"}},
 		{keys: "/", desc: "filter the list as you type", match: []string{"/"}, footer: "/ filter", short: "/@ filter"},

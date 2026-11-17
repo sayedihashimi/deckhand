@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -405,30 +404,6 @@ type closeCheck struct {
 // safe reports whether the worktree and branch can be removed without
 // asking: the work is merged and nothing is uncommitted.
 func (c closeCheck) safe() bool { return c.merged && len(c.dirty) == 0 && !c.noBranch }
-
-// prInfo is the part of `gh pr view --json` the check needs.
-type prInfo struct {
-	Number     int    `json:"number"`
-	State      string `json:"state"` // OPEN, CLOSED or MERGED
-	HeadRefOid string `json:"headRefOid"`
-	URL        string `json:"url"`
-}
-
-// prForBranch asks GitHub for the branch's pull request. ok is false when
-// there's none.
-func prForBranch(dir, branch string) (pr prInfo, ok bool, err error) {
-	out, err := ghRun(dir, "pr", "view", branch, "--json", "number,state,headRefOid,url")
-	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "no pull requests found") {
-			return pr, false, nil
-		}
-		return pr, false, err
-	}
-	if err := json.Unmarshal([]byte(out), &pr); err != nil {
-		return pr, false, fmt.Errorf("gh pr view: %w", err)
-	}
-	return pr, pr.Number != 0, nil
-}
 
 // checkMerged fetches the default branch and works out whether a worktree
 // session's branch is merged: its tip is in origin/<base> (a merge or
