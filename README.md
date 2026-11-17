@@ -23,7 +23,7 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 | ● (blinking, orange) | Needs you: a permission prompt or a question | `PermissionRequest`, `PreToolUse` on `AskUserQuestion` |
 | ✓ (bold green) | Finished its turn, and you haven't looked yet | `Stop` |
 | ○ | Idle and seen | |
-| ■ | Not running (press enter to resume) | process exit |
+| ■ | Not running (press enter to resume, shift+enter to start a new one) | process exit |
 | ◌ | Starting | |
 
 - **Claude:** status comes from hooks. deckhand passes a per-session settings file with `claude --settings`, so your `~/.claude/settings.json` is never modified.
@@ -66,6 +66,7 @@ Run `deckhand notify-test` to check that notifications appear. If they don't, ch
 |---|---|
 | ↑/↓ or j/k | Select a session (its terminal shows on the right) |
 | enter | Type into the session; starts or resumes it if it isn't running |
+| shift+enter | Start a new session with the same agent and folder, right below the selected one. The selected session is left as it is, so its conversation can still be resumed. Claude gets a fresh conversation; a custom agent runs its normal command, not its `resume` one. Where a terminal sends plain enter for shift+enter, it acts like enter |
 | 1–9 | Jump straight into session N |
 | tab | Select the next session that needs you, then the next one that finished |
 | / | Filter the list as you type. Matches the name, agent, folder and branch, ignoring case; letters in order also match, and every word must match. enter keeps the filter (or opens the session if only one matches), tab keeps it, esc clears it |

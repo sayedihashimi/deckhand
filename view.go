@@ -157,6 +157,9 @@ func (m *model) renderSidebar(w, h int) []string {
 		if detail == "" {
 			detail = sn.status.String()
 		}
+		if sn.status == StatusExited {
+			detail = exitedDetail(detail, w-6-ansi.StringWidth(s.Agent+" · "))
+		}
 		detailStyle := stMuted
 		if sn.status == StatusWaiting {
 			detailStyle = stWaitText
@@ -179,6 +182,22 @@ func (m *model) renderSidebar(w, h int) []string {
 		lines = append(lines, strings.Repeat(" ", w))
 	}
 	return lines[:h]
+}
+
+// exitedDetail adds the shift+enter hint to an exited session's detail
+// ("exited · ⏎ resume · ⇧⏎ new"), dropping "exited" and then the separator
+// when the sidebar is too narrow. With no room for it, the detail is kept.
+func exitedDetail(detail string, room int) string {
+	if !strings.Contains(detail, "⏎") {
+		return detail
+	}
+	short := strings.TrimPrefix(detail, "exited · ")
+	for _, d := range []string{detail + " · ⇧⏎ new", short + " · ⇧⏎ new", short + " ⇧⏎ new"} {
+		if ansi.StringWidth(d) <= room {
+			return d
+		}
+	}
+	return detail
 }
 
 // selBgSeq is the SGR sequence for the selected row's background (colSelBg).
@@ -298,7 +317,7 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 		if a, ok := agentByName(s.Agent); ok && a.CanResume() {
 			verb = "resume"
 		}
-		header += lipgloss.NewStyle().Foreground(colWorking).Render("  " + sn.exitInfo + " · press enter to " + verb)
+		header += lipgloss.NewStyle().Foreground(colWorking).Render("  " + sn.exitInfo + " · press enter to " + verb + ", shift+enter to start a new one")
 	} else if sn.title != "" {
 		header += stMuted.Render("  — " + sn.title)
 	}
@@ -312,9 +331,9 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 
 	emu := s.Emulator()
 	if emu == nil {
-		msg := "  Not running. Press enter to start it."
+		msg := "  Not running. Press enter to start it, or shift+enter to start a new one."
 		if a, ok := agentByName(s.Agent); ok && a.CanResume() && s.Started {
-			msg = "  Not running. Press enter to resume this Claude conversation."
+			msg = "  Not running. Press enter to resume this Claude conversation, or shift+enter to start a new one."
 		}
 		lines = append(lines, "", fit(stMuted.Render(msg), w))
 		for len(lines) < h {
@@ -470,7 +489,7 @@ func (m *model) renderFooter(w int) string {
 	case focusDialog:
 		help = " enter start · esc cancel"
 	default:
-		help = " ↑↓ select · enter open · n new · tab next needing you · / filter · @ needs you · r rename · K end · x remove · q quit"
+		help = " ↑↓ select · enter open · ⇧⏎ new here · n new · tab next · / filter · @ needs you · r rename · K end · x remove · q quit"
 		if m.filterInput != nil {
 			help = " type to filter · enter keep · esc clear"
 		}
