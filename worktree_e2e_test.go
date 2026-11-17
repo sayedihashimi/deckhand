@@ -77,7 +77,15 @@ func savedWorktrees(t *testing.T, home string) []savedWorktree {
 }
 
 func sameDir(a, b string) bool {
-	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
+	if strings.EqualFold(filepath.Clean(a), filepath.Clean(b)) {
+		return true
+	}
+	// The same folder can be spelled two ways: on GitHub's Windows runners
+	// TEMP is an 8.3 short path (C:\Users\RUNNER~1\...), but PowerShell
+	// reports its working folder by the long name (C:\Users\runneradmin\...).
+	fa, errA := os.Stat(a)
+	fb, errB := os.Stat(b)
+	return errA == nil && errB == nil && os.SameFile(fa, fb)
 }
 
 // worktreeE2E builds deckhand and argsapp (as claude.exe) and returns the
