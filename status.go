@@ -39,6 +39,8 @@ type hookEvent struct {
 	Tool             string `json:"tool,omitempty"`
 	NotificationType string `json:"notification_type,omitempty"`
 	ClaudeSessionID  string `json:"claude_session_id,omitempty"`
+	Transcript       string `json:"transcript,omitempty"` // path of Claude's transcript (JSONL)
+	Summary          string `json:"summary,omitempty"`    // what the tool works on, e.g. the Bash command
 }
 
 // statusFromHook maps a Claude Code hook event to a sidebar status.

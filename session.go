@@ -28,6 +28,14 @@ type Session struct {
 	Created         time.Time `json:"created"`
 	ClaudeSessionID string    `json:"claude_session_id,omitempty"`
 	Started         bool      `json:"started,omitempty"` // has run at least once, so it can be resumed
+	TranscriptPath  string    `json:"transcript_path,omitempty"`
+
+	info     sessionInfo // git and transcript details, filled in the background
+	summary  string      // latest hook's tool summary
+	notice   *notice     // a status change to notify about, taken by the model
+	polling  atomic.Bool
+	lastPoll time.Time
+	trStamp  string // transcript size and mtime when last read
 
 	mu         sync.Mutex
 	emu        *vt.SafeEmulator
@@ -223,6 +231,9 @@ func (s *Session) waitLoop(cmd *exec.Cmd, pty xpty.Pty) {
 }
 
 func (s *Session) setStatusLocked(st Status, detail string) {
+	if n, ok := noticeFor(s.status, st, detail, s.summary); ok {
+		s.notice = &n
+	}
 	if st != s.status {
 		s.since = time.Now()
 		if st == StatusWaiting || (st == StatusIdle && s.status == StatusWorking) || st == StatusExited {
@@ -253,6 +264,10 @@ func (s *Session) Refresh(now time.Time) {
 		if ev.ClaudeSessionID != "" {
 			s.ClaudeSessionID = ev.ClaudeSessionID
 		}
+		if ev.Transcript != "" {
+			s.TranscriptPath = ev.Transcript
+		}
+		s.summary = ev.Summary
 		if st, d, ok := statusFromHook(ev); ok {
 			s.setStatusLocked(st, d)
 		}
@@ -277,12 +292,95 @@ type snapshot struct {
 	running  bool
 	title    string
 	exitInfo string
+	info     sessionInfo
 }
 
 func (s *Session) Snapshot() snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return snapshot{s.status, s.detail, s.since, s.unread, s.running, s.title, s.exitInfo}
+	return snapshot{s.status, s.detail, s.since, s.unread, s.running, s.title, s.exitInfo, s.info}
+}
+
+// TakeNotice returns (and clears) a pending status change to notify about.
+func (s *Session) TakeNotice() *notice {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := s.notice
+	s.notice = nil
+	return n
+}
+
+// LastText is the latest Claude reply's text, read from the transcript now
+// so a "finished" notification can quote the reply that just ended.
+func (s *Session) LastText() string {
+	s.mu.Lock()
+	path := s.transcriptPathLocked()
+	s.mu.Unlock()
+	if path == "" {
+		return ""
+	}
+	_, _, text, err := readTranscriptInfo(path)
+	if err != nil {
+		return ""
+	}
+	return text
+}
+
+func (s *Session) transcriptPathLocked() string {
+	if s.TranscriptPath != "" {
+		return s.TranscriptPath
+	}
+	if a, ok := agentByName(s.Agent); ok && a.Claude {
+		return guessTranscriptPath(s.Dir, s.ClaudeSessionID)
+	}
+	return ""
+}
+
+// MaybePoll starts a background refresh of the git and transcript details
+// if they're due: every few seconds for running or selected sessions, less
+// often for the rest. Only one refresh runs at a time per session.
+func (s *Session) MaybePoll(now time.Time, active bool) {
+	s.mu.Lock()
+	every := pollIdle
+	if active || s.running {
+		every = pollActive
+	}
+	due := s.lastPoll.IsZero() || now.Sub(s.lastPoll) >= every
+	if due {
+		s.lastPoll = now
+	}
+	dir, tr, stamp := s.Dir, s.transcriptPathLocked(), s.trStamp
+	s.mu.Unlock()
+	if !due || !s.polling.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		defer s.polling.Store(false)
+		g := readGitInfo(dir)
+		var model string
+		var tokens int
+		newStamp := stamp
+		if tr != "" {
+			if fi, err := os.Stat(tr); err == nil {
+				newStamp = fmt.Sprintf("%d/%d", fi.Size(), fi.ModTime().UnixNano())
+				if newStamp != stamp {
+					model, tokens, _, _ = readTranscriptInfo(tr)
+				}
+			}
+		}
+		s.mu.Lock()
+		s.info.git = g
+		if newStamp != stamp {
+			s.trStamp = newStamp
+			if model != "" {
+				s.info.model, s.info.ctxTokens = model, tokens
+			}
+		}
+		s.mu.Unlock()
+		if s.dirty != nil {
+			s.dirty.Store(true)
+		}
+	}()
 }
 
 // MarkSeen clears the unread flag and any bell.

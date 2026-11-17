@@ -88,30 +88,52 @@ func (m *model) renderSidebar(w, h int) []string {
 		}
 	}
 	head := stTitle.Render(" deckhand")
-	if waiting > 0 {
+	switch {
+	case m.filterInput != nil:
+		head = " " + m.filterInput.View()
+	case m.filtering():
+		var parts []string
+		if m.attentionOnly {
+			parts = append(parts, "@ needs you")
+		}
+		if m.filter != "" {
+			parts = append(parts, "/"+m.filter)
+		}
+		head = " " + lipgloss.NewStyle().Foreground(colAccent).Render(strings.Join(parts, " ")) + stMuted.Render(" · esc clears")
+	}
+	if waiting > 0 && m.filterInput == nil {
 		badge := stWaitText.Render(fmt.Sprintf("%d need you ", waiting))
 		head = fit(head, w-ansi.StringWidth(badge)) + badge
 	}
 	lines = append(lines, fit(head, w), stBorder.Render(strings.Repeat("─", w)))
 
-	if len(m.sessions) == 0 {
+	vis := m.visible()
+	switch {
+	case len(m.sessions) == 0:
 		lines = append(lines, strings.Repeat(" ", w), fit(stMuted.Render(" No sessions yet."), w), fit(stMuted.Render(" Press n to start one."), w))
+	case len(vis) == 0:
+		lines = append(lines, strings.Repeat(" ", w), fit(stMuted.Render(" No sessions match."), w), fit(stMuted.Render(" esc clears the filter."), w))
 	}
 
-	// Two lines per session; keep the selection in view.
-	perRow := 2
-	visible := (h - len(lines)) / perRow
+	// Three lines per session; keep the selection in view.
+	visible := (h - len(lines)) / rowsPerSession
 	if visible < 1 {
 		visible = 1
 	}
-	if m.sel < m.scroll {
-		m.scroll = m.sel
+	if p := visiblePos(vis, m.sel); p >= 0 {
+		if p < m.scroll {
+			m.scroll = p
+		}
+		if p >= m.scroll+visible {
+			m.scroll = p - visible + 1
+		}
 	}
-	if m.sel >= m.scroll+visible {
-		m.scroll = m.sel - visible + 1
+	if m.scroll > len(vis)-1 {
+		m.scroll = max(0, len(vis)-1)
 	}
 	now := time.Now()
-	for i := m.scroll; i < len(m.sessions) && i < m.scroll+visible; i++ {
+	for p := m.scroll; p < len(vis) && p < m.scroll+visible; p++ {
+		i := vis[p]
 		s := m.sessions[i]
 		sn := s.Snapshot()
 		selected := i == m.sel
@@ -125,8 +147,8 @@ func (m *model) renderSidebar(w, h int) []string {
 			nameStyle = nameStyle.Bold(true)
 		}
 		num := " "
-		if i < 9 {
-			num = fmt.Sprintf("%d", i+1)
+		if p < 9 {
+			num = fmt.Sprintf("%d", p+1)
 		}
 		left := stMuted.Render(num) + " " + m.statusIcon(sn) + " " + nameStyle.Render(s.Name)
 		row1 := fit(left, w-len(age)-1) + stMuted.Render(age) + " "
@@ -140,6 +162,7 @@ func (m *model) renderSidebar(w, h int) []string {
 			detailStyle = stWaitText
 		}
 		row2 := fit("     "+stMuted.Render(s.Agent+" · ")+detailStyle.Render(detail), w)
+		row3 := fit("     "+infoLine(s, sn.info, w-6), w)
 
 		if selected {
 			bg := lipgloss.NewStyle().Background(colSelBg)
@@ -149,13 +172,61 @@ func (m *model) renderSidebar(w, h int) []string {
 			}
 			row1 = marker + bg.Render(fit(left, w-len(age)-2)+stMuted.Render(age)+" ")
 			row2 = marker + bg.Render(fit("    "+stMuted.Render(s.Agent+" · ")+detailStyle.Render(detail), w-1))
+			row3 = marker + bg.Render(fit("    "+infoLine(s, sn.info, w-6), w-1))
 		}
-		lines = append(lines, row1, row2)
+		lines = append(lines, row1, row2, row3)
 	}
 	for len(lines) < h {
 		lines = append(lines, strings.Repeat(" ", w))
 	}
 	return lines[:h]
+}
+
+// rowsPerSession is how many sidebar lines each session takes.
+const rowsPerSession = 3
+
+var stBranch = lipgloss.NewStyle().Foreground(lipgloss.Color("#BB9AF7"))
+
+// infoLine is a session's third sidebar line: the git branch, then the
+// Claude model and context size ("main* · opus 5.5 · 84k"). The branch is
+// shortened first so the model and context stay visible. Outside git and
+// Claude it's the folder.
+func infoLine(s *Session, in sessionInfo, w int) string {
+	var right []string
+	if in.model != "" {
+		right = append(right, shortModel(in.model))
+	}
+	if in.ctxTokens > 0 {
+		right = append(right, shortTokens(in.ctxTokens))
+	}
+	tail := strings.Join(right, " · ")
+	branch := gitLabel(in.git)
+	if branch == "" {
+		if tail != "" {
+			return stMuted.Render(tail)
+		}
+		return stMuted.Render(shortDir(s.Dir, w))
+	}
+	if tail == "" {
+		return stBranch.Render(clip(branch, max(w, 2)))
+	}
+	room := w - ansi.StringWidth(tail) - 3
+	if room < 4 {
+		room = 4
+	}
+	return stBranch.Render(clip(branch, room)) + stMuted.Render(" · "+tail)
+}
+
+// shortDir shows a folder in w cells, keeping its end ("…\src\api").
+func shortDir(dir string, w int) string {
+	if home, _ := os.UserHomeDir(); home != "" && len(dir) >= len(home) && strings.EqualFold(dir[:len(home)], home) {
+		dir = "~" + dir[len(home):]
+	}
+	r := []rune(dir)
+	if w > 1 && len(r) > w {
+		return "…" + string(r[len(r)-w+1:])
+	}
+	return dir
 }
 
 // renderMain returns the session header and terminal (or dialog) lines.
@@ -171,6 +242,13 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 	}
 
 	s := m.current()
+	if s == nil && len(m.sessions) > 0 {
+		lines = append(lines, "", "", fit(stMuted.Render("  No session selected. esc clears the filter."), w))
+		for len(lines) < h {
+			lines = append(lines, strings.Repeat(" ", w))
+		}
+		return lines[:h], nil
+	}
 	if s == nil {
 		lines = append(lines, "")
 		for _, l := range []string{
@@ -181,6 +259,7 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 			"  ↑/↓      pick a session; its terminal shows here",
 			"  enter    type into it; ctrl+q comes back to the list",
 			"  tab      jump to the next session that needs you",
+			"  / and @  filter the list; @ shows only sessions that need you",
 		} {
 			lines = append(lines, fit(stMuted.Render(l), w))
 		}
@@ -192,8 +271,16 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 
 	sn := s.Snapshot()
 	off := s.ScrollOffset()
+	// Short details first, so a long folder path is what gets cut off.
 	header := " " + m.statusIcon(sn) + " " + lipgloss.NewStyle().Bold(true).Render(s.Name) +
-		stMuted.Render("  "+s.Agent+"  "+s.Dir)
+		stMuted.Render("  "+s.Agent)
+	if b := gitLabel(sn.info.git); b != "" {
+		header += "  " + stBranch.Render(b)
+	}
+	if sn.info.model != "" {
+		header += stMuted.Render("  " + shortModel(sn.info.model) + " · " + shortTokens(sn.info.ctxTokens) + " context")
+	}
+	header += stMuted.Render("  " + s.Dir)
 	if !sn.running && sn.exitInfo != "" {
 		verb := "restart"
 		if a, ok := agentByName(s.Agent); ok && a.CanResume() {
@@ -371,7 +458,10 @@ func (m *model) renderFooter(w int) string {
 	case focusDialog:
 		help = " enter start · esc cancel"
 	default:
-		help = " ↑↓ select · enter open · n new · tab next needing you · r rename · K end · x remove · q quit"
+		help = " ↑↓ select · enter open · n new · tab next needing you · / filter · @ needs you · r rename · K end · x remove · q quit"
+		if m.filterInput != nil {
+			help = " type to filter · enter keep · esc clear"
+		}
 	}
 	return fit(stMuted.Render(help), w)
 }
@@ -409,6 +499,7 @@ func (m *model) View() tea.View {
 	// shift while dragging to select text.
 	v.MouseMode = tea.MouseModeCellMotion
 	v.Cursor = cur
+	v.ReportFocus = true // for "notify only when deckhand isn't focused"
 	v.WindowTitle = m.windowTitle()
 	return v
 }

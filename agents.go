@@ -225,6 +225,14 @@ const sampleConfig = `# deckhand agents: each [[agents]] entry shows up in the n
 # command = "claude"
 # args    = ["--model", "opus"]
 # type    = "claude"
+
+# Desktop notifications when a session needs you or a Claude session
+# finishes its turn. "unfocused" (the default) only notifies while
+# deckhand's window isn't focused; "always" notifies every time.
+#
+# [notifications]
+# enabled = true
+# when    = "unfocused"
 `
 
 // runConfig implements "deckhand config": print the config path, creating

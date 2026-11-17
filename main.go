@@ -20,6 +20,13 @@ func main() {
 			os.Exit(runHook(os.Args[2:]))
 		case "config":
 			os.Exit(runConfig())
+		case "notify-test":
+			if err := showToast("deckhand", "Notifications work. You'll see one like this when a session needs you.", "test"); err != nil {
+				fmt.Fprintln(os.Stderr, "deckhand: notification failed:", err)
+				os.Exit(1)
+			}
+			fmt.Println("Sent a test notification.")
+			return
 		case "version", "--version", "-v":
 			fmt.Println("deckhand", version)
 			return
@@ -29,6 +36,7 @@ func main() {
 Usage:
   deckhand            start the TUI
   deckhand config     print the config file path (creates a commented sample)
+  deckhand notify-test  show a test desktop notification
   deckhand version    print the version
   deckhand hook       (internal) receives Claude Code hook events
 
@@ -39,6 +47,11 @@ State is kept in %LOCALAPPDATA%\deckhand (override with DECKHAND_HOME).`)
 
 	agents, cfgErr := loadAgents()
 	allAgents = agents
+	mode, notifyErr := loadNotifyMode()
+	notifyMode = mode
+	if cfgErr == nil {
+		cfgErr = notifyErr
+	}
 	m := newModel()
 	if cfgErr != nil {
 		m.setFlash("Config error: " + cfgErr.Error())
