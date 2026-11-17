@@ -183,6 +183,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.prDone(msg)
 		return m, nil
 
+	case mergePlannedMsg:
+		return m, m.mergePlanned(msg)
+
+	case mergeDoneMsg:
+		m.mergeDone(msg)
+		return m, nil
+
 	case profileCommandsMsg:
 		m.profileLoading = false
 		m.profile = &msg
@@ -521,6 +528,8 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.openDiff()
 	case "p":
 		return m, m.startPR()
+	case "m":
+		return m, m.startMerge()
 	case "r":
 		if s := m.current(); s != nil {
 			ti := textinput.New()

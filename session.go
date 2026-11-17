@@ -94,6 +94,7 @@ type Session struct {
 	prs       prState     // the PR badge, polled in the background
 	prPolling atomic.Bool // a PR poll is running
 	prBusy    atomic.Bool // p is checking, pushing or opening
+	mergeBusy atomic.Bool // m is checking or merging (see mergeui.go)
 }
 
 func newSession(agent Agent, dir, name string) *Session {

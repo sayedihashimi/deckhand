@@ -407,7 +407,7 @@ func (c closeCheck) safe() bool { return c.merged && len(c.dirty) == 0 && !c.noB
 
 // checkMerged fetches the default branch and works out whether a worktree
 // session's branch is merged: its tip is in origin/<base> (a merge or
-// fast-forward), or GitHub has a merged PR whose head is the tip (a squash
+// fast-forward) or the local <base> (m's local merge), or GitHub has a merged PR whose head is the tip (a squash
 // or rebase merge, which git can't see). It also lists uncommitted files
 // and commits that aren't on the default branch.
 func checkMerged(repoRoot, wt, branch, base string) closeCheck {
@@ -428,6 +428,12 @@ func checkMerged(repoRoot, wt, branch, base string) closeCheck {
 	} else {
 		if _, err := gitRun(repoRoot, "merge-base", "--is-ancestor", tip, ref); err == nil {
 			c.merged, c.how = true, "in "+ref
+		} else if ref != base && refExists(repoRoot, "refs/heads/"+base) {
+			// m's local merge: in the local default branch, not pushed yet.
+			// The commits are kept there, so removing the branch loses nothing.
+			if _, err := gitRun(repoRoot, "merge-base", "--is-ancestor", tip, "refs/heads/"+base); err == nil {
+				c.merged, c.how = true, "in the local "+base+", not pushed"
+			}
 		}
 		if out, err := gitRun(repoRoot, "log", "--format=%h %s", "-n", "20", ref+".."+tip); err == nil {
 			c.commits = outLines(out)

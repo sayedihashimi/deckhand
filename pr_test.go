@@ -113,12 +113,13 @@ func githubClone(t *testing.T) (clone, origin string) {
 	return clone, origin
 }
 
-// ghFake stands in for gh: auth status, pr view (--json and --web) and pr
-// create, with one PR at most.
+// ghFake stands in for gh: auth status, pr view (--json and --web), pr
+// create and pr merge, with one PR at most.
 type ghFake struct {
-	calls  []string
-	pr     *prInfo
-	noAuth bool
+	calls    []string
+	pr       *prInfo
+	noAuth   bool
+	mergeErr error // pr merge fails with it
 }
 
 func (f *ghFake) run(dir string, args ...string) (string, error) {
@@ -142,6 +143,15 @@ func (f *ghFake) run(dir string, args ...string) (string, error) {
 		f.pr = &prInfo{Number: 1, State: "OPEN", URL: "https://github.com/example/api/pull/1",
 			Checks: []prCheck{{Typename: "CheckRun", Status: "QUEUED"}}}
 		return "Creating pull request\n" + f.pr.URL, nil
+	case strings.HasPrefix(call, "pr merge"):
+		if f.mergeErr != nil {
+			return "", f.mergeErr
+		}
+		if f.pr == nil {
+			return "", errors.New("gh pr: no pull requests found")
+		}
+		f.pr.State = "MERGED"
+		return "", nil
 	}
 	return "", errors.New("gh: unexpected call " + call)
 }

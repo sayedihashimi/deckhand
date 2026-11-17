@@ -5,7 +5,8 @@
 //	pr-<branch>.json      the branch's PR, as gh pr view --json prints it
 //	                      ("/" in the branch is "_")
 //
-// pr create writes pr-<branch>.json for --head, with passing checks. Every
+// pr create writes pr-<branch>.json for --head, with passing checks and
+// mergeable; pr merge <n> marks PR n merged. Every
 // call is appended to GHAPP_LOG as a JSON line: the arguments and folder.
 package main
 
@@ -56,15 +57,38 @@ func main() {
 		}
 		oid, _ := exec.Command("git", "rev-parse", head).Output()
 		url := fmt.Sprintf("https://github.com/example/api/pull/%d", n)
+		title := ""
+		if out, err := exec.Command("git", "log", "--reverse", "--format=%s", "origin/"+base+".."+head).Output(); err == nil {
+			title, _, _ = strings.Cut(strings.TrimSpace(string(out)), "\n")
+		}
 		pr, _ := json.Marshal(map[string]any{
 			"number": n, "state": "OPEN", "url": url, "isDraft": false,
 			"headRefOid":        strings.TrimSpace(string(oid)),
 			"statusCheckRollup": []map[string]string{{"__typename": "CheckRun", "status": "COMPLETED", "conclusion": "SUCCESS"}},
+			"title":             strings.TrimSpace(title), "baseRefName": base,
+			"mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
 		})
 		if err := os.WriteFile(prFile(dir, head), pr, 0o644); err != nil {
 			fail(err.Error())
 		}
 		fmt.Println(url)
+	case strings.HasPrefix(call, "pr merge") && len(args) > 2:
+		// Marks the PR merged. It doesn't touch git: with -R, real gh
+		// deletes only the branch on GitHub, which closing then does here.
+		files, _ := filepath.Glob(filepath.Join(dir, "pr-*.json"))
+		for _, f := range files {
+			data, _ := os.ReadFile(f)
+			var pr map[string]any
+			if json.Unmarshal(data, &pr) != nil || fmt.Sprint(pr["number"]) != args[2] {
+				continue
+			}
+			pr["state"] = "MERGED"
+			data, _ = json.Marshal(pr)
+			_ = os.WriteFile(f, data, 0o644)
+			fmt.Fprintf(os.Stderr, "✓ Squashed and merged pull request #%s\n", args[2])
+			return
+		}
+		fail("no pull requests found for " + args[2])
 	default:
 		fail("ghapp: unknown command " + call)
 	}
