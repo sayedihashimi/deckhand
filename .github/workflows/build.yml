@@ -16,6 +16,7 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       # Windows runners check out with CRLF by default, which makes gofmt flag every file.
       - name: Keep LF line endings
@@ -40,8 +41,15 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Vet (e2e tag)
+        run: go vet -tags e2e ./...
+
       - name: Build
         run: go build -o deckhand.exe .
 
-      - name: Test
+      - name: Unit tests
         run: go test ./...
+
+      # Drives deckhand in a real ConPTY; about a minute.
+      - name: E2E tests
+        run: go test -tags e2e -v
