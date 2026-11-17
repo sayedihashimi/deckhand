@@ -52,6 +52,11 @@ State is kept in %LOCALAPPDATA%\deckhand (override with DECKHAND_HOME).`)
 	if cfgErr == nil {
 		cfgErr = notifyErr
 	}
+	openCfg, openErr := loadOpenConfig()
+	openSettings = openCfg
+	if cfgErr == nil {
+		cfgErr = openErr
+	}
 	m := newModel()
 	if cfgErr != nil {
 		m.setFlash("Config error: " + cfgErr.Error())

@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -582,5 +583,70 @@ func TestE2ENotifyInfoFilter(t *testing.T) {
 
 	h.send("q")
 	h.send("y")
+	h.waitExit(10 * time.Second)
+}
+
+// TestE2EOpenFolder points [open] editor and terminal at a test app that
+// records its arguments, then presses o and t on a session that isn't
+// running. The folder has a space and an ampersand in its name.
+func TestE2EOpenFolder(t *testing.T) {
+	exe := buildDeckhand(t)
+	bin := t.TempDir()
+	app := filepath.Join(bin, "recordapp.exe")
+	if out, err := exec.Command("go", "build", "-o", app, "./testdata/recordapp").CombinedOutput(); err != nil {
+		t.Fatalf("build recordapp: %v\n%s", err, out)
+	}
+	dir := filepath.Join(t.TempDir(), "my proj & co")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	saved := fmt.Sprintf(`[{"id":"open-0001","name":"proj","agent":"pwsh","dir":%q,"created":"2026-01-01T00:00:00Z"}]`, dir)
+	if err := os.WriteFile(filepath.Join(home, "sessions.json"), []byte(saved), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	logDir := t.TempDir()
+	editorLog, termLog := filepath.Join(logDir, "editor.log"), filepath.Join(logDir, "terminal.log")
+	cfg := filepath.Join(t.TempDir(), "config.toml")
+	_ = os.WriteFile(cfg, []byte(fmt.Sprintf("[open]\neditor = '\"%s\" \"%s\" --editor \"{dir}\"'\nterminal = '\"%s\" \"%s\" -d \"{dir}\"'\n",
+		app, editorLog, app, termLog)), 0o644)
+
+	env := append(envWith(home, ""), "DECKHAND_CONFIG="+cfg)
+	h := startHarness(t, exe, env, t.TempDir())
+	h.waitFor("proj", 10*time.Second)
+	if strings.Contains(h.screen(), "Config error") {
+		t.Fatalf("config error; screen:\n%s", h.screen())
+	}
+
+	check := func(key, log, flag string) {
+		t.Helper()
+		h.send(key)
+		var rec struct {
+			Cwd  string   `json:"cwd"`
+			Args []string `json:"args"`
+		}
+		deadline := time.Now().Add(10 * time.Second)
+		var data []byte
+		for time.Now().Before(deadline) {
+			if data, _ = os.ReadFile(log); strings.HasSuffix(string(data), "\n") {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		if err := json.Unmarshal(data, &rec); err != nil {
+			t.Fatalf("%s: log %q: %v; screen:\n%s", key, data, err, h.screen())
+		}
+		if len(rec.Args) != 2 || rec.Args[0] != flag || rec.Args[1] != dir || rec.Cwd != dir {
+			t.Fatalf("%s launched with %+v, want [%s %s]", key, rec, flag, dir)
+		}
+	}
+	check("o", editorLog, "--editor")
+	check("t", termLog, "-d")
+	if strings.Contains(h.screen(), "Couldn't open") {
+		t.Fatalf("unexpected error; screen:\n%s", h.screen())
+	}
+	t.Logf("screen:\n%s", h.screen())
+
+	h.send("q")
 	h.waitExit(10 * time.Second)
 }

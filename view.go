@@ -497,7 +497,10 @@ func (m *model) renderFooter(w int) string {
 	case focusDialog:
 		help = " enter start · esc cancel"
 	default:
-		help = " ↑↓ select · enter open · n new · tab next needing you · / filter · @ needs you · r rename · K end · x remove · q quit"
+		help = " ↑↓ select · enter open · n new · tab next · / filter · @ needs you · o editor · O explorer · t terminal · r rename · K end · x remove · q quit"
+		if ansi.StringWidth(help) > w {
+			help = " ↑↓ select · enter open · n new · tab next · / filter · @ needs you · o/O/t open · r rename · K end · x remove · q quit"
+		}
 		if m.filterInput != nil {
 			help = " type to filter · enter keep · esc clear"
 		}
