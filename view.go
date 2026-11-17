@@ -260,10 +260,11 @@ func branchLabel(sn snapshot) (mark, repo, branch string) {
 	return mark, repo, branch
 }
 
-// infoLine is a session's third sidebar line: the git branch, then the
-// Claude model and context size ("main* · opus 5.5 · 84k"). The branch is
-// shortened first so the model and context stay visible. Outside git and
-// Claude it's the folder.
+// infoLine is a session's third sidebar line: the git branch and its PR,
+// then the Claude model and context size ("main* · opus 5.5 · 84k",
+// "⎇ quiet-otter↑1 #12✓ · 64k"). The branch is shortened first so the model
+// and context stay visible; with a PR badge, the model and then the
+// context go first instead. Outside git and Claude it's the folder.
 func infoLine(s *Session, sn snapshot, w int) string {
 	in := sn.info
 	var right []string
@@ -281,17 +282,25 @@ func infoLine(s *Session, sn snapshot, w int) string {
 		}
 		return stMuted.Render(shortDir(s.Dir, w))
 	}
+	badge := ""
+	if sn.pr != nil {
+		badge = " " + renderPRBadge(*sn.pr)
+	}
 	room := func() int {
+		r := w - ansi.StringWidth(badge)
 		if tail == "" {
-			return max(w, 2)
+			return max(r, 2)
 		}
-		return max(w-ansi.StringWidth(tail)-3, 4)
+		return max(r-ansi.StringWidth(tail)-3, 4)
 	}
 	// With the code repo's name too, the model goes first when there's
 	// little room, then the branch is cut, then the repo name.
 	head := ansi.StringWidth(mark + repo)
-	if repo != "" && in.model != "" && room()-head < 8 {
+	if in.model != "" && (repo != "" && room()-head < 8 || badge != "" && room()-head < ansi.StringWidth(branch)) {
 		tail = strings.TrimPrefix(strings.TrimPrefix(tail, shortModel(in.model)), " · ")
+	}
+	if badge != "" && tail != "" && room()-head < ansi.StringWidth(branch) {
+		tail = ""
 	}
 	if head > room()-4 {
 		if n := room() - 4 - ansi.StringWidth(mark); n >= 2 {
@@ -301,7 +310,7 @@ func infoLine(s *Session, sn snapshot, w int) string {
 		}
 		head = ansi.StringWidth(mark + repo)
 	}
-	line := stBranch.Render(mark) + stMuted.Render(repo) + stBranch.Render(clip(branch, max(room()-head, 2)))
+	line := stBranch.Render(mark) + stMuted.Render(repo) + stBranch.Render(clip(branch, max(room()-head, 2))) + badge
 	if tail == "" {
 		return line
 	}
@@ -395,6 +404,9 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 	}
 	if mark, repo, b := branchLabel(sn); b != "" {
 		header += "  " + stBranch.Render(mark) + stMuted.Render(repo) + stBranch.Render(b)
+		if sn.pr != nil {
+			header += "  " + renderPRLabel(*sn.pr)
+		}
 	}
 	if sn.info.model != "" {
 		header += stMuted.Render("  " + shortModel(sn.info.model) + " · " + shortTokens(sn.info.ctxTokens) + " context")

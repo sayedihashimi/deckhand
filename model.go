@@ -91,6 +91,7 @@ type model struct {
 type confirmPrompt struct {
 	text   string
 	action func(m *model) tea.Cmd
+	cancel func(m *model) // when it's answered with anything but y; may be nil
 }
 
 func newModel() *model {
@@ -175,6 +176,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.closeDone(msg)
 		return m, nil
 
+	case prPlannedMsg:
+		return m, m.prPlanned(msg)
+
+	case prDoneMsg:
+		m.prDone(msg)
+		return m, nil
+
 	case profileCommandsMsg:
 		m.profileLoading = false
 		m.profile = &msg
@@ -212,6 +220,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					go sendNotice(s, *n)
 				}
 				s.MaybePoll(now, i == m.sel)
+				s.MaybePollPR(now)
 				s.MaybeSaveScreen(now)
 			}
 		}
@@ -316,6 +325,9 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.confirm = nil
 		if key == "y" || key == "Y" {
 			return m, c.action(m)
+		}
+		if c.cancel != nil {
+			c.cancel(m)
 		}
 		return m, nil
 	}
@@ -507,6 +519,8 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.openConfigScreen()
 	case "d":
 		return m, m.openDiff()
+	case "p":
+		return m, m.startPR()
 	case "r":
 		if s := m.current(); s != nil {
 			ti := textinput.New()

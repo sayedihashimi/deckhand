@@ -89,6 +89,11 @@ type Session struct {
 	preparing atomic.Bool // creating the worktree or running the setup
 	prepLog   []string    // what creating the worktree and the setup printed
 	closing   atomic.Bool // x is checking or removing its worktree
+
+	// Its pull request (see prui.go).
+	prs       prState     // the PR badge, polled in the background
+	prPolling atomic.Bool // a PR poll is running
+	prBusy    atomic.Bool // p is checking, pushing or opening
 }
 
 func newSession(agent Agent, dir, name string) *Session {
@@ -345,12 +350,17 @@ type snapshot struct {
 	reply    []string // the reply that ended the turn, once it's been read
 	worktree bool     // it has its own git worktree
 	repoName string   // the code repo's name, when it isn't the start folder's
+	pr       *prInfo  // the branch's pull request, when it has one
 }
 
 func (s *Session) Snapshot() snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	sn := snapshot{s.status, s.detail, s.since, s.unread, s.running, s.title, s.exitInfo, s.info, s.summary, nil, s.Worktree != "", ""}
+	sn := snapshot{s.status, s.detail, s.since, s.unread, s.running, s.title, s.exitInfo, s.info, s.summary, nil, s.Worktree != "", "", nil}
+	if s.prs.pr != nil && s.prs.branch == s.prBranchLocked() {
+		pr := *s.prs.pr
+		sn.pr = &pr
+	}
 	if s.separateRepoLocked() {
 		sn.repoName = s.repoNameLocked()
 	}

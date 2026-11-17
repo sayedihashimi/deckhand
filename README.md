@@ -46,6 +46,7 @@ The third line under each session shows the git branch, then for Claude the mode
 ```
 
 - **Branch:** `*` means uncommitted changes (untracked files count), `↑2↓1` is commits ahead of and behind the upstream (for a worktree session, the branch it started from). `⎇` marks a worktree session. Outside a git repo the line shows the folder.
+- **Pull request:** after the branch, its GitHub PR's number and state: `#12✓` (checks passing), `#12✗` (failing), `#12…` (running), `#12` (no checks), `#12 draft`, `#12 merged` or `#12 closed`. When the line is short of room, the model goes first, then the context. See [Pull requests](#pull-requests).
 - **Model and context:** read from the end of the Claude transcript. The number is the input tokens of the latest reply, including cached ones, which is how much context the next turn starts with. deckhand can't tell the model's context window from the transcript, so it shows tokens rather than a percentage.
 - Details refresh every 3 s for running and selected sessions and every 30 s for the rest, in the background. The session header shows them in full.
 
@@ -83,6 +84,7 @@ Press `?` in the session list, or `F1` anywhere (also inside a session), for a s
 | v | For an exited Claude session, switch between its last output and the conversation from its transcript (see [Output after a restart](#output-after-a-restart)) |
 | shift+PgUp / shift+PgDn | Scroll an exited session's output a page at a time |
 | d | Preview the session's changes as a diff against the default branch (see [Diff preview](#diff-preview)) |
+| p | Push the session's branch and open a pull request for it, or open the one it has (see [Pull requests](#pull-requests)) |
 | n | New session (see below) |
 | W | Start a new worktree session with the same agent and repo, right below the selected one (see [Worktree sessions](#worktree-sessions)) |
 | o | Open the session's folder (its worktree, if it has one) in your editor (see [Opening a session's folder](#opening-a-sessions-folder)) |
@@ -212,7 +214,7 @@ You can run Claude from a folder that isn't a git repo, such as your notes, whil
 
 **Showing**
 
-- The third line under the session starts with `⎇`, and with the code repo's name when it isn't the session's folder: `⎇ cli:quiet-otter↑1 · 64k`. Ahead/behind is counted against the branch it started from, not an upstream.
+- The third line under the session starts with `⎇`, and with the code repo's name when it isn't the session's folder: `⎇ cli:quiet-otter↑1 · 64k`. Ahead/behind is counted against the branch it started from, not an upstream. Once the branch has a pull request (`p`, see [Pull requests](#pull-requests)), its badge follows the branch: `⎇ cli:quiet-otter↑1 #12✓`.
 - `O` opens the session's folder; `o` (editor) and `t` (terminal) open the worktree.
 - The repo, worktree, branch, base branch and base commit are saved with the session, so resume and the restored output keep working.
 
@@ -232,6 +234,17 @@ setup = ""            # run in each new worktree before the agent starts, e.g. "
 ```
 
 The setup command runs in PowerShell (`pwsh`, else Windows PowerShell, else `cmd /c`) in the worktree's folder. The config screen doesn't edit `[worktree]` yet, but keeps it when it saves.
+
+## Pull requests
+
+Press `p` in the session list to push the selected session's branch to `origin` and open a GitHub pull request for it, or to open the PR it already has. It needs the [GitHub CLI](https://cli.github.com) (`gh`), signed in, and an `origin` on GitHub (github.com, a `*.ghe.com` host, or `$GH_HOST`).
+
+- **Which branch:** a worktree session's branch, in its worktree (never a notes start folder). A plain session uses the branch its folder (or code repo) is on. deckhand never pushes the default branch: on it, `p` says so and does nothing. It also refuses a detached HEAD, and a worktree that has been switched off the session's branch.
+- **No PR yet:** deckhand asks first, showing the branch, the remote and the title: ``Push quiet-otter to origin and open a PR into main, "Retry failed uploads"? y/n``. The title (and body) is the first commit's, as `gh pr create --fill-first` uses. On `y` it runs `git push -u origin <branch>`, then `gh pr create --fill-first --base <default> --head <branch>`, and opens the PR in the browser. Uncommitted files aren't pushed; the question says how many there are. With no commits that aren't on the default branch, there's nothing to push and it says so.
+- **A PR already:** it's opened in the browser. If the branch has commits that origin doesn't, deckhand asks to push them first.
+- **A rejected push** (origin's branch has commits you don't): git's reason shows, and deckhand never retries with `--force`.
+- **Messages** say when `gh` isn't installed, isn't signed in (`gh auth status`), or the repo has no GitHub remote.
+- **The badge:** the sidebar's third line shows the PR's number and state (see [Session details](#session-details)), and the session header shows it in words (`PR #12 open · checks passing`). It's polled with `gh pr view --json` in the background, once a minute and right after `p`, only for sessions on a branch other than the default branch. Without `gh` or a GitHub remote, gh isn't run.
 
 ## Hiding the session list
 
