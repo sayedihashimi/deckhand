@@ -20,9 +20,9 @@ const configHeader = `# deckhand config. Written by deckhand's config screen (pr
 
 `
 
-// reloadConfig reads the config file and applies it: agents, notifications
-// and [open]. Settings that fail to load fall back to their defaults; the
-// first error is returned.
+// reloadConfig reads the config file and applies it: agents, notifications,
+// [open] and [list]. Settings that fail to load fall back to their defaults;
+// the first error is returned.
 func reloadConfig() error {
 	agents, err := loadAgents()
 	allAgents = agents
@@ -30,7 +30,9 @@ func reloadConfig() error {
 	notifyMode = mode
 	openCfg, openErr := loadOpenConfig()
 	openSettings = openCfg
-	for _, e := range []error{err, notifyErr, openErr} {
+	listCfg, listErr := loadListConfig()
+	listOpts = listCfg
+	for _, e := range []error{err, notifyErr, openErr, listErr} {
 		if e != nil {
 			return e
 		}
@@ -43,6 +45,7 @@ type configFile struct {
 	Agents        []agentConfig `toml:"agents"`
 	Notifications notifyConfig  `toml:"notifications"`
 	Open          openConfig    `toml:"open"`
+	List          listConfig    `toml:"list"`
 }
 
 // decodeConfig reads the edited settings and, separately, every table in
@@ -69,6 +72,7 @@ func encodeConfig(cfg configFile, raw map[string]any) (string, error) {
 	delete(out, "agents")
 	delete(out, "notifications")
 	delete(out, "open")
+	delete(out, "list")
 	if len(cfg.Agents) > 0 {
 		out["agents"] = cfg.Agents
 	}
@@ -77,6 +81,9 @@ func encodeConfig(cfg configFile, raw map[string]any) (string, error) {
 	}
 	if cfg.Open != (openConfig{}) {
 		out["open"] = cfg.Open
+	}
+	if cfg.List.ToggleKey != "" || cfg.List.StatusLine != nil {
+		out["list"] = cfg.List
 	}
 	var b strings.Builder
 	b.WriteString(configHeader)
@@ -96,7 +103,10 @@ func checkConfigText(text string) error {
 	if _, err := parseNotifyMode(text); err != nil {
 		return err
 	}
-	_, err := parseOpenConfig(text)
+	if _, err := parseOpenConfig(text); err != nil {
+		return err
+	}
+	_, err := parseListConfig(text)
 	return err
 }
 

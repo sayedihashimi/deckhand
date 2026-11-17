@@ -904,3 +904,141 @@ func (h *harness) waitGone(text string, timeout time.Duration) {
 	}
 	h.t.Fatalf("timed out waiting for %q to go; screen:\n%s", text, h.screen())
 }
+
+// TestE2EToggleList hides and shows the session list with ctrl+\, from inside a
+// session and from the list, and checks that ctrl+q shows a hidden list.
+func TestE2EToggleList(t *testing.T) {
+	exe := buildDeckhand(t)
+	pwsh, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh not found")
+	}
+	path := filepath.Dir(pwsh) + ";" + os.Getenv("SystemRoot") + `\System32`
+	home := t.TempDir()
+	h := startHarness(t, exe, envWith(home, path), t.TempDir()) // 140×40
+	const toggle = "\x1c"                                       // ctrl+\
+	topRow := func() string { return strings.SplitN(h.screen(), "\n", 2)[0] }
+	waitTop := func(want bool, text string) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			if strings.Contains(topRow(), text) == want {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		t.Fatalf("top row: want contains %q = %v; screen:\n%s", text, want, h.screen())
+	}
+	// mode con prints the console size ("Columns:   107").
+	waitColumns := func(n int) {
+		t.Helper()
+		re := regexp.MustCompile(fmt.Sprintf(`Columns:\s+%d\b`, n))
+		deadline := time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadline) {
+			if re.MatchString(h.screen()) {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		t.Fatalf("want %d columns; screen:\n%s", n, h.screen())
+	}
+	hidden := func() bool {
+		data, _ := os.ReadFile(filepath.Join(home, "prefs.json"))
+		return strings.Contains(string(data), `"list_hidden": true`)
+	}
+
+	h.waitFor("No sessions yet", 10*time.Second)
+	h.send("n")
+	h.waitFor("pwsh", 5*time.Second)
+	h.send("\r")
+	h.waitFor("PS ", 15*time.Second)
+	time.Sleep(time.Second) // let the prompt settle so no keys are lost
+	h.send("mode con\r")
+	waitColumns(107) // 140 - 32 (list) - 1 (border)
+
+	// ctrl+\ inside the session hides the list; the terminal gets every column.
+	h.send(toggle)
+	waitTop(false, "deckhand")
+	waitTop(true, `ctrl+\ list`) // the status line
+	if strings.Contains(topRow(), "│") {
+		t.Fatalf("the list's border should be gone; screen:\n%s", h.screen())
+	}
+	h.waitFor(`ctrl+\ show list`, 3*time.Second)
+	h.send("cls\r")
+	h.send("mode con\r")
+	waitColumns(140)
+	if !hidden() {
+		t.Error("prefs.json should remember the hidden list")
+	}
+
+	// ctrl+\ again shows it; the agent never saw the key.
+	h.send(toggle)
+	waitTop(true, "deckhand")
+	h.waitFor(`ctrl+\ hide list`, 3*time.Second)
+
+	// From the list: ctrl+\ hides it, ctrl+q shows it again.
+	h.send("\x11")
+	h.waitFor("n new", 5*time.Second)
+	h.send(toggle)
+	waitTop(false, "deckhand")
+	h.send("\x11")
+	waitTop(true, "deckhand")
+	if hidden() {
+		t.Error("prefs.json should remember the shown list")
+	}
+
+	// ctrl+q inside a session while hidden: back to a visible list.
+	h.send(toggle)
+	waitTop(false, "deckhand")
+	h.send("\r")
+	h.waitFor("ctrl+q back to the list", 5*time.Second)
+	h.send("\x11")
+	waitTop(true, "deckhand")
+	h.waitFor("n new", 5*time.Second)
+	t.Logf("screen:\n%s", h.screen())
+
+	h.send("q")
+	h.waitFor("Quit and end 1 running", 5*time.Second)
+	h.send("y")
+	h.waitExit(10 * time.Second)
+}
+
+// TestE2EToggleListF2 sets [list] toggle_key = "f2" and checks that F2 (a
+// function key, ESC O Q through the pseudo console) hides and shows the list,
+// and that the default key then does nothing.
+func TestE2EToggleListF2(t *testing.T) {
+	exe := buildDeckhand(t)
+	home := t.TempDir()
+	cfg := filepath.Join(t.TempDir(), "config.toml")
+	_ = os.WriteFile(cfg, []byte("[list]\ntoggle_key = \"f2\"\n"), 0o644)
+	env := append(envWith(home, ""), "DECKHAND_CONFIG="+cfg)
+	h := startHarness(t, exe, env, t.TempDir())
+	topRow := func() string { return strings.SplitN(h.screen(), "\n", 2)[0] }
+	waitTop := func(want bool) {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			if strings.Contains(topRow(), "deckhand") == want && (want || strings.Contains(topRow(), "F2 list")) {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		t.Fatalf("list shown should be %v; screen:\n%s", want, h.screen())
+	}
+
+	h.waitFor("No sessions yet", 10*time.Second)
+	if strings.Contains(h.screen(), "Config error") {
+		t.Fatalf("config error; screen:\n%s", h.screen())
+	}
+	h.waitFor("F2 list", 3*time.Second) // footer
+	h.send("\x1c")                      // ctrl+\ isn't the key now
+	time.Sleep(300 * time.Millisecond)
+	waitTop(true)
+	h.send("\x1bOQ") // F2
+	waitTop(false)   // and the status line shows "F2 list"
+	h.send("\x1bOQ")
+	waitTop(true)
+
+	h.send("q")
+	h.waitExit(10 * time.Second)
+}

@@ -11,7 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// The config screen ("c"): agents, notifications and [open], edited in the
+// The config screen ("c"): agents, notifications, [list] and [open], edited in the
 // main area and saved to config.toml. It works on a copy; nothing changes
 // until ctrl+s, and esc leaves without saving.
 
@@ -23,6 +23,8 @@ const (
 	rowNotifyEnabled
 	rowNotifyWhen
 	rowNotifyTest
+	rowListKey
+	rowListStatus
 	rowEditor
 	rowEditorPreset
 	rowTerminal
@@ -78,6 +80,8 @@ type configScreen struct {
 	agents     []agentConfig
 	notifyOn   bool
 	notifyWhen string
+	listKey    textinput.Model // [list] toggle_key
+	listStatus bool            // [list] status_line
 	editor     textinput.Model
 	terminal   textinput.Model
 
@@ -95,6 +99,7 @@ type configScreen struct {
 
 func newConfigScreen(width int) *configScreen {
 	c := &configScreen{path: configPath(), raw: map[string]any{}}
+	c.listKey = newCfgInput(`default: ` + keyLabel(defaultToggleKey))
 	c.editor = newCfgInput(`e.g. code "{dir}"`)
 	c.terminal = newCfgInput(`default: ` + defaultTerminal)
 	text := ""
@@ -122,6 +127,8 @@ func newConfigScreen(width int) *configScreen {
 	if c.notifyWhen != notifyAlways {
 		c.notifyWhen = notifyUnfocused
 	}
+	c.listKey.SetValue(cfg.List.ToggleKey)
+	c.listStatus = cfg.List.StatusLine == nil || *cfg.List.StatusLine
 	c.editor.SetValue(cfg.Open.Editor)
 	c.terminal.SetValue(cfg.Open.Terminal)
 	c.saved, _ = c.encode()
@@ -141,6 +148,7 @@ func (c *configScreen) setWidth(w int) {
 	iw := min(max(w-20, 10), 80)
 	c.editor.SetWidth(iw)
 	c.terminal.SetWidth(iw)
+	c.listKey.SetWidth(min(iw, 24))
 	if c.form != nil {
 		c.form.setWidth(iw)
 	}
@@ -152,9 +160,15 @@ func (c *configScreen) setWidth(w int) {
 // settings is the screen's state as a config file.
 func (c *configScreen) settings() configFile {
 	on := c.notifyOn
+	status := c.listStatus
+	listKey := strings.TrimSpace(c.listKey.Value())
+	if k, err := checkToggleKey(listKey); err == nil {
+		listKey = k
+	}
 	return configFile{
 		Agents:        c.agents,
 		Notifications: notifyConfig{Enabled: &on, When: c.notifyWhen},
+		List:          listConfig{ToggleKey: listKey, StatusLine: &status},
 		Open: openConfig{
 			Editor:   strings.TrimSpace(c.editor.Value()),
 			Terminal: strings.TrimSpace(c.terminal.Value()),
@@ -176,7 +190,7 @@ func (c *configScreen) rows() []cfgRow {
 		rows = append(rows, cfgRow{rowAgent, i})
 	}
 	for _, k := range []cfgRowKind{rowAddAgent, rowNotifyEnabled, rowNotifyWhen, rowNotifyTest,
-		rowEditor, rowEditorPreset, rowTerminal, rowTerminalPreset, rowTryOpen, rowSave} {
+		rowListKey, rowListStatus, rowEditor, rowEditorPreset, rowTerminal, rowTerminalPreset, rowTryOpen, rowSave} {
 		rows = append(rows, cfgRow{kind: k})
 	}
 	return rows
@@ -193,7 +207,10 @@ func (c *configScreen) focusRow(i int) tea.Cmd {
 	c.row = i
 	c.editor.Blur()
 	c.terminal.Blur()
+	c.listKey.Blur()
 	switch c.current().kind {
+	case rowListKey:
+		return c.listKey.Focus()
 	case rowEditor:
 		return c.editor.Focus()
 	case rowTerminal:
@@ -222,6 +239,10 @@ func (c *configScreen) validate() error {
 			return fmt.Errorf("two agents are named %q", a.Name)
 		}
 		seen[a.Name] = true
+	}
+	if _, err := checkToggleKey(c.listKey.Value()); err != nil {
+		c.row = c.rowOf(rowListKey)
+		return fmt.Errorf("toggle key %w", err)
 	}
 	for _, f := range []struct {
 		kind cfgRowKind
@@ -357,6 +378,17 @@ func (m *model) configKey(k tea.KeyPressMsg) tea.Cmd {
 				}
 				return configStatusMsg{"Sent a test notification. If it didn't appear, check Windows' notification settings and Do Not Disturb.", false}
 			}
+		}
+	case rowListKey:
+		if key == "enter" {
+			return c.move(1)
+		}
+		var cmd tea.Cmd
+		c.listKey, cmd = c.listKey.Update(k)
+		return cmd
+	case rowListStatus:
+		if isToggleKey(key) {
+			c.listStatus = !c.listStatus
 		}
 	case rowEditor, rowTerminal:
 		if key == "enter" {
@@ -834,6 +866,8 @@ func (c *configScreen) updateInputs(msg tea.Msg) tea.Cmd {
 		in = c.form.input(c.form.field)
 	default:
 		switch c.current().kind {
+		case rowListKey:
+			in = &c.listKey
 		case rowEditor:
 			in = &c.editor
 		case rowTerminal:

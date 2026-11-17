@@ -341,3 +341,54 @@ func TestE2EWTConfigScreen(t *testing.T) {
 	h.wtType("q")
 	h.waitExit(10 * time.Second)
 }
+
+// The toggle key (ctrl+\ by default) hides and shows the session list when
+// Windows Terminal sends it as win32-input-mode records, in a session and in
+// the list.
+func TestE2EWTToggleList(t *testing.T) {
+	exe := buildDeckhand(t)
+	pwsh, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh not found")
+	}
+	path := filepath.Dir(pwsh) + ";" + os.Getenv("SystemRoot") + `\System32`
+	h := startHarness(t, exe, wtEnv(t.TempDir(), path), t.TempDir())
+	res, _, _ := procVkKeyScan.Call(uintptr('\\'))
+	vkBackslash := int(res & 0xff)
+	toggle := func() { h.wtKey(vkBackslash, 0x1c, wtCtrl) }
+	waitTop := func(shown bool) {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			top := strings.SplitN(h.screen(), "\n", 2)[0]
+			if strings.Contains(top, "deckhand") == shown && (shown || strings.Contains(top, `ctrl+\ list`)) {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		t.Fatalf("list shown should be %v; screen:\n%s", shown, h.screen())
+	}
+
+	h.waitFor("No sessions yet", 10*time.Second)
+	h.wtType("n")
+	h.waitFor("Start in", 5*time.Second)
+	h.wtKey(vkReturn, '\r', 0)
+	h.waitFor("PS ", 15*time.Second)
+
+	toggle() // in the session
+	waitTop(false)
+	h.waitFor(`ctrl+\ show list`, 3*time.Second)
+	toggle()
+	waitTop(true)
+
+	h.wtCtrlQ()
+	h.waitFor("n new", 3*time.Second)
+	toggle() // in the list
+	waitTop(false)
+	h.wtCtrlQ() // ctrl+q shows it again
+	waitTop(true)
+
+	h.wtType("q")
+	h.wtType("y")
+	h.waitExit(10 * time.Second)
+}

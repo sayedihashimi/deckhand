@@ -23,7 +23,8 @@ type helpEntry struct {
 	desc  string   // what it does
 	match []string // the key strings it handles, for the test
 	// footer is the entry's hint in the footer ("n new"); empty leaves it
-	// out. short replaces it when the full footer doesn't fit.
+	// out. short replaces it when the full footer doesn't fit; "-" leaves
+	// it out of the short footer.
 	footer, short string
 }
 
@@ -48,20 +49,24 @@ var helpGroups = []helpGroup{
 		{keys: "n", desc: "new session", match: []string{"n"}, footer: "n new"},
 		{keys: "1–9", desc: "jump into session N", match: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9"}},
 		{keys: "tab", desc: "next one that needs you", match: []string{"tab"}, footer: "tab next"},
-		{keys: "/", desc: "filter the list as you type", match: []string{"/"}, footer: "/ filter"},
-		{keys: "@", desc: "only sessions that need you", match: []string{"@"}, footer: "@ needs you"},
+		{keys: "/", desc: "filter the list as you type", match: []string{"/"}, footer: "/ filter", short: "/@ filter"},
+		{keys: "@", desc: "only sessions that need you", match: []string{"@"}, footer: "@ needs you", short: "-"},
 		{keys: "esc", desc: "clear the filter", match: []string{"esc"}},
 		{keys: "o O t", desc: "editor / Explorer / terminal", match: []string{"o", "O", "t"}, footer: "o editor · O explorer · t terminal", short: "o/O/t open"},
 		{keys: "r", desc: "rename", match: []string{"r"}, footer: "r rename"},
 		{keys: "c", desc: "settings (config screen)", match: []string{"c"}, footer: "c config"},
 		{keys: "K", desc: "end it (it stays in the list)", match: []string{"K"}},
 		{keys: "x del", desc: "end and remove from the list", match: []string{"x", "delete"}},
+		// The toggle key is configurable ([list] toggle_key); withToggleKey
+		// shows the configured one in place of ctrl+\.
+		{keys: `ctrl+\`, desc: "hide / show this list", match: []string{defaultToggleKey, "ctrl+q", "ctrl+]"}, footer: `ctrl+\ list`},
 		{keys: "? F1", desc: "this help", match: []string{"?", "f1"}, footer: "? help"},
 		{keys: "q", desc: "quit; Claude sessions resume", match: []string{"q", "ctrl+c"}, footer: "q quit"},
 	}},
 	{helpTerminal, []helpEntry{
 		{keys: "ctrl+q ctrl+]", desc: "back to the list", match: []string{"ctrl+q", "ctrl+]"}, footer: "ctrl+q back to the list"},
 		{keys: "shift+PgUp/Dn", desc: "scroll back a page", match: []string{"shift+pgup", "shift+pgdown"}},
+		{keys: `ctrl+\`, desc: "hide / show the list", match: []string{defaultToggleKey}, footer: `ctrl+\ hide list`},
 		{keys: "F1", desc: "this help", match: []string{"f1"}, footer: "F1 help"},
 	}},
 	{helpMouse, []helpEntry{
@@ -96,11 +101,17 @@ func footerHints(title string, short bool) string {
 		if short && e.short != "" {
 			h = e.short
 		}
-		if h != "" {
-			parts = append(parts, h)
+		if h != "" && h != "-" {
+			parts = append(parts, withToggleKey(h))
 		}
 	}
 	return " " + strings.Join(parts, " · ")
+}
+
+// withToggleKey puts the configured toggle key in place of the default
+// (ctrl+\) in a help text.
+func withToggleKey(s string) string {
+	return strings.ReplaceAll(s, keyLabel(defaultToggleKey), keyLabel(listOpts.toggleKey))
 }
 
 // helpOverlay is the open help panel.
@@ -176,7 +187,7 @@ func helpColumn(groups []helpGroup, width int) []string {
 			for j, l := range strings.Split(ansi.Wrap(e.desc, descW, ""), "\n") {
 				k := ""
 				if j == 0 {
-					k = e.keys
+					k = withToggleKey(e.keys)
 				}
 				out = append(out, fit(stHelpKey.Render(fit(k, keyW))+l, width))
 			}

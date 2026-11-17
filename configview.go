@@ -165,6 +165,20 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 	add(" "+cfgLabel(cur.kind == rowNotifyTest, "", lw)+button("Send a test notification", cur.kind == rowNotifyTest), true)
 
 	add("", false)
+	add(" "+stSection.Render("Session list")+stMuted.Render("  one key hides and shows it, in the list and inside a session"), false)
+	keyLine := " " + cfgLabel(cur.kind == rowListKey, "Hide key", lw) + c.listKey.View()
+	if _, err := checkToggleKey(c.listKey.Value()); err != nil {
+		keyLine += "  " + stErrText.Render("✗ "+err.Error())
+	}
+	add(keyLine, true)
+	status := 1
+	if c.listStatus {
+		status = 0
+	}
+	add(" "+cfgLabel(cur.kind == rowListStatus, "Status", lw)+chips([]string{"on", "off"}, status, cur.kind == rowListStatus)+
+		stMuted.Render(`  "n need you" in the header while the list is hidden`), true)
+
+	add("", false)
 	add(" "+stSection.Render("Open")+stMuted.Render("  what o (editor) and t (terminal) run; {dir} is the session's folder"), false)
 	for _, f := range []struct {
 		row, preset cfgRowKind
@@ -219,6 +233,10 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 		hint = "←/→ or enter change"
 	case rowNotifyTest:
 		hint = "enter send one now"
+	case rowListKey:
+		hint = `a key name, e.g. ctrl+\, f2 or f3; empty: ` + keyLabel(defaultToggleKey)
+	case rowListStatus:
+		hint = "←/→ or enter change"
 	case rowEditor:
 		hint = "empty: VS Code (code) if it's on PATH, else Explorer"
 	case rowTerminal:

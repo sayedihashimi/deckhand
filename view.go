@@ -408,7 +408,7 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 	var cur *tea.Cursor
 	if m.focus == focusTerminal && sn.running && !emu.CursorHidden() {
 		p := emu.CursorPosition()
-		cur = tea.NewCursor(m.sidebarWidth()+1+p.X, 1+p.Y)
+		cur = tea.NewCursor(m.mainLeft()+p.X, 1+p.Y)
 	}
 	return lines, cur
 }
@@ -524,6 +524,9 @@ func (m *model) renderFooter(w int) string {
 	switch m.focus {
 	case focusTerminal:
 		help = footerHints(helpTerminal, false)
+		if m.listHidden {
+			help = strings.Replace(help, " hide list", " show list", 1)
+		}
 	case focusDialog:
 		help = " enter start · esc cancel · F1 help"
 	case focusConfig:
@@ -556,11 +559,19 @@ func (m *model) View() tea.View {
 		return v
 	}
 	sw := m.sidebarWidth()
-	mw := m.width - sw - 1
+	mw := m.width - m.mainLeft()
 	bodyH := m.height - 1
 
-	side := m.renderSidebar(sw, bodyH)
+	var side []string
+	if !m.listHidden {
+		side = m.renderSidebar(sw, bodyH)
+	}
 	main, cur := m.renderMain(mw, bodyH)
+	if m.listHidden && listOpts.statusLine {
+		// The status line goes at the end of the session header row.
+		st := m.statusLine()
+		main[0] = fit(main[0], mw-ansi.StringWidth(st)-2) + "\x1b[0m  " + st
+	}
 	if m.help != nil {
 		main, cur = m.overlayHelp(main, mw, bodyH), nil
 	}
@@ -568,9 +579,11 @@ func (m *model) View() tea.View {
 
 	var b strings.Builder
 	for i := 0; i < bodyH; i++ {
-		b.WriteString(side[i])
-		b.WriteString("\x1b[0m")
-		b.WriteString(sep)
+		if side != nil {
+			b.WriteString(side[i])
+			b.WriteString("\x1b[0m")
+			b.WriteString(sep)
+		}
 		b.WriteString(main[i])
 		b.WriteString("\n")
 	}

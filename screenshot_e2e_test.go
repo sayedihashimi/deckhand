@@ -22,7 +22,8 @@ import (
 //
 //	$env:DECKHAND_SCREENSHOT="shot.png"; go test -tags e2e -run TestE2EScreenshot -v
 //
-// DECKHAND_SCREENSHOT_HELP also saves the help overlay to that PNG.
+// DECKHAND_SCREENSHOT_HELP also saves the help overlay to that PNG, and
+// DECKHAND_SCREENSHOT_HIDDEN the scene with the session list hidden.
 func TestE2EScreenshot(t *testing.T) {
 	out := os.Getenv("DECKHAND_SCREENSHOT")
 	if out == "" {
@@ -197,6 +198,24 @@ editor = 'code "{dir}"'
 		}
 		t.Logf("wrote %s", helpOut)
 		h.send("\x1b")
+	}
+
+	// Optionally the scene with the list hidden (ctrl+\): the selected
+	// session gets the full width and the header ends with the status line.
+	if hidden := os.Getenv("DECKHAND_SCREENSHOT_HIDDEN"); hidden != "" {
+		h.send("\x1c") // ctrl+\
+		h.waitFor(`need you · 1 finished · ctrl+\ list`, 5*time.Second)
+		time.Sleep(500 * time.Millisecond)
+		hf, err := os.Create(hidden)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer hf.Close()
+		if err := termshot.Render(hf, screenFromEmulator(h.emu), termshot.Options{}); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("wrote %s\n%s", hidden, h.screen())
+		h.send("\x1c") // show it again
 	}
 
 	h.send("q")
