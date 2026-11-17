@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -242,5 +243,93 @@ func TestKeyLabel(t *testing.T) {
 		if got := keyLabel(in); got != want {
 			t.Errorf("keyLabel(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// The config screen keeps [list] through a decode and encode, and leaves it
+// out when it isn't set.
+func TestConfigListRoundTrip(t *testing.T) {
+	tempConfig(t, "")
+	text := "[list]\ntoggle_key = \"f2\"\nstatus_line = false\n"
+	cfg, raw, err := decodeConfig(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.List.ToggleKey != "f2" || cfg.List.StatusLine == nil || *cfg.List.StatusLine {
+		t.Fatalf("decoded %+v", cfg.List)
+	}
+	out, err := encodeConfig(cfg, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := parseListConfig(out)
+	if err != nil || got.toggleKey != "f2" || got.statusLine {
+		t.Errorf("after round trip: %+v, %v\n%s", got, err, out)
+	}
+
+	cfg, raw, _ = decodeConfig("[open]\neditor = 'code \"{dir}\"'\n")
+	if out, _ := encodeConfig(cfg, raw); strings.Contains(out, "[list]") {
+		t.Errorf("[list] written though it wasn't set:\n%s", out)
+	}
+	if err := checkConfigText("[list]\ntoggle_key = \"enter\"\n"); err == nil {
+		t.Error("checkConfigText should refuse toggle_key = \"enter\"")
+	}
+}
+
+// Setting the toggle key and the status line on the config screen saves
+// them and applies them straight away.
+func TestConfigScreenListSettings(t *testing.T) {
+	keepGlobals(t)
+	t.Setenv("DECKHAND_HOME", t.TempDir())
+	p := tempConfig(t, "")
+	m := testModel("api")
+	m.width, m.height = 120, 32
+	m.handleKey(key("c"))
+	if m.cfg == nil {
+		t.Fatal("c should open the config screen")
+	}
+	// The whole screen, the new section and Save included, fits at 120×32.
+	w, _ := m.termSize()
+	screen := ansi.Strip(strings.Join(m.renderConfig(w, m.height-1), "\n"))
+	for _, want := range []string{"Session list", "Hide key", "Status", "Save"} {
+		if !strings.Contains(screen, want) {
+			t.Errorf("config screen at 120×32 lacks %q:\n%s", want, screen)
+		}
+	}
+
+	// A key it can't be is refused, on its row, and nothing is written.
+	m.cfg.focusRow(m.cfg.rowOf(rowListKey))
+	typeText(m, "x")
+	m.handleKey(key("ctrl+s"))
+	if !m.cfg.statusErr || m.cfg.current().kind != rowListKey {
+		t.Fatalf("bad key: status %q, row %v", m.cfg.status, m.cfg.current())
+	}
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		t.Fatal("nothing should be written for a bad key")
+	}
+
+	m.cfg.listKey.SetValue("")
+	typeText(m, "F3")
+	m.handleKey(key("enter")) // to the status line row
+	if m.cfg.current().kind != rowListStatus {
+		t.Fatalf("enter should move to the status row, at %v", m.cfg.current())
+	}
+	m.handleKey(key("enter")) // off
+	m.handleKey(key("ctrl+s"))
+	if m.cfg.statusErr || m.cfg.dirty() {
+		t.Fatalf("save: %q", m.cfg.status)
+	}
+	data, _ := os.ReadFile(p)
+	if !strings.Contains(string(data), `toggle_key = "f3"`) || !strings.Contains(string(data), "status_line = false") {
+		t.Errorf("config.toml:\n%s", data)
+	}
+	if listOpts.toggleKey != "f3" || listOpts.statusLine {
+		t.Errorf("listOpts not reloaded: %+v", listOpts)
+	}
+	// Opening the screen again shows what was saved.
+	m.handleKey(key("esc"))
+	m.handleKey(key("c"))
+	if m.cfg.listKey.Value() != "f3" || m.cfg.listStatus || m.cfg.dirty() {
+		t.Errorf("reopened: key %q status %v dirty %v", m.cfg.listKey.Value(), m.cfg.listStatus, m.cfg.dirty())
 	}
 }

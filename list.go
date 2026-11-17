@@ -34,8 +34,8 @@ func defaultListSettings() listSettings {
 }
 
 type listConfig struct {
-	ToggleKey  string `toml:"toggle_key"`
-	StatusLine *bool  `toml:"status_line"`
+	ToggleKey  string `toml:"toggle_key,omitempty"`
+	StatusLine *bool  `toml:"status_line,omitempty"`
 }
 
 // loadListConfig reads [list] from the config file.
@@ -69,16 +69,25 @@ func parseListConfig(text string) (listSettings, error) {
 	if cfg.List.StatusLine != nil {
 		out.statusLine = *cfg.List.StatusLine
 	}
-	key := strings.ToLower(strings.TrimSpace(cfg.List.ToggleKey))
-	switch {
-	case key == "":
-	case utf8.RuneCountInString(key) == 1 || reservedToggleKeys[key]:
-		// A plain character would stop you typing it into a session.
-		return out, fmt.Errorf("%s: list.toggle_key can't be %q (it's needed for typing or by deckhand); try \"ctrl+\\\\\" or \"f3\"", configPath(), cfg.List.ToggleKey)
-	default:
+	key, err := checkToggleKey(cfg.List.ToggleKey)
+	if err != nil {
+		return out, fmt.Errorf("%s: list.toggle_key %w", configPath(), err)
+	}
+	if key != "" {
 		out.toggleKey = key
 	}
 	return out, nil
+}
+
+// checkToggleKey normalizes a toggle_key value ("F2" becomes "f2"; empty
+// stays empty, meaning the default) and refuses keys it can't be.
+func checkToggleKey(s string) (string, error) {
+	key := strings.ToLower(strings.TrimSpace(s))
+	if key != "" && (utf8.RuneCountInString(key) == 1 || reservedToggleKeys[key]) {
+		// A plain character would stop you typing it into a session.
+		return "", fmt.Errorf("can't be %q (it's needed for typing or by deckhand); try ctrl+\\ or f3", s)
+	}
+	return key, nil
 }
 
 // keyLabel is how a key is shown in hints: "f2" becomes "F2".

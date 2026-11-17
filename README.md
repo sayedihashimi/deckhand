@@ -85,6 +85,7 @@ Press `?` in the session list, or `F1` anywhere (also inside a session), for a s
 | O | Open the session's folder in Explorer |
 | t | Open a new Windows Terminal tab in the session's folder |
 | r | Rename the session |
+| c | Config screen: agents, notifications, the session list and open commands (see [The config screen](#the-config-screen)) |
 | K | End the session's process (it stays in the list) |
 | x (or delete) | End and remove the session |
 | `ctrl+\` | Hide or show the session list (see [Hiding the session list](#hiding-the-session-list)) |
@@ -123,9 +124,26 @@ The folder box lists matching folders as you type. Recent folders come first, th
 
 The last agent you used is preselected. Sessions are named after their folder; press `r` to rename one.
 
+## The config screen
+
+Press `c` in the session list to set deckhand up without editing `config.toml`. It opens in the main area, like the new-session dialog. The welcome screen suggests it when there's no config file yet.
+
+- **Agents:** your custom agents, in the order the new-session dialog shows them, then the built-in ones. `enter` edits one, `a` adds one, `d` deletes it and `shift+↑/↓` moves it. The form asks for a name, the kind (a PowerShell command, or a program or script), the command, arguments (for a program), the type (Claude Code or other) and, for a PowerShell command, how to resume it (with `{id}`). It checks the agent with the same rules as loading the file, and shows any problem under the field.
+- **Pick from your PowerShell profile:** for a PowerShell agent, "Pick from your PowerShell profile…" (or `ctrl+p`) lists the functions and aliases your profile defines, leaving out PowerShell's own. Type to filter, `enter` to pick. If the function has a `-Resume` parameter, deckhand assumes it starts Claude and suggests `<name> -Resume {id}` as the resume command. Listing them runs PowerShell once with your profile, in the background (at most 10 s).
+- **Notifications:** on or off, when (only while deckhand isn't focused, or always), and a button that sends a test notification.
+- **Session list:** the key that hides and shows the list (empty means `ctrl+\`), and whether the status line shows while it's hidden. See [Hiding the session list](#hiding-the-session-list).
+- **Open:** the editor and terminal commands, with presets (VS Code, Rider, IntelliJ IDEA, VS Code Insiders; Windows Terminal in a new tab or a new window). "Try it" runs the command as typed on the selected session's folder.
+
+Keys: `↑/↓` or `tab`/`shift+tab` move, `←/→` change a choice, `enter` confirms, `ctrl+s` saves, and `esc` leaves (asking first if there are unsaved changes). The title says "unsaved changes" until you save.
+
+**Saving** writes the file atomically (a temporary file, then a rename) and keeps the previous one as `config.toml.bak`. The new settings apply straight away, without a restart: new agents show up in the new-session dialog, and running sessions keep running. A session whose agent you renamed or deleted keeps working until it exits.
+
+> [!NOTE]
+> Saving rewrites the whole file, so comments you added by hand are lost (the TOML library can't keep them). If the file has comments other than the sample's, the screen says so and asks before the first save. The old file, comments included, is in `config.toml.bak`. Tables the screen doesn't edit are kept.
+
 ## Custom agents (your own scripts and profile functions)
 
-Define your own agents in `~/.config/deckhand/config.toml` (`deckhand config` prints the path and creates a commented sample). They appear first in the agent row.
+Define your own agents in `~/.config/deckhand/config.toml` (`deckhand config` prints the path and creates a commented sample), or add them on the [config screen](#the-config-screen). They appear first in the agent row.
 
 ```toml
 # A PowerShell function or alias from your profile:
@@ -157,7 +175,7 @@ Press `ctrl+\` to hide the session list and give the selected session the full w
 - The end of the session header shows which sessions need you, by the same rules as the list's badge and `@`: `1 need you · 1 finished · ctrl+\ list`. The window title still says "(n need you)".
 - deckhand remembers whether the list is hidden (in `%LOCALAPPDATA%\deckhand\prefs.json`) and starts the same way next time.
 
-Change the key, or turn off the status line, in the config file:
+Change the key, or turn off the status line, on the [config screen](#the-config-screen) or in the config file:
 
 ```toml
 [list]

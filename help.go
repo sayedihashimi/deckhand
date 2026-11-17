@@ -42,18 +42,19 @@ const (
 
 var helpGroups = []helpGroup{
 	{helpList, []helpEntry{
-		{keys: "↑↓ j k", desc: "select a session", match: []string{"up", "k", "down", "j"}, footer: "↑↓ select", short: "↑↓ move"},
+		{keys: "↑↓ j k", desc: "select a session", match: []string{"up", "k", "down", "j"}, footer: "↑↓ select", short: "↑↓"},
 		{keys: "home end", desc: "first / last (also g, G)", match: []string{"home", "g", "end", "G"}},
 		{keys: "enter", desc: "open (starts or resumes it)", match: []string{"enter", "right", "l"}, footer: "enter open", short: "⏎ open"},
-		{keys: "shift+enter", desc: "new session, same folder", match: []string{"shift+enter"}, footer: "⇧⏎ new here"},
+		{keys: "shift+enter", desc: "new session, same folder", match: []string{"shift+enter"}, footer: "⇧⏎ new here", short: "⇧⏎ here"},
 		{keys: "n", desc: "new session", match: []string{"n"}, footer: "n new"},
 		{keys: "1–9", desc: "jump into session N", match: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9"}},
 		{keys: "tab", desc: "next one that needs you", match: []string{"tab"}, footer: "tab next"},
-		{keys: "/", desc: "filter the list as you type", match: []string{"/"}, footer: "/ filter", short: "/ @ filter"},
+		{keys: "/", desc: "filter the list as you type", match: []string{"/"}, footer: "/ filter", short: "/@ filter"},
 		{keys: "@", desc: "only sessions that need you", match: []string{"@"}, footer: "@ needs you", short: "-"},
 		{keys: "esc", desc: "clear the filter", match: []string{"esc"}},
 		{keys: "o O t", desc: "editor / Explorer / terminal", match: []string{"o", "O", "t"}, footer: "o editor · O explorer · t terminal", short: "o/O/t open"},
 		{keys: "r", desc: "rename", match: []string{"r"}, footer: "r rename"},
+		{keys: "c", desc: "settings (config screen)", match: []string{"c"}, footer: "c config"},
 		{keys: "K", desc: "end it (it stays in the list)", match: []string{"K"}},
 		{keys: "x del", desc: "end and remove from the list", match: []string{"x", "delete"}},
 		// The toggle key is configurable ([list] toggle_key); withToggleKey
@@ -247,7 +248,7 @@ func (m *model) helpContent(inner int) []string {
 	}
 	out = append(out, "", fit(stHelpGroup.Render("Status icons"), inner))
 	out = append(out, m.statusLegend(inner)...)
-	out = append(out, "", fit(stMuted.Render("Config file: ")+configPath()+stMuted.Render("  (deckhand config creates it)"), inner))
+	out = append(out, "", fit(stMuted.Render("Config file: ")+configPath()+stMuted.Render("  (c edits it here; deckhand config creates it)"), inner))
 	return out
 }
 
