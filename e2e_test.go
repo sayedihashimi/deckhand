@@ -9,11 +9,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -445,7 +447,7 @@ resume = "claude --resume {id}"
 	h.send("K")
 	h.waitFor("End ", 3*time.Second)
 	h.send("y")
-	h.waitFor("exited · ⏎ resume", 10*time.Second)
+	h.waitFor("wrap · ⏎ resume · ⇧⏎ new", 10*time.Second) // "exited" is dropped to fit the hint
 	h.send("\r")
 	h.waitFor("arg: [--resume]", 20*time.Second)
 	if strings.Contains(h.screen(), "arg: [--session-id]") {
@@ -528,10 +530,9 @@ func TestE2EClaude(t *testing.T) {
 	h.send("Reply with only the word PONG and nothing else.")
 	time.Sleep(500 * time.Millisecond)
 	h.send("\r")
-	h.waitForAny(30*time.Second, "claude · thinking", "claude · your turn")
-	h.waitFor("claude · your turn", 120*time.Second)
-	h.waitFor("PONG", 5*time.Second)
-	t.Logf("screen at 'your turn':\n%s", h.screen())
+	h.waitForAny(30*time.Second, "claude · thinking", "claude · your turn", "claude · PONG")
+	h.waitFor("claude · PONG", 120*time.Second) // the reply replaces "your turn"
+	t.Logf("screen at the end of the turn:\n%s", h.screen())
 	if logs, _ := filepath.Glob(filepath.Join(home, "sessions", "*", "events.jsonl")); len(logs) == 1 {
 		data, _ := os.ReadFile(logs[0])
 		t.Logf("hook events:\n%s", data)
@@ -597,9 +598,13 @@ func TestE2ENotifyInfoFilter(t *testing.T) {
 	h.send("\x11") // back to the list
 
 	// Branch, model and context.
-	h.waitFor("e2e-branch*", 10*time.Second)       // header
-	h.waitFor("opus 5.5 · 83k", 10*time.Second)    // sidebar and header
-	h.waitFor("claude · your turn", 5*time.Second) // status from the Stop hook
+	h.waitFor("e2e-branch*", 10*time.Second)    // header
+	h.waitFor("opus 5.5 · 83k", 10*time.Second) // sidebar and header
+	// After the Stop hook, the second line shows the reply, not "your turn".
+	h.waitFor("claude · Fixed the bug.", 5*time.Second)
+	if strings.Contains(h.screen(), "your turn") {
+		t.Errorf("the reply should replace \"your turn\"; screen:\n%s", h.screen())
+	}
 
 	// Notifications: one for the permission request, one when it finished.
 	deadline := time.Now().Add(10 * time.Second)
@@ -633,6 +638,206 @@ func TestE2ENotifyInfoFilter(t *testing.T) {
 	t.Logf("screen:\n%s", h.screen())
 
 	h.send("q")
+	h.send("y")
+	h.waitExit(10 * time.Second)
+}
+
+// TestE2EOpenFolder points [open] editor and terminal at a test app that
+// records its arguments, then presses o and t on a session that isn't
+// running. The folder has a space and an ampersand in its name.
+func TestE2EOpenFolder(t *testing.T) {
+	exe := buildDeckhand(t)
+	bin := t.TempDir()
+	app := filepath.Join(bin, "recordapp.exe")
+	if out, err := exec.Command("go", "build", "-o", app, "./testdata/recordapp").CombinedOutput(); err != nil {
+		t.Fatalf("build recordapp: %v\n%s", err, out)
+	}
+	dir := filepath.Join(t.TempDir(), "my proj & co")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	saved := fmt.Sprintf(`[{"id":"open-0001","name":"proj","agent":"pwsh","dir":%q,"created":"2026-01-01T00:00:00Z"}]`, dir)
+	if err := os.WriteFile(filepath.Join(home, "sessions.json"), []byte(saved), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	logDir := t.TempDir()
+	editorLog, termLog := filepath.Join(logDir, "editor.log"), filepath.Join(logDir, "terminal.log")
+	cfg := filepath.Join(t.TempDir(), "config.toml")
+	_ = os.WriteFile(cfg, []byte(fmt.Sprintf("[open]\neditor = '\"%s\" \"%s\" --editor \"{dir}\"'\nterminal = '\"%s\" \"%s\" -d \"{dir}\"'\n",
+		app, editorLog, app, termLog)), 0o644)
+
+	env := append(envWith(home, ""), "DECKHAND_CONFIG="+cfg)
+	h := startHarness(t, exe, env, t.TempDir())
+	h.waitFor("proj", 10*time.Second)
+	if strings.Contains(h.screen(), "Config error") {
+		t.Fatalf("config error; screen:\n%s", h.screen())
+	}
+
+	check := func(key, log, flag string) {
+		t.Helper()
+		h.send(key)
+		var rec struct {
+			Cwd  string   `json:"cwd"`
+			Args []string `json:"args"`
+		}
+		deadline := time.Now().Add(10 * time.Second)
+		var data []byte
+		for time.Now().Before(deadline) {
+			if data, _ = os.ReadFile(log); strings.HasSuffix(string(data), "\n") {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		if err := json.Unmarshal(data, &rec); err != nil {
+			t.Fatalf("%s: log %q: %v; screen:\n%s", key, data, err, h.screen())
+		}
+		if len(rec.Args) != 2 || rec.Args[0] != flag || rec.Args[1] != dir || rec.Cwd != dir {
+			t.Fatalf("%s launched with %+v, want [%s %s]", key, rec, flag, dir)
+		}
+	}
+	check("o", editorLog, "--editor")
+	check("t", termLog, "-d")
+	if strings.Contains(h.screen(), "Couldn't open") {
+		t.Fatalf("unexpected error; screen:\n%s", h.screen())
+	}
+	t.Logf("screen:\n%s", h.screen())
+
+	h.send("q")
+	h.waitExit(10 * time.Second)
+}
+
+// shiftEnter is shift+enter as a CSI u sequence. Through the pseudo console
+// it reaches deckhand as shift+enter. (A win32-input-mode key event with the
+// shift state doesn't: the pseudo console drops the shift for enter.)
+const shiftEnter = "[13;2u"
+
+// sessionOrder reads the saved session list: name and folder base, in order.
+func sessionOrder(t *testing.T, home string) []string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(home, "sessions.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list []struct {
+		Name, Dir, Agent string
+		ClaudeSessionID  string `json:"claude_session_id"`
+	}
+	if err := json.Unmarshal(data, &list); err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, s := range list {
+		out = append(out, s.Name+"|"+filepath.Base(s.Dir)+"|"+s.Agent+"|"+s.ClaudeSessionID)
+	}
+	return out
+}
+
+// shift+enter in the list adds a session with the same agent and folder
+// right below the selected one and starts it, for an exited session and for
+// a running one.
+func TestE2EShiftEnterNewSession(t *testing.T) {
+	exe := buildDeckhand(t)
+	pwsh, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh not found")
+	}
+	path := filepath.Dir(pwsh) + ";" + os.Getenv("SystemRoot") + `\System32`
+	home := t.TempDir()
+	proj := filepath.Join(t.TempDir(), "proj-a")
+	if err := os.MkdirAll(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	saved := fmt.Sprintf(`[{"id":"orig-0001","name":"orig","agent":"pwsh","dir":%q,"created":"2026-01-01T00:00:00Z","started":true},
+{"id":"last-0001","name":"last","agent":"pwsh","dir":%q,"created":"2026-01-01T00:00:00Z"}]`, proj, t.TempDir())
+	if err := os.WriteFile(filepath.Join(home, "sessions.json"), []byte(saved), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h := startHarness(t, exe, envWith(home, path), t.TempDir())
+
+	// The exited session shows the hint.
+	h.waitFor("⏎ restart · ⇧⏎ new", 10*time.Second)
+
+	// Exited session: a new row below it starts.
+	h.send(shiftEnter)
+	h.waitFor("PS ", 15*time.Second)
+	h.waitFor("proj-a  pwsh", 5*time.Second) // header: the new session is on screen
+	want := []string{"orig|proj-a|pwsh|", "proj-a|proj-a|pwsh|", "last|"}
+	got := sessionOrder(t, home)
+	if len(got) != 3 || got[0] != want[0] || got[1] != want[1] || !strings.HasPrefix(got[2], want[2]) {
+		t.Fatalf("after shift+enter on an exited session: %q", got)
+	}
+	h.send("\x11") // back to the list
+	h.waitFor("n new", 5*time.Second)
+	s := h.screen()
+	if got := sidebarNames(s); strings.Join(got, ",") != "orig,proj-a,last" {
+		t.Fatalf("sidebar order %q; screen:\n%s", got, s)
+	}
+	if !strings.Contains(s, "pwsh · ⏎ restart") {
+		t.Fatalf("the original should still be exited; screen:\n%s", s)
+	}
+
+	// Running session: the same.
+	h.waitFor("pwsh · idle", 10*time.Second)
+	h.send(shiftEnter)
+	h.waitFor("PS ", 15*time.Second)
+	got = sessionOrder(t, home)
+	if len(got) != 4 || got[0] != want[0] || got[1] != want[1] || got[2] != want[1] || !strings.HasPrefix(got[3], want[2]) {
+		t.Fatalf("after shift+enter on a running session: %q", got)
+	}
+	h.send("\x11")
+	h.waitFor("n new", 5*time.Second)
+	if got := sidebarNames(h.screen()); strings.Join(got, ",") != "orig,proj-a,proj-a,last" {
+		t.Fatalf("sidebar order %q; screen:\n%s", got, h.screen())
+	}
+	t.Logf("screen:\n%s", h.screen())
+
+	h.send("q")
+	h.waitFor("Quit and end 2 running", 5*time.Second) // both new sessions are running
+	h.send("y")
+	h.waitExit(10 * time.Second)
+}
+
+// sidebarNames lists the session names in the sidebar, top to bottom.
+func sidebarNames(screen string) []string {
+	var out []string
+	for _, m := range sidebarRow.FindAllStringSubmatch(screen, -1) {
+		out = append(out, m[1])
+	}
+	return out
+}
+
+var sidebarRow = regexp.MustCompile(`(?m)^▌?\d \S (\S+) `)
+
+// For a Claude session, shift+enter starts a fresh conversation: a new
+// --session-id and no --resume.
+func TestE2EShiftEnterClaude(t *testing.T) {
+	exe := buildDeckhand(t)
+	bin := t.TempDir()
+	if out, err := exec.Command("go", "build", "-o", filepath.Join(bin, "claude.exe"), "./testdata/argsapp").CombinedOutput(); err != nil {
+		t.Fatalf("build argsapp: %v\n%s", err, out)
+	}
+	home := t.TempDir()
+	const oldID = "11111111-2222-3333-4444-555555555555"
+	saved := fmt.Sprintf(`[{"id":"orig-0001","name":"orig","agent":"claude","dir":%q,"created":"2026-01-01T00:00:00Z","claude_session_id":%q,"started":true}]`, t.TempDir(), oldID)
+	if err := os.WriteFile(filepath.Join(home, "sessions.json"), []byte(saved), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := bin + ";" + os.Getenv("SystemRoot") + `\System32`
+	h := startHarness(t, exe, envWith(home, path), t.TempDir())
+
+	h.waitFor("⏎ resume · ⇧⏎ new", 10*time.Second)
+	h.send(shiftEnter)
+	h.waitFor("argsapp done", 15*time.Second)
+	s := h.screen()
+	if !strings.Contains(s, "arg: [--session-id]") || strings.Contains(s, "--resume") || strings.Contains(s, oldID) {
+		t.Fatalf("want a fresh conversation; screen:\n%s", s)
+	}
+	got := sessionOrder(t, home)
+	if len(got) != 2 || !strings.HasPrefix(got[0], "orig|") || !strings.HasSuffix(got[0], "|claude|"+oldID) || strings.HasSuffix(got[1], oldID) {
+		t.Fatalf("sessions: %q", got)
+	}
+	h.send("\x11q")
 	h.send("y")
 	h.waitExit(10 * time.Second)
 }

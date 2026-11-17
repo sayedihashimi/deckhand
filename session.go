@@ -244,6 +244,11 @@ func (s *Session) setStatusLocked(st Status, detail string) {
 		if st == StatusWaiting || (st == StatusIdle && s.status == StatusWorking) || st == StatusExited {
 			s.unread = true
 		}
+		if st == StatusIdle {
+			// Read the transcript on the next tick, so the finished reply
+			// shows without waiting for the regular poll.
+			s.lastPoll = time.Time{}
+		}
 	}
 	s.status = st
 	s.detail = detail
@@ -298,12 +303,20 @@ type snapshot struct {
 	title    string
 	exitInfo string
 	info     sessionInfo
+	summary  string   // latest hook's tool summary, e.g. the Bash command
+	reply    []string // the reply that ended the turn, once it's been read
 }
 
 func (s *Session) Snapshot() snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return snapshot{s.status, s.detail, s.since, s.unread, s.running, s.title, s.exitInfo, s.info}
+	sn := snapshot{s.status, s.detail, s.since, s.unread, s.running, s.title, s.exitInfo, s.info, s.summary, nil}
+	// Only a transcript read after the turn ended has that turn's reply;
+	// an earlier read could still hold the previous one.
+	if s.status == StatusIdle && s.detail == detailYourTurn && !s.info.textAt.Before(s.since) {
+		sn.reply = s.info.lastText
+	}
+	return sn
 }
 
 // TakeNotice returns (and clears) a pending status change to notify about.
@@ -362,24 +375,31 @@ func (s *Session) MaybePoll(now time.Time, active bool) {
 	go func() {
 		defer s.polling.Store(false)
 		g := readGitInfo(dir)
-		var model string
+		var model, text string
 		var tokens int
+		var readErr error
+		checked := false
 		newStamp := stamp
 		if tr != "" {
 			if fi, err := os.Stat(tr); err == nil {
+				checked = true
 				newStamp = fmt.Sprintf("%d/%d", fi.Size(), fi.ModTime().UnixNano())
 				if newStamp != stamp {
-					model, tokens, _, _ = readTranscriptInfo(tr)
+					model, tokens, text, readErr = readTranscriptInfo(tr)
 				}
 			}
 		}
 		s.mu.Lock()
 		s.info.git = g
-		if newStamp != stamp {
+		if newStamp != stamp && readErr == nil {
 			s.trStamp = newStamp
 			if model != "" {
 				s.info.model, s.info.ctxTokens = model, tokens
 			}
+			s.info.lastText = replyLines(text)
+		}
+		if checked && readErr == nil {
+			s.info.textAt = now
 		}
 		s.mu.Unlock()
 		if s.dirty != nil {

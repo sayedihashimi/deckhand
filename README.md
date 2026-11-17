@@ -6,11 +6,11 @@ A terminal UI for running several AI agent CLIs side by side on Windows. The lef
  deckhand          1 need you │ ● api-refactor  claude  C:\src\api
 ──────────────────────────────│
 ▌1 ● api-refactor          12s│  Do you want to make this edit to Program.cs?
-▌    claude · permission: Edit│  ❯ 1. Yes
+▌    claude · Edit: C:\src\ap…│  ❯ 1. Yes
  2 ⠹ docs                   3m│    2. Yes, and don't ask again
      claude · Bash            │    3. No
  3 ✓ tests                  1m│
-     claude · your turn       │
+     claude · All 42 tests pa…│
 ```
 
 It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) in a ConPTY pseudo console, so your own Claude settings, login and proxy configuration apply unchanged. No tmux or WSL is needed.
@@ -23,7 +23,7 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 | ● (blinking, orange) | Needs you: a permission prompt or a question | `PermissionRequest`, `PreToolUse` on `AskUserQuestion` |
 | ✓ (bold green) | Finished its turn, and you haven't looked yet | `Stop` |
 | ○ | Idle and seen | |
-| ■ | Not running (press enter to resume) | process exit |
+| ■ | Not running (press enter to resume, shift+enter to start a new one) | process exit |
 | ◌ | Starting | |
 
 - **Claude:** status comes from hooks. deckhand passes a per-session settings file with `claude --settings`, so your `~/.claude/settings.json` is never modified.
@@ -32,11 +32,16 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 
 ## Session details
 
+The second line under each session is the agent and what it's doing. For Claude it also shows:
+
+- **Finished:** the start of Claude's reply, in place of "your turn" (the ✓ already says it's your turn). It's the first line of the reply with Markdown removed, cut to fit, and bold until you look at the session. It shows once the turn has ended, never while Claude is still working, so an old reply isn't mistaken for a new one. The session header shows as much of the reply as fits, before the folder.
+- **Needs you:** what the tool wants to do, such as `Bash: npm test`.
+
 The third line under each session shows the git branch, then for Claude the model and how much context the conversation uses:
 
 ```
 ▌2 ✓ api-refactor           1m
-▌    claude · your turn
+▌    claude · Fixed the redire…
 ▌    feature/login*↑2 · opus 5.5 · 84k
 ```
 
@@ -66,12 +71,16 @@ Run `deckhand notify-test` to check that notifications appear. If they don't, ch
 |---|---|
 | ↑/↓ or j/k | Select a session (its terminal shows on the right) |
 | enter | Type into the session; starts or resumes it if it isn't running |
+| shift+enter | Start a new session with the same agent and folder, right below the selected one. The selected session is left as it is, so its conversation can still be resumed. Claude gets a fresh conversation; a custom agent runs its normal command, not its `resume` one. Where a terminal sends plain enter for shift+enter, it acts like enter |
 | 1–9 | Jump straight into session N |
 | tab | Select the next session that needs you, then the next one that finished |
 | / | Filter the list as you type. Matches the name, agent, folder and branch, ignoring case; letters in order also match, and every word must match. enter keeps the filter (or opens the session if only one matches), tab keeps it, esc clears it |
 | @ | Show only sessions that need you or finished since you looked (press again to show all) |
 | esc | Clear the filter |
 | n | New session (see below) |
+| o | Open the session's folder in your editor (see [Opening a session's folder](#opening-a-sessions-folder)) |
+| O | Open the session's folder in Explorer |
+| t | Open a new Windows Terminal tab in the session's folder |
 | r | Rename the session |
 | K | End the session's process (it stays in the list) |
 | x | End and remove the session |
@@ -130,6 +139,29 @@ type    = "claude"
 **How status works when your script starts Claude:** for a `pwsh` agent (and a `.ps1` script) with `type = "claude"`, deckhand defines a PowerShell function named `claude` for that session only (`%LOCALAPPDATA%\deckhand\claude-shim.ps1`). PowerShell prefers functions to programs, so when your function or script calls `claude`, it calls the shim. The shim runs the real `claude.exe` and adds deckhand's `--settings` (the hooks) and `--session-id`, leaving out `--session-id` when you're resuming. Your script doesn't need to forward arguments, and neither it nor `~/.claude/settings.json` is changed.
 
 A `command` agent that is a program or `.cmd` file gets the extra arguments on its command line, so it must pass them on to `claude`.
+
+## Opening a session's folder
+
+To look at what an agent changed, press `o` to open the selected session's folder in your editor, `O` to open it in Explorer, or `t` to open a new tab in the current Windows Terminal window, starting in that folder. This works whether the session is running or not.
+
+| Key | Default |
+|---|---|
+| `o` | `code "{dir}"` if VS Code is on PATH, otherwise Explorer. The first time it falls back to Explorer, the footer says how to set an editor. |
+| `O` | `explorer.exe "{dir}"` |
+| `t` | `wt.exe -w 0 nt -d "{dir}"` |
+
+Set your own editor or terminal command in the config file:
+
+```toml
+[open]
+editor   = 'rider64.exe "{dir}"'        # or 'code "{dir}"', 'idea64.exe "{dir}"', ...
+terminal = 'wt.exe -w 0 nt -d "{dir}"'
+```
+
+- `{dir}` is the session's folder. Each command must contain it.
+- deckhand splits the command into a program and its arguments first (double or single quotes group words with spaces), then fills in `{dir}`. A folder name with spaces or other characters stays one argument and can't add arguments of its own. No shell is used. To run a PowerShell command, write `pwsh -c ...` yourself.
+- The program runs in the background without a console window, and deckhand doesn't wait for it. If it can't start, the footer shows "Couldn't open: ...".
+- A `.cmd` or `.bat` file (such as VS Code's `code.cmd`) runs through `cmd.exe` with every argument quoted. A folder with `%` in its name can't be passed to one safely, so deckhand refuses and shows an error.
 
 ## Resuming
 

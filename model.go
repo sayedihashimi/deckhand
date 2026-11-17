@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -59,6 +61,10 @@ type model struct {
 
 	flashAt  time.Time
 	quitting bool
+
+	// Whether "o" has said how to set an editor (it does once, the first
+	// time it falls back to Explorer).
+	editorHinted bool
 }
 
 type confirmPrompt struct {
@@ -330,6 +336,8 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter", "right", "l":
 		return m, m.openSelected()
+	case "shift+enter":
+		return m, m.startLikeSelected()
 	case "tab":
 		m.jumpToAttention()
 	case "n":
@@ -363,6 +371,12 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				return nil
 			}}
 		}
+	case "o":
+		m.openFolder(openEditor)
+	case "O":
+		m.openFolder(openExplorer)
+	case "t":
+		m.openFolder(openTerminal)
 	case "K":
 		if s := m.current(); s != nil && s.Running() {
 			m.confirm = &confirmPrompt{text: fmt.Sprintf("End %q (it stays in the list)? y/n", s.Name), action: func(m *model) tea.Cmd {
@@ -515,6 +529,82 @@ func (m *model) openSelected() tea.Cmd {
 	}
 	m.focus = focusTerminal
 	return nil
+}
+
+// startSession starts a session's agent. Tests replace it so they don't run
+// real processes.
+var startSession = func(s *Session, w, h int, resume bool, dirty *atomic.Bool) error {
+	return s.Start(w, h, resume, dirty)
+}
+
+// startLikeSelected adds a new session with the selected session's agent and
+// folder right below it, selects it and starts it. The selected session is
+// left alone, so its conversation can still be resumed. A Claude agent gets
+// a fresh conversation, and a custom agent runs its normal command rather
+// than its resume one.
+func (m *model) startLikeSelected() tea.Cmd {
+	s := m.current()
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	agentName, dir := s.Agent, s.Dir
+	s.mu.Unlock()
+	agent, ok := agentByName(agentName)
+	if !ok {
+		m.setFlash(fmt.Sprintf("Couldn't start: unknown agent %q (was it removed from the config?)", agentName))
+		return nil
+	}
+	n := newSession(agent, dir, sessionName(dir))
+	w, h := m.termSize()
+	if err := startSession(n, w, h, false, m.dirty); err != nil {
+		m.setFlash("Couldn't start: " + err.Error())
+		return nil
+	}
+	m.sel++
+	m.sessions = slices.Insert(m.sessions, m.sel, n)
+	m.clearFilter() // so the new session shows
+	m.focus = focusTerminal
+	_ = saveSessions(m.sessions)
+	return nil
+}
+
+type openTarget int
+
+const (
+	openEditor openTarget = iota
+	openExplorer
+	openTerminal
+)
+
+// openFolder opens the selected session's folder in the editor, Explorer or
+// a new terminal tab. It works whether or not the session is running.
+func (m *model) openFolder(target openTarget) {
+	s := m.current()
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	dir := s.Dir
+	s.mu.Unlock()
+	var tmpl string
+	fallback := false
+	switch target {
+	case openEditor:
+		tmpl, fallback = editorTemplate(openSettings, exec.LookPath)
+	case openExplorer:
+		tmpl = defaultExplorer
+	case openTerminal:
+		tmpl = terminalTemplate(openSettings)
+	}
+	if err := launchOpen(tmpl, dir); err != nil {
+		m.setFlash("Couldn't open: " + err.Error())
+		return
+	}
+	if fallback && !m.editorHinted {
+		m.editorHinted = true
+		m.setFlash("Opened in Explorer: no editor set and VS Code isn't on PATH. Set [open] editor in the config (deckhand config).")
+	}
 }
 
 func (m *model) removeSelected() {

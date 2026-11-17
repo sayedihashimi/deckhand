@@ -33,6 +33,11 @@ type sessionInfo struct {
 	git       gitInfo
 	model     string // e.g. "claude-opus-5-5"
 	ctxTokens int    // input + cached tokens of the latest main-chain reply
+	// lastText is the latest main-chain reply as plain lines (see
+	// replyLines), and textAt is when the transcript was last checked, so
+	// the view can tell whether it's current for the turn that just ended.
+	lastText []string
+	textAt   time.Time
 }
 
 const (
@@ -241,4 +246,61 @@ func gitLabel(g gitInfo) string {
 		s += fmt.Sprintf("↓%d", g.behind)
 	}
 	return s
+}
+
+// maxReplyLines caps how much of a reply is kept for the sidebar and header.
+const maxReplyLines = 20
+
+var (
+	mdHeading  = regexp.MustCompile(`^#{1,6}\s+`)
+	mdQuote    = regexp.MustCompile(`^(>\s?)+`)
+	mdList     = regexp.MustCompile(`^([-*+]|\d{1,3}[.)])\s+`)
+	mdTask     = regexp.MustCompile(`^\[[ xX]\]\s+`)
+	mdRule     = regexp.MustCompile(`^([-*_]\s*){3,}$`)
+	mdLink     = regexp.MustCompile(`!?\[([^\]]*)\]\([^)]*\)`)
+	mdEmphasis = strings.NewReplacer("**", "", "__", "", "`", "")
+)
+
+// replyLines turns a Claude reply's Markdown into plain, non-empty lines:
+// headings, quotes, list markers, bold, code spans and link targets are
+// removed and whitespace is collapsed. Code blocks are skipped, unless the
+// reply is nothing but code, so a reply that opens with one still shows
+// the sentence after it.
+func replyLines(text string) []string {
+	var prose, code []string
+	inFence := false
+	for _, raw := range strings.Split(text, "\n") {
+		t := strings.TrimSpace(raw)
+		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			if l := oneLine(t); l != "" && len(code) < maxReplyLines {
+				code = append(code, l)
+			}
+			continue
+		}
+		if l := plainLine(t); l != "" && len(prose) < maxReplyLines {
+			prose = append(prose, l)
+		}
+	}
+	if len(prose) == 0 {
+		return code
+	}
+	return prose
+}
+
+// plainLine strips the Markdown from one line of prose.
+func plainLine(t string) string {
+	if mdRule.MatchString(t) {
+		return ""
+	}
+	t = mdQuote.ReplaceAllString(t, "")
+	t = mdHeading.ReplaceAllString(t, "")
+	t = mdList.ReplaceAllString(t, "")
+	t = mdTask.ReplaceAllString(t, "")
+	t = mdLink.ReplaceAllString(t, "$1")
+	t = mdEmphasis.Replace(t)
+	return oneLine(t)
 }
