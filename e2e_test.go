@@ -786,3 +786,64 @@ func TestE2EShiftEnterClaude(t *testing.T) {
 	h.send("y")
 	h.waitExit(10 * time.Second)
 }
+
+// ? in the list and F1 inside a session open the help; esc closes it and
+// focus goes back. ? typed inside a session still reaches the agent.
+func TestE2EHelp(t *testing.T) {
+	exe := buildDeckhand(t)
+	pwsh, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh not found")
+	}
+	path := filepath.Dir(pwsh) + ";" + os.Getenv("SystemRoot") + `\System32`
+	h := startHarnessSize(t, exe, envWith(t.TempDir(), path), t.TempDir(), 120, 32)
+
+	h.waitFor("No sessions yet", 10*time.Second)
+	h.waitFor("? or F1  all the keys", 2*time.Second) // the welcome screen
+	h.waitFor("? help", 2*time.Second)                // the footer
+	h.send("?")
+	h.waitFor("New-session dialog", 5*time.Second)
+	h.waitFor("Config file:", 2*time.Second)
+	t.Logf("help from the list:\n%s", h.screen())
+	h.send("\x1b")
+	h.waitGone("New-session dialog", 5*time.Second)
+	h.waitFor("No sessions yet", 2*time.Second)
+
+	h.send("n")
+	h.waitFor("Start in", 5*time.Second)
+	h.send("\r")
+	h.waitFor("PS ", 15*time.Second)
+
+	// ? is typed text inside a session.
+	h.send(`echo ("deck?" + "hand")` + "\r")
+	h.waitFor("deck?hand", 10*time.Second)
+	if strings.Contains(h.screen(), "New-session dialog") {
+		t.Fatalf("? inside a session opened the help; screen:\n%s", h.screen())
+	}
+
+	// F1 (ESC O P) opens it inside a session; esc closes it and the
+	// terminal still has focus.
+	h.send("\x1bOP")
+	h.waitFor("New-session dialog", 5*time.Second)
+	h.waitFor("esc, ? or F1 close", 2*time.Second)
+	h.send("\x1b")
+	h.waitGone("New-session dialog", 5*time.Second)
+	h.send(`echo ("af" + "ter")` + "\r")
+	h.waitFor("after", 10*time.Second)
+
+	h.send("\x11q")
+	h.send("y")
+	h.waitExit(10 * time.Second)
+}
+
+func (h *harness) waitGone(text string, timeout time.Duration) {
+	h.t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !strings.Contains(h.screen(), text) {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	h.t.Fatalf("timed out waiting for %q to go; screen:\n%s", text, h.screen())
+}

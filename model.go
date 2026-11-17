@@ -56,6 +56,8 @@ type model struct {
 	attentionOnly bool
 	filterInput   *textinput.Model // open while typing a filter
 
+	help *helpOverlay // the key help (? or F1), when open
+
 	// Whether deckhand's window has focus, when the terminal reports it.
 	focusKnown    bool
 	windowFocused bool
@@ -198,6 +200,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, frameTick()
 
 	case tea.PasteMsg:
+		if m.help != nil {
+			return m, nil
+		}
 		if m.filterInput != nil {
 			var cmd tea.Cmd
 			*m.filterInput, cmd = m.filterInput.Update(msg)
@@ -240,12 +245,23 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := k.String()
 
+	if m.help != nil {
+		m.helpKey(key)
+		return m, nil
+	}
+
 	if m.confirm != nil {
 		c := m.confirm
 		m.confirm = nil
 		if key == "y" || key == "Y" {
 			return m, c.action(m)
 		}
+		return m, nil
+	}
+
+	// F1 opens the help from anywhere, so it never reaches the agent.
+	if key == "f1" {
+		m.openHelp()
 		return m, nil
 	}
 
@@ -360,6 +376,8 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		ti.SetWidth(m.sidebarWidth() - 3)
 		m.filterInput = &ti
 		return m, m.filterInput.Focus()
+	case "?":
+		m.openHelp()
 	case "@":
 		m.attentionOnly = !m.attentionOnly
 		m.keepSelectionVisible()
@@ -459,6 +477,10 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	ms := msg.Mouse()
 	sw := m.sidebarWidth()
 
+	if m.help != nil {
+		m.helpMouse(msg)
+		return nil
+	}
 	if m.focus == focusDialog || m.focus == focusConfig || m.rename != nil || m.confirm != nil || m.filterInput != nil {
 		return nil
 	}

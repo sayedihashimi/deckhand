@@ -316,6 +316,7 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 			"  enter    type into it; ctrl+q comes back to the list",
 			"  tab      jump to the next session that needs you",
 			"  / and @  filter the list; @ shows only sessions that need you",
+			"  ? or F1  all the keys",
 			"  c        settings: your own agents, notifications, open commands",
 		} {
 			lines = append(lines, fit(stMuted.Render(l), w))
@@ -513,15 +514,18 @@ func (m *model) renderFooter(w int) string {
 	if m.rename != nil {
 		return fit(m.rename.View()+stMuted.Render("   enter save · esc cancel"), w)
 	}
+	if m.help != nil {
+		return fit(stMuted.Render(m.helpFooter()), w)
+	}
 	if m.flash != "" && time.Since(m.flashAt) < 4*time.Second {
 		return fit(lipgloss.NewStyle().Foreground(colError).Render(" "+m.flash), w)
 	}
 	var help string
 	switch m.focus {
 	case focusTerminal:
-		help = " ctrl+q back to the list"
+		help = footerHints(helpTerminal, false)
 	case focusDialog:
-		help = " enter start · esc cancel"
+		help = " enter start · esc cancel · F1 help"
 	case focusConfig:
 		help = " ↑↓/tab move · ctrl+s save · esc leave without saving"
 		if m.cfg != nil && m.cfg.form != nil {
@@ -531,9 +535,9 @@ func (m *model) renderFooter(w int) string {
 			help = " ↑↓ choose · enter pick · esc back"
 		}
 	default:
-		help = " ↑↓ select · enter open · ⇧⏎ new here · n new · tab next · / filter · @ needs you · o editor · O explorer · t terminal · r rename · K end · x remove · c config · q quit"
+		help = footerHints(helpList, false)
 		if ansi.StringWidth(help) > w {
-			help = " ⏎ open · ⇧⏎ new here · n new · tab next · / @ filter · o/O/t open · r rename · K end · x remove · c config · q quit"
+			help = footerHints(helpList, true)
 		}
 		if m.filterInput != nil {
 			help = " type to filter · enter keep · esc clear"
@@ -557,6 +561,9 @@ func (m *model) View() tea.View {
 
 	side := m.renderSidebar(sw, bodyH)
 	main, cur := m.renderMain(mw, bodyH)
+	if m.help != nil {
+		main, cur = m.overlayHelp(main, mw, bodyH), nil
+	}
 	sep := stBorder.Render("│")
 
 	var b strings.Builder
