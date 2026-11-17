@@ -64,6 +64,9 @@ type model struct {
 	// Whether "o" has said how to set an editor (it does once, the first
 	// time it falls back to Explorer).
 	editorHinted bool
+
+	// Whether the session list is hidden (the toggle key, ctrl+\ by default).
+	listHidden bool
 }
 
 type confirmPrompt struct {
@@ -77,6 +80,7 @@ func newModel() *model {
 		dirty:    &atomic.Bool{},
 		agents:   availableAgents(),
 	}
+	m.listHidden = loadPrefs().ListHidden
 	return m
 }
 
@@ -95,10 +99,11 @@ func (m *model) sidebarWidth() int {
 	return w
 }
 
-// termSize is the size of the embedded terminal: right of the sidebar, below
-// the session header, above the footer.
+// termSize is the size of the embedded terminal: right of the sidebar (or
+// the full width while the list is hidden), below the session header, above
+// the footer.
 func (m *model) termSize() (int, int) {
-	w := m.width - m.sidebarWidth() - 1
+	w := m.width - m.mainLeft()
 	h := m.height - 2
 	if w < 10 {
 		w = 10
@@ -132,13 +137,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		w, h := m.termSize()
-		for _, s := range m.sessions {
-			s.Resize(w, h)
-		}
-		if m.dialog != nil {
-			m.dialog.setWidth(w)
-		}
+		m.resizeAll()
 		return m, nil
 
 	case tea.FocusMsg:
@@ -202,6 +201,17 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// resizeAll fits every session (and the new-session dialog) to termSize.
+func (m *model) resizeAll() {
+	w, h := m.termSize()
+	for _, s := range m.sessions {
+		s.Resize(w, h)
+	}
+	if m.dialog != nil {
+		m.dialog.setWidth(w)
+	}
+}
+
 func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := k.String()
 
@@ -260,9 +270,18 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// The toggle key hides or shows the list from anywhere; it doesn't
+	// reach the agent.
+	if key == listOpts.toggleKey {
+		m.setListHidden(!m.listHidden)
+		return m, nil
+	}
+
 	switch m.focus {
 	case focusTerminal:
 		if key == "ctrl+q" || key == "ctrl+]" {
+			// Back to the list, showing it again if it's hidden.
+			m.setListHidden(false)
 			m.focus = focusSidebar
 			return m, nil
 		}
@@ -305,6 +324,8 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	// Sidebar.
 	switch key {
+	case "ctrl+q", "ctrl+]":
+		m.setListHidden(false)
 	case "up", "k":
 		m.moveSel(-1)
 	case "down", "j":
@@ -314,6 +335,7 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "end", "G":
 		m.selectVisible(-1)
 	case "/":
+		m.setListHidden(false) // the filter is typed in the list's header
 		ti := textinput.New()
 		ti.Prompt = "/"
 		ti.Placeholder = "filter"
@@ -416,6 +438,9 @@ const wheelLines = 3
 func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	ms := msg.Mouse()
 	sw := m.sidebarWidth()
+	if m.listHidden {
+		sw = 0 // no sidebar: everything goes to the terminal
+	}
 
 	if m.focus == focusDialog || m.rename != nil || m.confirm != nil || m.filterInput != nil {
 		return nil
@@ -445,7 +470,7 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	if s == nil {
 		return nil
 	}
-	tx, ty := ms.X-sw-1, ms.Y-1 // terminal coordinates
+	tx, ty := ms.X-m.mainLeft(), ms.Y-1 // terminal coordinates
 	inTerm := tx >= 0 && ty >= 0
 
 	if s.MouseReporting() && inTerm {

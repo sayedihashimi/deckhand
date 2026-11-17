@@ -20,6 +20,8 @@ import (
 // screen as a PNG. The PR workflow posts it on each pull request.
 //
 //	$env:DECKHAND_SCREENSHOT="shot.png"; go test -tags e2e -run TestE2EScreenshot -v
+//
+// DECKHAND_SCREENSHOT_HIDDEN also saves the scene with the list hidden.
 func TestE2EScreenshot(t *testing.T) {
 	out := os.Getenv("DECKHAND_SCREENSHOT")
 	if out == "" {
@@ -141,6 +143,24 @@ event PreToolUse Bash | go test ./...
 		t.Fatal(err)
 	}
 	t.Logf("wrote %s\n%s", out, h.screen())
+
+	// Optionally, the same scene with the list hidden (ctrl+\): the selected
+	// session gets the full width and the header ends with the status line.
+	if hidden := os.Getenv("DECKHAND_SCREENSHOT_HIDDEN"); hidden != "" {
+		h.send("\x1c") // ctrl+\
+		h.waitFor(`need you · 1 finished · ctrl+\ list`, 5*time.Second)
+		time.Sleep(500 * time.Millisecond)
+		hf, err := os.Create(hidden)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer hf.Close()
+		if err := termshot.Render(hf, screenFromEmulator(h.emu), termshot.Options{}); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("wrote %s\n%s", hidden, h.screen())
+		h.send("\x1c") // show it again
+	}
 
 	h.send("q")
 	h.send("y")

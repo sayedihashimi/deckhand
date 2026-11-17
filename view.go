@@ -381,7 +381,7 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 	var cur *tea.Cursor
 	if m.focus == focusTerminal && sn.running && !emu.CursorHidden() {
 		p := emu.CursorPosition()
-		cur = tea.NewCursor(m.sidebarWidth()+1+p.X, 1+p.Y)
+		cur = tea.NewCursor(m.mainLeft()+p.X, 1+p.Y)
 	}
 	return lines, cur
 }
@@ -493,13 +493,18 @@ func (m *model) renderFooter(w int) string {
 	var help string
 	switch m.focus {
 	case focusTerminal:
-		help = " ctrl+q back to the list"
+		verb := " hide list"
+		if m.listHidden {
+			verb = " show list"
+		}
+		help = " ctrl+q back to the list · " + keyLabel(listOpts.toggleKey) + verb
 	case focusDialog:
 		help = " enter start · esc cancel"
 	default:
-		help = " ↑↓ select · enter open · n new · tab next · / filter · @ needs you · o editor · O explorer · t terminal · r rename · K end · x remove · q quit"
+		toggle := keyLabel(listOpts.toggleKey) + " list"
+		help = " ↑↓ select · enter open · n new · tab next · / filter · @ needs you · o editor · O explorer · t terminal · r rename · K end · x remove · " + toggle + " · q quit"
 		if ansi.StringWidth(help) > w {
-			help = " ↑↓ select · enter open · n new · tab next · / filter · @ needs you · o/O/t open · r rename · K end · x remove · q quit"
+			help = " ↑↓ move · enter open · n new · tab next · / @ filter · o/O/t open · r rename · K end · x remove · " + toggle + " · q quit"
 		}
 		if m.filterInput != nil {
 			help = " type to filter · enter keep · esc clear"
@@ -518,18 +523,28 @@ func (m *model) View() tea.View {
 		return v
 	}
 	sw := m.sidebarWidth()
-	mw := m.width - sw - 1
+	mw := m.width - m.mainLeft()
 	bodyH := m.height - 1
 
-	side := m.renderSidebar(sw, bodyH)
+	var side []string
+	if !m.listHidden {
+		side = m.renderSidebar(sw, bodyH)
+	}
 	main, cur := m.renderMain(mw, bodyH)
+	if m.listHidden && listOpts.statusLine {
+		// The status line goes at the end of the session header row.
+		st := m.statusLine()
+		main[0] = fit(main[0], mw-ansi.StringWidth(st)-2) + "\x1b[0m  " + st
+	}
 	sep := stBorder.Render("│")
 
 	var b strings.Builder
 	for i := 0; i < bodyH; i++ {
-		b.WriteString(side[i])
-		b.WriteString("\x1b[0m")
-		b.WriteString(sep)
+		if side != nil {
+			b.WriteString(side[i])
+			b.WriteString("\x1b[0m")
+			b.WriteString(sep)
+		}
 		b.WriteString(main[i])
 		b.WriteString("\n")
 	}

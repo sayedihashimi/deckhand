@@ -7,10 +7,12 @@ import (
 	"strings"
 )
 
-// prefs remembers recently used folders and the last agent chosen.
+// prefs remembers recently used folders, the last agent chosen and whether
+// the session list is hidden.
 type prefs struct {
 	RecentDirs []string `json:"recent_dirs"`
 	LastAgent  string   `json:"last_agent,omitempty"`
+	ListHidden bool     `json:"list_hidden,omitempty"`
 }
 
 const maxRecentDirs = 20

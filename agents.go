@@ -242,6 +242,14 @@ const sampleConfig = `# deckhand agents: each [[agents]] entry shows up in the n
 # [open]
 # editor   = 'rider64.exe "{dir}"'
 # terminal = 'wt.exe -w 0 nt -d "{dir}"'
+
+# The session list. toggle_key hides and shows it from anywhere (inside a
+# session too, so that key no longer reaches the agent). While it's hidden,
+# status_line shows how many sessions need you at the end of the header row.
+#
+# [list]
+# toggle_key  = 'ctrl+\'      # or "f2", "f3", ...
+# status_line = true
 `
 
 // runConfig implements "deckhand config": print the config path, creating

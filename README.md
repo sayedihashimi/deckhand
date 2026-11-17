@@ -83,13 +83,15 @@ Run `deckhand notify-test` to check that notifications appear. If they don't, ch
 | r | Rename the session |
 | K | End the session's process (it stays in the list) |
 | x | End and remove the session |
+| `ctrl+\` | Hide or show the session list (see [Hiding the session list](#hiding-the-session-list)) |
 | q | Quit (Claude sessions can be resumed next time) |
 
 **Inside a session**
 
 | Key | Action |
 |---|---|
-| ctrl+q (or ctrl+]) | Back to the session list. Every other key goes to the agent. |
+| ctrl+q (or ctrl+]) | Back to the session list, showing it again if it's hidden. Every other key except `ctrl+\` goes to the agent. |
+| `ctrl+\` | Hide or show the session list, so the session gets the full width |
 | shift+PgUp / shift+PgDn | Scroll back through the output a page at a time |
 
 **Mouse**
@@ -136,6 +138,26 @@ type    = "claude"
 **How status works when your script starts Claude:** for a `pwsh` agent (and a `.ps1` script) with `type = "claude"`, deckhand defines a PowerShell function named `claude` for that session only (`%LOCALAPPDATA%\deckhand\claude-shim.ps1`). PowerShell prefers functions to programs, so when your function or script calls `claude`, it calls the shim. The shim runs the real `claude.exe` and adds deckhand's `--settings` (the hooks) and `--session-id`, leaving out `--session-id` when you're resuming. Your script doesn't need to forward arguments, and neither it nor `~/.claude/settings.json` is changed.
 
 A `command` agent that is a program or `.cmd` file gets the extra arguments on its command line, so it must pass them on to `claude`.
+
+## Hiding the session list
+
+Press `ctrl+\` to hide the session list and give the selected session the full window width. Press it again to show the list. It works the same in the list and inside a session, where `ctrl+\` no longer reaches the agent (Claude Code, Codex and Gemini don't use it). It isn't `F2` because Codex uses `F2` to open its warnings, but you can choose `F2` or another key in the config (below).
+
+- Every session is resized to the new width, as when the window is resized.
+- `ctrl+q` (or `ctrl+]`) still goes back to the list, and shows it again if it's hidden. `/` shows it too, since the filter is typed at the top of the list.
+- The wheel and clicks all go to the terminal while the list is hidden.
+- The end of the session header shows which sessions need you, by the same rules as the list's badge and `@`: `1 need you · 1 finished · ctrl+\ list`. The window title still says "(n need you)".
+- deckhand remembers whether the list is hidden (in `%LOCALAPPDATA%\deckhand\prefs.json`) and starts the same way next time.
+
+Change the key, or turn off the status line, in the config file:
+
+```toml
+[list]
+toggle_key  = 'ctrl+\'  # or "f2", "f3", ... (single quotes keep the \ as it is)
+status_line = true     # false: no "n need you" in the header while the list is hidden
+```
+
+The key can't be a plain character, or a key deckhand or the agents need (`enter`, `esc`, `tab`, the arrows, `ctrl+q`, `ctrl+]`, `ctrl+c`).
 
 ## Opening a session's folder
 
