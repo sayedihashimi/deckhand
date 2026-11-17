@@ -21,7 +21,7 @@ Don't commit to `main` directly. For each change:
    gofmt -l .                      # must print nothing
    go vet ./...; go vet -tags e2e ./...
    go test ./...
-   go test -tags e2e -v            # drives deckhand in a real ConPTY; ~1 min
+   go test -tags e2e -v -timeout 20m  # real ConPTY; ~4 min on CI, can pass 10 min locally
    $env:DECKHAND_SCREENSHOT="$env:TEMP\deckhand.png"; go test -tags e2e -run TestE2EScreenshot -v
    ```
    Open the PNG and look at it before you push.

@@ -187,11 +187,20 @@ func withGHApp(t *testing.T, home string, env []string) (out []string, ghState, 
 // withGitUsrBin adds Git for Windows' usr\bin to the end of env's PATH:
 // its ucrt64\bin\git.exe crashes pushing to a local repo without it (sh
 // and the msys DLLs).
+//
+// The install root comes from git --exec-path (<root>\<mingw64 or
+// ucrt64>\libexec\git-core), not from where git.exe is, because the git on
+// PATH may be <root>\cmd\git.exe or <root>\bin\git.exe (as on GitHub's
+// Windows runners) rather than <root>\ucrt64\bin\git.exe.
 func withGitUsrBin(env []string) []string {
-	if gitExe, err := exec.LookPath("git"); err == nil {
-		if root := filepath.Dir(filepath.Dir(filepath.Dir(gitExe))); isDir(filepath.Join(root, "usr", "bin")) {
-			env = withPathSuffix(env, filepath.Join(root, "usr", "bin"))
-		}
+	out, err := exec.Command("git", "--exec-path").Output()
+	if err != nil {
+		return env
+	}
+	execPath := filepath.Clean(strings.TrimSpace(string(out)))
+	root := filepath.Dir(filepath.Dir(filepath.Dir(execPath)))
+	if usrBin := filepath.Join(root, "usr", "bin"); isDir(usrBin) {
+		env = withPathSuffix(env, usrBin)
 	}
 	return env
 }
