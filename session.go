@@ -58,6 +58,8 @@ type Session struct {
 	scrollOff  int                // lines scrolled back from the live view
 	scrollBase int                // scrollback length when scrollOff was last set
 
+	keys *keyProtocol // keyboard enhancements the app asked for
+
 	dirty *atomic.Bool // shared "screen changed" flag owned by the model
 }
 
@@ -116,6 +118,8 @@ func (s *Session) Start(width, height int, resume bool, dirty *atomic.Bool) erro
 	}
 	emu := vt.NewSafeEmulator(width, height)
 	emu.SetScrollbackSize(5000)
+	keys := &keyProtocol{}
+	keys.register(emu.Emulator)
 	emu.Emulator.SetCallbacks(vt.Callbacks{
 		Bell: func() {
 			s.mu.Lock()
@@ -137,6 +141,7 @@ func (s *Session) Start(width, height int, resume bool, dirty *atomic.Bool) erro
 
 	s.mu.Lock()
 	s.emu, s.pty, s.cmd, s.dirty = emu, pty, cmd, dirty
+	s.keys = keys
 	s.mouseModes = map[ansi.Mode]bool{}
 	s.altScroll = false
 	s.scrollOff = 0
@@ -406,9 +411,14 @@ func (s *Session) Emulator() *vt.SafeEmulator {
 	return s.emu
 }
 
+// SendKey forwards a key to the agent. Keys the legacy encoding can't
+// express (shift+enter, ...) go in the protocol the agent asked for.
 func (s *Session) SendKey(k uv.KeyPressEvent) {
-	if emu := s.Emulator(); emu != nil && s.Running() {
-		emu.SendKey(k)
+	s.mu.Lock()
+	emu, keys, running := s.emu, s.keys, s.running
+	s.mu.Unlock()
+	if emu != nil && running {
+		sendKey(emu, keys, k)
 	}
 }
 
