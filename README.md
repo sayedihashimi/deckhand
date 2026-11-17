@@ -65,11 +65,14 @@ Run `deckhand notify-test` to check that notifications appear. If they don't, ch
 
 ## Keys
 
+Press `?` in the session list, or `F1` anywhere (also inside a session), for a summary of the keys, the status icons and where the config file is. `esc`, `?`, `F1` or `q` closes it.
+
 **Session list**
 
 | Key | Action |
 |---|---|
 | ↑/↓ or j/k | Select a session (its terminal shows on the right) |
+| home/end or g/G | Select the first or last session |
 | enter | Type into the session; starts or resumes it if it isn't running |
 | 1–9 | Jump straight into session N |
 | tab | Select the next session that needs you, then the next one that finished |
@@ -82,15 +85,17 @@ Run `deckhand notify-test` to check that notifications appear. If they don't, ch
 | t | Open a new Windows Terminal tab in the session's folder |
 | r | Rename the session |
 | K | End the session's process (it stays in the list) |
-| x | End and remove the session |
+| x (or delete) | End and remove the session |
+| ? or F1 | Show the keys |
 | q | Quit (Claude sessions can be resumed next time) |
 
 **Inside a session**
 
 | Key | Action |
 |---|---|
-| ctrl+q (or ctrl+]) | Back to the session list. Every other key goes to the agent. |
+| ctrl+q (or ctrl+]) | Back to the session list. Every other key except F1 goes to the agent. |
 | shift+PgUp / shift+PgDn | Scroll back through the output a page at a time |
+| F1 | Show the keys. deckhand keeps F1, so it doesn't reach the agent. `?` is typed text and goes to the agent. |
 
 **Mouse**
 
