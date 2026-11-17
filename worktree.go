@@ -388,17 +388,18 @@ func runSetup(dir, command string, log func(string)) error {
 
 // closeCheck is what x found out about a worktree session's work.
 type closeCheck struct {
-	merged   bool     // the branch tip is in the default branch, or its PR was merged
-	how      string   // "in origin/main" or "PR #12 merged"
-	dirty    []string // uncommitted files (git status --porcelain lines)
-	commits  []string // commits not on the default branch ("abc1234 Fix it")
-	pr       string   // the PR state, for the warning
-	fetchErr string   // the fetch failed; the result may be stale
-	noBranch bool     // the local branch is gone
-	missing  bool     // the worktree folder is gone
-	ahead    int      // how many commits aren't on the default branch (commits is capped)
-	onOrigin bool     // origin has the branch
-	pushed   bool     // origin's branch is at the local tip
+	merged    bool     // the branch tip is in the default branch, or its PR was merged
+	how       string   // "in origin/main" or "PR #12 merged"
+	dirty     []string // uncommitted files (git status --porcelain lines)
+	commits   []string // commits not on the default branch ("abc1234 Fix it")
+	pr        string   // the PR state, for the warning
+	fetchErr  string   // the fetch failed; the result may be stale
+	noBranch  bool     // the local branch is gone
+	missing   bool     // the worktree folder is gone
+	ahead     int      // how many commits aren't on the default branch (commits is capped)
+	onOrigin  bool     // origin has the branch
+	pushed    bool     // origin's branch is at the local tip
+	localOnly bool     // merged only into the local default branch (not pushed): keep origin's branch
 }
 
 // safe reports whether the worktree and branch can be removed without
@@ -407,8 +408,9 @@ func (c closeCheck) safe() bool { return c.merged && len(c.dirty) == 0 && !c.noB
 
 // checkMerged fetches the default branch and works out whether a worktree
 // session's branch is merged: its tip is in origin/<base> (a merge or
-// fast-forward) or the local <base> (m's local merge), or GitHub has a merged PR whose head is the tip (a squash
-// or rebase merge, which git can't see). It also lists uncommitted files
+// fast-forward), or GitHub has a merged PR whose head is the tip (a squash
+// or rebase merge, which git can't see), or only the local <base> has it
+// (m's local merge, not pushed: localOnly). It also lists uncommitted files
 // and commits that aren't on the default branch.
 func checkMerged(repoRoot, wt, branch, base string) closeCheck {
 	var c closeCheck
@@ -432,7 +434,7 @@ func checkMerged(repoRoot, wt, branch, base string) closeCheck {
 			// m's local merge: in the local default branch, not pushed yet.
 			// The commits are kept there, so removing the branch loses nothing.
 			if _, err := gitRun(repoRoot, "merge-base", "--is-ancestor", tip, "refs/heads/"+base); err == nil {
-				c.merged, c.how = true, "in the local "+base+", not pushed"
+				c.merged, c.how, c.localOnly = true, "in the local "+base+", not pushed", true
 			}
 		}
 		if out, err := gitRun(repoRoot, "log", "--format=%h %s", "-n", "20", ref+".."+tip); err == nil {
@@ -460,8 +462,8 @@ func checkMerged(repoRoot, wt, branch, base string) closeCheck {
 		c.pr = fmt.Sprintf("PR #%d %s", pr.Number, strings.ToLower(pr.State))
 		if pr.State == "MERGED" && tip != "" {
 			if strings.EqualFold(pr.HeadRefOid, tip) {
-				if !c.merged {
-					c.merged, c.how = true, fmt.Sprintf("PR #%d merged", pr.Number)
+				if !c.merged || c.localOnly {
+					c.merged, c.how, c.localOnly = true, fmt.Sprintf("PR #%d merged", pr.Number), false
 				}
 			} else {
 				c.pr += ", but the branch has commits after it"

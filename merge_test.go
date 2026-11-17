@@ -236,8 +236,15 @@ func TestMergeLocal(t *testing.T) {
 	}
 	// x's merged check sees the local merge.
 	fakeGH(t, noPR) // checkMerged also asks gh about a squash-merged PR
-	if c := checkMerged(w.repoRoot, w.path, w.branch, "main"); !c.merged || c.how != "in the local main, not pushed" {
+	if c := checkMerged(w.repoRoot, w.path, w.branch, "main"); !c.merged || c.how != "in the local main, not pushed" || !c.localOnly {
 		t.Errorf("checkMerged: %+v", c)
+	}
+	// A merged PR at the tip means GitHub has the work too: not local only.
+	fakeGH(t, func(string, ...string) (string, error) {
+		return `{"number":3,"state":"MERGED","headRefOid":"` + tip + `"}`, nil
+	})
+	if c := checkMerged(w.repoRoot, w.path, w.branch, "main"); !c.merged || c.localOnly || c.how != "PR #3 merged" {
+		t.Errorf("checkMerged with a merged PR: %+v", c)
 	}
 }
 
@@ -295,6 +302,8 @@ func TestMKeyLocal(t *testing.T) {
 		t.Fatal(err)
 	}
 	commitFile(t, w.path, "feature.txt", "new")
+	git(t, w.path, "push", "-q", "origin", w.branch) // origin (a bare repo) has the branch
+	origin := filepath.Join(filepath.Dir(clone), "origin.git")
 	m, s := mergeModel(w)
 
 	pressKey(m, 'm')
@@ -317,6 +326,45 @@ func TestMKeyLocal(t *testing.T) {
 	}
 	if !isDir(clone) {
 		t.Fatal("the main checkout must never be removed")
+	}
+	// main isn't pushed, so origin's branch is the only other copy: kept.
+	if _, err := gitRun(origin, "rev-parse", "--verify", "refs/heads/"+w.branch); err != nil {
+		t.Error("origin's branch must be kept while the merge is only local")
+	}
+	wantFlash := "Kept origin/" + w.branch + ": main isn't pushed yet. Closed: removed " + w.path + ", deleted branch " + w.branch
+	if m.flash != wantFlash {
+		t.Errorf("flash %q, want %q", m.flash, wantFlash)
+	}
+}
+
+// A branch that's in origin/<base> is merged for good, so closing deletes
+// origin's branch too.
+func TestCloseMergedOnOriginDeletesRemote(t *testing.T) {
+	clone := testRepo(t)
+	fakeGH(t, noPR)
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	worktreeSettings = worktreeConfig{}
+	w, err := createWorktree(worktreeConfig{}, clone, func(string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitFile(t, w.path, "feature.txt", "new")
+	git(t, w.path, "push", "-q", "origin", w.branch, "HEAD:main")
+	origin := filepath.Join(filepath.Dir(clone), "origin.git")
+	if c := checkMerged(w.repoRoot, w.path, w.branch, "main"); !c.merged || c.localOnly || c.how != "in origin/main" {
+		t.Fatalf("checkMerged: %+v", c)
+	}
+	m, s := mergeModel(w)
+	pressKey(m, 'x')
+	pressKey(m, 'y')
+	if slices.Contains(m.sessions, s) || isDir(w.path) {
+		t.Fatalf("should be closed (flash %q)", m.flash)
+	}
+	if _, err := gitRun(origin, "rev-parse", "--verify", "refs/heads/"+w.branch); err == nil {
+		t.Error("origin's branch should be deleted")
+	}
+	if !strings.Contains(m.flash, "deleted origin/"+w.branch) || strings.Contains(m.flash, "Kept origin") {
+		t.Errorf("flash %q", m.flash)
 	}
 }
 

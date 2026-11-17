@@ -100,6 +100,7 @@ func TestE2EMergeLocal(t *testing.T) {
 	clone := testRepo(t)
 	home := t.TempDir()
 	exe, env, log := worktreeE2E(t, home) // no gh on PATH
+	env = withGitUsrBin(env)              // so ls-remote to the local origin works, as for a push
 	h := startHarness(t, exe, env, clone)
 	s := startWorktreeSessionE2E(t, h, home, log)
 	commitFile(t, s.Worktree, "README.md", "theirs\n")
@@ -127,6 +128,7 @@ func TestE2EMergeLocal(t *testing.T) {
 
 	// Without the conflicting commit: merged, not pushed, then closed.
 	git(t, clone, "reset", "-q", "--hard", "origin/main")
+	git(t, s.Worktree, "push", "-q", "origin", s.Branch)
 	tip := git(t, s.Worktree, "rev-parse", "HEAD")
 	h.send("m")
 	h.waitFor("into main in api, without pushing? y/n", 10*time.Second)
@@ -139,9 +141,12 @@ func TestE2EMergeLocal(t *testing.T) {
 		t.Error("main must not be pushed")
 	}
 	h.send("y")
-	h.waitFor("Closed: removed", 30*time.Second)
+	h.waitFor("Kept origin/"+s.Branch+": main isn't pushed yet.", 30*time.Second)
 	if isDir(s.Worktree) || refExists(clone, "refs/heads/"+s.Branch) {
 		t.Error("the worktree and branch should be removed")
+	}
+	if _, err := gitRun(filepath.Join(filepath.Dir(clone), "origin.git"), "rev-parse", "--verify", "refs/heads/"+s.Branch); err != nil {
+		t.Error("origin's branch must be kept while main isn't pushed")
 	}
 	h.send("q")
 	h.waitExit(10 * time.Second)
