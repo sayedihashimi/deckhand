@@ -302,3 +302,42 @@ func TestE2EWTShiftEnterNewSession(t *testing.T) {
 	h.wtType("y")
 	h.waitExit(10 * time.Second)
 }
+
+// The config screen with win32-input-mode on: typing and pasting into its
+// text fields, tab between fields, enter, and ctrl+s to save.
+func TestE2EWTConfigScreen(t *testing.T) {
+	exe := buildDeckhand(t)
+	pwsh, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh not found")
+	}
+	cfg := filepath.Join(t.TempDir(), "config.toml")
+	path := filepath.Dir(pwsh) + ";" + os.Getenv("SystemRoot") + `\System32`
+	env := append(wtEnv(t.TempDir(), path), "DECKHAND_CONFIG="+cfg)
+	h := startHarness(t, exe, env, t.TempDir())
+
+	h.waitFor("No sessions yet", 10*time.Second)
+	h.wtType("c")
+	h.waitFor("+ Add agent", 5*time.Second)
+	h.wtKey(vkReturn, '\r', 0)
+	h.waitFor("New agent", 3*time.Second)
+	h.wtType("wt-agent")
+	h.waitFor("wt-agent", 3*time.Second)
+	for i := 0; i < 3; i++ { // Kind, Pick, Command
+		h.wtKey(0x09, '\t', 0) // VK_TAB
+	}
+	h.send("\x1b[200~Start-Pasted\n\x1b[201~") // bracketed paste, LF as Windows Terminal sends it
+	h.waitFor("Start-Pasted", 3*time.Second)
+	h.wtKey(vkReturn, '\r', 0)
+	h.waitFor("unsaved changes", 3*time.Second)
+	h.wtKey('S', 0x13, wtCtrl)
+	h.waitFor("Saved and applied", 5*time.Second)
+	data, _ := os.ReadFile(cfg)
+	if !strings.Contains(string(data), `name = "wt-agent"`) || !strings.Contains(string(data), `pwsh = "Start-Pasted"`) {
+		t.Fatalf("config.toml:\n%s\nscreen:\n%s", data, h.screen())
+	}
+	h.wtKey(0x1b, 0x1b, 0)
+	h.waitFor("n new", 3*time.Second)
+	h.wtType("q")
+	h.waitExit(10 * time.Second)
+}
