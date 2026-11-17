@@ -864,8 +864,9 @@ func TestE2EHelp(t *testing.T) {
 	h.waitFor("? or F1  all the keys", 2*time.Second) // the welcome screen
 	h.waitFor("? help", 2*time.Second)                // the footer
 	h.send("?")
-	h.waitFor("New-session dialog", 5*time.Second)
-	h.waitFor("Config file:", 2*time.Second)
+	h.waitFor("Keys · Session list", 5*time.Second) // the list's keys first
+	h.waitFor("New-session dialog", 2*time.Second)
+	h.waitFor("more group", 2*time.Second) // the rest scroll
 	t.Logf("help from the list:\n%s", h.screen())
 	h.send("\x1b")
 	h.waitGone("New-session dialog", 5*time.Second)
@@ -886,7 +887,8 @@ func TestE2EHelp(t *testing.T) {
 	// F1 (ESC O P) opens it inside a session; esc closes it and the
 	// terminal still has focus.
 	h.send("\x1bOP")
-	h.waitFor("New-session dialog", 5*time.Second)
+	h.waitFor("Keys · Inside a session", 5*time.Second) // the session's keys first
+	h.waitFor("New-session dialog", 2*time.Second)
 	h.waitFor("esc, ? or F1 close", 2*time.Second)
 	h.send("\x1b")
 	h.waitGone("New-session dialog", 5*time.Second)

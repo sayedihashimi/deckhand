@@ -20,7 +20,8 @@ import (
 // folder; two with a pull request, from a fake gh), plus an exited shell)
 // and saves deckhand's
 // screen as a PNG, with the exited shell's restored output, the config
-// screen ("c") and the api session's diff preview ("d") below it. The PR
+// screen ("c"), the help opened from it (F1) and the api session's diff
+// preview ("d") below it. The PR
 // workflow posts it on each pull request.
 //
 //	$env:DECKHAND_SCREENSHOT="shot.png"; go test -tags e2e -run TestE2EScreenshot -v
@@ -231,6 +232,15 @@ editor = 'code "{dir}"'
 	time.Sleep(300 * time.Millisecond)
 	config := screenFromEmulator(h.emu)
 	t.Logf("config screen:\n%s", h.screen())
+
+	// F1 there: the help, with the config screen's keys first.
+	h.send("\x1bOP")
+	h.waitFor("Keys · Config screen (c)", 5*time.Second)
+	time.Sleep(300 * time.Millisecond)
+	configHelp := screenFromEmulator(h.emu)
+	t.Logf("help from the config screen:\n%s", h.screen())
+	h.send("\x1b")
+	h.waitGone("Keys · Config screen (c)", 3*time.Second)
 	h.send("\x1b")
 	h.waitGone("+ Add agent", 3*time.Second)
 
@@ -243,8 +253,9 @@ editor = 'code "{dir}"'
 	h.send("\x1b")
 	h.waitGone("files changed", 3*time.Second)
 
-	// One image: the scene, the restored output, the config screen and the
-	// diff preview, with a blank row between them.
+	// One image: the scene, the restored output, the config screen, the
+	// help opened from it and the diff preview, with a blank row between
+	// them.
 	blank := make([]termshot.Cell, len(scene[0]))
 	for i := range blank {
 		blank[i] = termshot.Cell{Text: " ", Width: 1}
@@ -252,6 +263,7 @@ editor = 'code "{dir}"'
 	both := append(termshot.Screen{}, scene...)
 	both = append(append(both, blank), restored...)
 	both = append(append(both, blank), config...)
+	both = append(append(both, blank), configHelp...)
 	both = append(append(both, blank), diffShot...)
 
 	f, err := os.Create(out)
