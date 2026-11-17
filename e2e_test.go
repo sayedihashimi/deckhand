@@ -473,10 +473,9 @@ func TestE2EClaude(t *testing.T) {
 	h.send("Reply with only the word PONG and nothing else.")
 	time.Sleep(500 * time.Millisecond)
 	h.send("\r")
-	h.waitForAny(30*time.Second, "claude · thinking", "claude · your turn")
-	h.waitFor("claude · your turn", 120*time.Second)
-	h.waitFor("PONG", 5*time.Second)
-	t.Logf("screen at 'your turn':\n%s", h.screen())
+	h.waitForAny(30*time.Second, "claude · thinking", "claude · your turn", "claude · PONG")
+	h.waitFor("claude · PONG", 120*time.Second) // the reply replaces "your turn"
+	t.Logf("screen at the end of the turn:\n%s", h.screen())
 	if logs, _ := filepath.Glob(filepath.Join(home, "sessions", "*", "events.jsonl")); len(logs) == 1 {
 		data, _ := os.ReadFile(logs[0])
 		t.Logf("hook events:\n%s", data)
@@ -542,9 +541,13 @@ func TestE2ENotifyInfoFilter(t *testing.T) {
 	h.send("\x11") // back to the list
 
 	// Branch, model and context.
-	h.waitFor("e2e-branch*", 10*time.Second)       // header
-	h.waitFor("opus 5.5 · 83k", 10*time.Second)    // sidebar and header
-	h.waitFor("claude · your turn", 5*time.Second) // status from the Stop hook
+	h.waitFor("e2e-branch*", 10*time.Second)    // header
+	h.waitFor("opus 5.5 · 83k", 10*time.Second) // sidebar and header
+	// After the Stop hook, the second line shows the reply, not "your turn".
+	h.waitFor("claude · Fixed the bug.", 5*time.Second)
+	if strings.Contains(h.screen(), "your turn") {
+		t.Errorf("the reply should replace \"your turn\"; screen:\n%s", h.screen())
+	}
 
 	// Notifications: one for the permission request, one when it finished.
 	deadline := time.Now().Add(10 * time.Second)

@@ -6,11 +6,11 @@ A terminal UI for running several AI agent CLIs side by side on Windows. The lef
  deckhand          1 need you │ ● api-refactor  claude  C:\src\api
 ──────────────────────────────│
 ▌1 ● api-refactor          12s│  Do you want to make this edit to Program.cs?
-▌    claude · permission: Edit│  ❯ 1. Yes
+▌    claude · Edit: C:srcp…│  ❯ 1. Yes
  2 ⠹ docs                   3m│    2. Yes, and don't ask again
      claude · Bash            │    3. No
  3 ✓ tests                  1m│
-     claude · your turn       │
+     claude · All 42 tests pa…│
 ```
 
 It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) in a ConPTY pseudo console, so your own Claude settings, login and proxy configuration apply unchanged. No tmux or WSL is needed.
@@ -32,11 +32,16 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 
 ## Session details
 
+The second line under each session is the agent and what it's doing. For Claude it also shows:
+
+- **Finished:** the start of Claude's reply, in place of "your turn" (the ✓ already says it's your turn). It's the first line of the reply with Markdown removed, cut to fit, and bold until you look at the session. It shows once the turn has ended, never while Claude is still working, so an old reply isn't mistaken for a new one. The session header shows as much of the reply as fits.
+- **Needs you:** what the tool wants to do, such as `Bash: npm test`.
+
 The third line under each session shows the git branch, then for Claude the model and how much context the conversation uses:
 
 ```
 ▌2 ✓ api-refactor           1m
-▌    claude · your turn
+▌    claude · Fixed the redire…
 ▌    feature/login*↑2 · opus 5.5 · 84k
 ```
 
