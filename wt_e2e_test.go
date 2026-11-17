@@ -164,6 +164,12 @@ func TestE2EWTScroll(t *testing.T) {
 	}
 	h.wtKey(0x1b, 0x1b, 0) // esc clears the line
 
+	// F1 opens the help inside a session; esc closes it.
+	h.wtKey(0x70, 0, 0) // VK_F1
+	h.waitFor("esc, ? or F1 close", 3*time.Second)
+	h.wtKey(0x1b, 0x1b, 0)
+	h.waitGone("esc, ? or F1 close", 3*time.Second)
+
 	// Wheel over the sidebar doesn't scroll the terminal.
 	h.wheel(true, 5, 5)
 	time.Sleep(300 * time.Millisecond)
