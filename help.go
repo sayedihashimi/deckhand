@@ -43,7 +43,8 @@ var helpGroups = []helpGroup{
 	{helpList, []helpEntry{
 		{keys: "↑↓ j k", desc: "select a session", match: []string{"up", "k", "down", "j"}, footer: "↑↓ select"},
 		{keys: "home end", desc: "first / last (also g, G)", match: []string{"home", "g", "end", "G"}},
-		{keys: "enter", desc: "open it (starts or resumes it)", match: []string{"enter", "right", "l"}, footer: "enter open"},
+		{keys: "enter", desc: "open (starts or resumes it)", match: []string{"enter", "right", "l"}, footer: "enter open", short: "⏎ open"},
+		{keys: "shift+enter", desc: "new session, same folder", match: []string{"shift+enter"}, footer: "⇧⏎ new here"},
 		{keys: "n", desc: "new session", match: []string{"n"}, footer: "n new"},
 		{keys: "1–9", desc: "jump into session N", match: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9"}},
 		{keys: "tab", desc: "next one that needs you", match: []string{"tab"}, footer: "tab next"},
@@ -64,7 +65,7 @@ var helpGroups = []helpGroup{
 	}},
 	{helpMouse, []helpEntry{
 		{keys: "wheel", desc: "scroll output or list"},
-		{keys: "click", desc: "select, or focus terminal"},
+		{keys: "click", desc: "select, focus terminal"},
 		{keys: "shift+drag", desc: "select text"},
 	}},
 	{helpDialog, []helpEntry{
@@ -139,6 +140,20 @@ var (
 	stHelpGroup = lipgloss.NewStyle().Bold(true)
 )
 
+// helpColumnWidth is the width helpColumn needs to show groups without
+// wrapping.
+func helpColumnWidth(groups []helpGroup) int {
+	keyW, descW, titleW := 0, 0, 0
+	for _, g := range groups {
+		titleW = max(titleW, ansi.StringWidth(g.title))
+		for _, e := range g.entries {
+			keyW = max(keyW, ansi.StringWidth(e.keys))
+			descW = max(descW, ansi.StringWidth(e.desc))
+		}
+	}
+	return max(keyW+2+descW, titleW)
+}
+
 // helpColumn renders groups as "key  description" rows, inner cells wide.
 // Long descriptions wrap under themselves.
 func helpColumn(groups []helpGroup, width int) []string {
@@ -201,9 +216,11 @@ func (m *model) helpContent(inner int) []string {
 	title := stTitle.Render("Keys") + stMuted.Render("   esc, ? or F1 closes")
 	out := []string{fit(title, inner), ""}
 	const gap = 3
-	if colW := (inner - gap) / 2; colW >= 38 {
+	// The right column gets what it needs, the session list the rest.
+	rightW := min(helpColumnWidth(helpGroups[1:]), (inner-gap)/2)
+	if colW := inner - gap - rightW; rightW >= 30 && colW >= 36 {
 		left := helpColumn(helpGroups[:1], colW)
-		right := helpColumn(helpGroups[1:], inner-gap-colW)
+		right := helpColumn(helpGroups[1:], rightW)
 		for i := 0; i < max(len(left), len(right)); i++ {
 			l, r := strings.Repeat(" ", colW), ""
 			if i < len(left) {
