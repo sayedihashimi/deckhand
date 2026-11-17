@@ -52,22 +52,7 @@ func TestE2EPullRequest(t *testing.T) {
 	home := t.TempDir()
 	exe, env, log := worktreeE2E(t, home)
 	originMain := git(t, origin, "rev-parse", "refs/heads/main")
-	ghBin := t.TempDir()
-	if out, err := exec.Command("go", "build", "-o", filepath.Join(ghBin, "gh.exe"), "./testdata/ghapp").CombinedOutput(); err != nil {
-		t.Fatalf("build ghapp: %v\n%s", err, out)
-	}
-	ghState := filepath.Join(home, "gh")
-	_ = os.MkdirAll(ghState, 0o755)
-	ghLog := filepath.Join(home, "gh.log")
-	env = withPathPrefix(env, ghBin)
-	if gitExe, err := exec.LookPath("git"); err == nil {
-		// Git for Windows' ucrt64\bin\git.exe crashes pushing to a local
-		// repo without its usr\bin (sh and the msys DLLs) on PATH.
-		if root := filepath.Dir(filepath.Dir(filepath.Dir(gitExe))); isDir(filepath.Join(root, "usr", "bin")) {
-			env = withPathSuffix(env, filepath.Join(root, "usr", "bin"))
-		}
-	}
-	env = append(env, "GHAPP_DIR="+ghState, "GHAPP_LOG="+ghLog)
+	env, ghState, ghLog := withGHApp(t, home, env)
 	h := startHarness(t, exe, env, clone)
 
 	// A worktree session.
@@ -181,4 +166,32 @@ func editPath(env []string, f func(string) string) []string {
 		out = append(out, e)
 	}
 	return out
+}
+
+// withGHApp builds testdata/ghapp as gh.exe and puts it first on env's
+// PATH, with its state folder and log under home.
+func withGHApp(t *testing.T, home string, env []string) (out []string, ghState, ghLog string) {
+	t.Helper()
+	ghBin := t.TempDir()
+	if b, err := exec.Command("go", "build", "-o", filepath.Join(ghBin, "gh.exe"), "./testdata/ghapp").CombinedOutput(); err != nil {
+		t.Fatalf("build ghapp: %v\n%s", err, b)
+	}
+	ghState = filepath.Join(home, "gh")
+	_ = os.MkdirAll(ghState, 0o755)
+	ghLog = filepath.Join(home, "gh.log")
+	env = withPathPrefix(env, ghBin)
+	env = withGitUsrBin(env)
+	return append(env, "GHAPP_DIR="+ghState, "GHAPP_LOG="+ghLog), ghState, ghLog
+}
+
+// withGitUsrBin adds Git for Windows' usr\bin to the end of env's PATH:
+// its ucrt64\bin\git.exe crashes pushing to a local repo without it (sh
+// and the msys DLLs).
+func withGitUsrBin(env []string) []string {
+	if gitExe, err := exec.LookPath("git"); err == nil {
+		if root := filepath.Dir(filepath.Dir(filepath.Dir(gitExe))); isDir(filepath.Join(root, "usr", "bin")) {
+			env = withPathSuffix(env, filepath.Join(root, "usr", "bin"))
+		}
+	}
+	return env
 }

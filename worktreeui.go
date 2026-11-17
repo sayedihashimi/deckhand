@@ -296,6 +296,7 @@ type closeDoneMsg struct {
 	s    *Session
 	done []string
 	err  error
+	note string // added to the flash
 }
 
 // closeWorktreeSession asks before closing a worktree session (x). Its
@@ -343,9 +344,25 @@ func (m *model) closeChecked(msg closeCheckedMsg) tea.Cmd {
 		msg.s.closing.Store(false)
 		return nil
 	}
-	if msg.check.safe() {
-		m.setFlash("Merged (" + msg.check.how + "): removing the worktree and branch…")
-		return m.removeWorktreeCmd(msg.s, false, true)
+	if ck := msg.check; ck.safe() {
+		m.setFlash("Merged (" + ck.how + "): removing the worktree and branch…")
+		if !ck.localOnly {
+			return m.removeWorktreeCmd(msg.s, false, true)
+		}
+		// Merged only into the local default branch: until that's pushed,
+		// origin's branch is the only copy of the work off this machine.
+		cmd := m.removeWorktreeCmd(msg.s, false, false)
+		if !ck.onOrigin {
+			return cmd
+		}
+		msg.s.mu.Lock()
+		branch, base := msg.s.Branch, msg.s.BaseBranch
+		msg.s.mu.Unlock()
+		return func() tea.Msg {
+			done := cmd().(closeDoneMsg)
+			done.note = fmt.Sprintf("Kept origin/%s: %s isn't pushed yet.", branch, base)
+			return done
+		}
 	}
 	m.closing = &closePrompt{s: msg.s, check: msg.check}
 	return nil
@@ -400,6 +417,9 @@ func (m *model) closeDone(msg closeDoneMsg) {
 	}
 	if msg.err != nil {
 		text += ". But: " + firstLine(msg.err.Error())
+	}
+	if msg.note != "" {
+		text = msg.note + " " + text // first, so a long path can't push it out of the footer
 	}
 	m.setFlash(text)
 }

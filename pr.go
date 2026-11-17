@@ -32,6 +32,12 @@ type prInfo struct {
 	URL        string    `json:"url"`
 	IsDraft    bool      `json:"isDraft"`
 	Checks     []prCheck `json:"statusCheckRollup"`
+
+	// Only m asks for these (prMergeFields).
+	Title            string `json:"title,omitempty"`
+	BaseRefName      string `json:"baseRefName,omitempty"`
+	Mergeable        string `json:"mergeable,omitempty"`        // MERGEABLE, CONFLICTING or UNKNOWN
+	MergeStateStatus string `json:"mergeStateStatus,omitempty"` // CLEAN, BLOCKED, BEHIND, DIRTY, ...
 }
 
 // prCheck is one entry of statusCheckRollup: a check run (status and
@@ -56,7 +62,12 @@ func parsePR(out string) (prInfo, error) {
 // prForBranch asks GitHub for the branch's pull request. ok is false when
 // there's none.
 func prForBranch(dir, branch string) (pr prInfo, ok bool, err error) {
-	out, err := ghRun(dir, "pr", "view", branch, "--json", prFields)
+	return prView(dir, branch, prFields)
+}
+
+// prView is prForBranch with the given --json fields.
+func prView(dir, branch, fields string) (pr prInfo, ok bool, err error) {
+	out, err := ghRun(dir, "pr", "view", branch, "--json", fields)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "no pull requests found") {
 			return pr, false, nil
@@ -219,6 +230,36 @@ func githubHost(dir string) (string, error) {
 	return h, nil
 }
 
+// githubRepo is origin's repo for gh -R, as HOST/OWNER/REPO, or "" when
+// the URL doesn't name one.
+func githubRepo(u string) string {
+	host := remoteHost(u)
+	if host == "" {
+		return ""
+	}
+	if host == "ssh.github.com" {
+		host = "github.com"
+	}
+	path := ""
+	if strings.Contains(u, "://") {
+		p, err := url.Parse(u)
+		if err != nil {
+			return ""
+		}
+		path = p.Path
+	} else {
+		_, path, _ = strings.Cut(u, ":")
+	}
+	path = strings.TrimSuffix(strings.Trim(path, "/"), ".git")
+	owner, name, ok := strings.Cut(path, "/")
+	if !ok || owner == "" || name == "" || strings.Contains(name, "/") {
+		return ""
+	}
+	return host + "/" + owner + "/" + name
+}
+
+var errNeedGH = errors.New("this needs the GitHub CLI (gh), which isn't installed: get it from https://cli.github.com")
+
 // ghReady checks that the repo is on GitHub and that gh is installed and
 // signed in to its host. It returns the host.
 func ghReady(dir string) (string, error) {
@@ -228,7 +269,7 @@ func ghReady(dir string) (string, error) {
 	}
 	if _, err := ghRun(dir, "auth", "status", "--hostname", host); err != nil {
 		if errors.Is(err, errNoGH) {
-			return "", errors.New("this needs the GitHub CLI (gh), which isn't installed: get it from https://cli.github.com")
+			return "", errNeedGH
 		}
 		return "", fmt.Errorf("gh isn't signed in to %s: run gh auth login", host)
 	}
@@ -322,13 +363,7 @@ func protectedBranch(dir, branch, base string) bool {
 // nothing to push and the PR can just be opened. none is set when there's
 // no PR and nothing to put in one.
 func prQuestion(p prPlan) (q string, none bool) {
-	dirty := ""
-	switch {
-	case p.dirty == 1:
-		dirty = " (1 uncommitted file isn't included)"
-	case p.dirty > 1:
-		dirty = fmt.Sprintf(" (%d uncommitted files aren't included)", p.dirty)
-	}
+	dirty := uncommittedNote(p.dirty)
 	if p.hasPR {
 		if !p.push || p.pr.prState() == "merged" || p.pr.prState() == "closed" {
 			return "", false
@@ -339,6 +374,18 @@ func prQuestion(p prPlan) (q string, none bool) {
 		return "", true
 	}
 	return fmt.Sprintf("Push %s to origin and open a PR into %s, %q?%s y/n", p.branch, p.base, p.title, dirty), false
+}
+
+// uncommittedNote is " (n uncommitted files aren't included)", or "" for
+// none, for a question about pushing or merging commits.
+func uncommittedNote(n int) string {
+	switch {
+	case n == 1:
+		return " (1 uncommitted file isn't included)"
+	case n > 1:
+		return fmt.Sprintf(" (%d uncommitted files aren't included)", n)
+	}
+	return ""
 }
 
 // Pushing and creating ----------------------------------------------------------

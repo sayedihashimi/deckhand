@@ -85,6 +85,7 @@ Press `?` in the session list, or `F1` anywhere (also inside a session), for a s
 | shift+PgUp / shift+PgDn | Scroll an exited session's output a page at a time |
 | d | Preview the session's changes as a diff against the default branch (see [Diff preview](#diff-preview)) |
 | p | Push the session's branch and open a pull request for it, or open the one it has (see [Pull requests](#pull-requests)) |
+| m | Merge the session's branch: its GitHub PR, or locally into the default branch without GitHub, then offer to close the session (see [Merging](#merging)) |
 | n | New session (see below) |
 | W | Start a new worktree session with the same agent and repo, right below the selected one (see [Worktree sessions](#worktree-sessions)) |
 | o | Open the session's folder (its worktree, if it has one) in your editor (see [Opening a session's folder](#opening-a-sessions-folder)) |
@@ -220,9 +221,9 @@ You can run Claude from a folder that isn't a git repo, such as your notes, whil
 
 **Closing (`x`)**
 
-After you confirm (a running agent is stopped first), deckhand fetches and checks whether the work is merged: the branch tip is in `origin/<default>`, or GitHub (`gh pr view`) has a merged pull request whose head is the branch tip. The second check catches squash merges, which git can't see.
+After you confirm (a running agent is stopped first), deckhand fetches and checks whether the work is merged: the branch tip is in `origin/<default>` (or the local default branch, after `m`'s local merge), or GitHub (`gh pr view`) has a merged pull request whose head is the branch tip. The second check catches squash merges, which git can't see.
 
-- **Merged, and nothing uncommitted:** `git worktree remove`, then the local branch and the branch on `origin` are deleted.
+- **Merged, and nothing uncommitted:** `git worktree remove`, then the local branch and the branch on `origin` are deleted. When the work is only in the local default branch (after `m`'s local merge, not pushed yet), the branch on `origin` is kept, since it's the only copy off your machine, and the message says so.
 - **Otherwise** (including merged with uncommitted files): a warning lists the uncommitted files, the commits that aren't on the default branch and the PR state. Press `k` to keep the worktree and branch and remove only the session, `D` to delete anyway (the worktree with its uncommitted files, and the local branch; the branch on origin is kept), or `esc` to cancel. The `D` line says how many commits aren't on the default branch and whether they'll be lost: they are when the branch isn't on origin, or origin's copy is at another commit.
 - Only a worktree of that repo is ever removed, never the main checkout or the session's start folder.
 
@@ -245,6 +246,26 @@ Press `p` in the session list to push the selected session's branch to `origin` 
 - **A rejected push** (origin's branch has commits you don't): git's reason shows, and deckhand never retries with `--force`.
 - **Messages** say when `gh` isn't installed, isn't signed in (`gh auth status`), or the repo has no GitHub remote.
 - **The badge:** the sidebar's third line shows the PR's number and state (see [Session details](#session-details)), and the session header shows it in words (`PR #12 open · checks passing`). It's polled with `gh pr view --json` in the background, once a minute and right after `p`, only for sessions on a branch other than the default branch. Without `gh` or a GitHub remote, gh isn't run.
+
+## Merging
+
+Press `m` in the session list to merge the selected session's branch, then close the session. deckhand checks first and asks before it merges anything. It never merges the default branch into itself, and it never bypasses anything (no `--admin`).
+
+**With a GitHub PR** (`gh` installed and signed in, and an `origin` on GitHub, as for `p`):
+
+- deckhand asks, showing the PR's number, title and base: ``Squash-merge PR #12 "Retry failed uploads" into main on GitHub and delete its branch? y/n``. On `y` it runs `gh pr merge <n> --squash --delete-branch --match-head-commit <tip> -R <owner/repo>`. With `-R`, gh deletes the branch on GitHub but doesn't switch or delete anything locally; closing the session does that. With `--match-head-commit`, GitHub refuses the merge if the PR has moved on since deckhand checked.
+- **It refuses, and says why,** when the branch has no PR (press `p`), the PR is a draft or closed, its checks are failing or still running, GitHub says it can't be merged (conflicts, blocked by the branch's rules, behind the base when that must be up to date, or not worked out yet), or origin doesn't have the local commits (press `p` to push them first). If `gh` isn't signed in, it says so and doesn't merge locally instead.
+- **Already merged:** it goes straight to the offer to close.
+- A plain session on a branch other than the default branch can merge its PR too.
+
+**Without GitHub** (no `gh`, or `origin` isn't on GitHub), for a worktree session:
+
+- deckhand merges the branch into the default branch **in the main checkout**, with `git merge --no-ff`, so there's always a merge commit. It asks first: `Merge quiet-otter (2 commits) into main in api, without pushing? y/n`. The worktree's files aren't touched, and the default branch isn't pushed.
+- **It refuses** when the main checkout isn't on the default branch, or has uncommitted changes to tracked files (untracked files don't count). A plain session can't merge locally, since its folder is the checkout itself.
+- **A conflict:** deckhand runs `git merge --abort`, so the main checkout is as it was, and lists the conflicting files.
+- With no commits that aren't on the default branch, it's already merged and goes straight to the offer to close.
+
+**Then:** `Merged. Close the session and remove the worktree? y/n` (with what was merged). `y` runs the same close path as `x` (see [Worktree sessions](#worktree-sessions)): the agent is stopped, the merged check runs, and the worktree and the local branch are removed. The branch on `origin` is deleted too, except after a local merge: until the default branch is pushed, it's the only copy of the work off your machine, so it's kept. Uncommitted files in the worktree aren't merged (the question says how many there are), so with any of them the close warning shows instead. `n` leaves the session as it is.
 
 ## Hiding the session list
 
