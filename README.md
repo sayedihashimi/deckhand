@@ -74,7 +74,7 @@ Press `?` in the session list, or `F1` anywhere (also inside a session), for a s
 | ↑/↓ or j/k | Select a session (its terminal shows on the right) |
 | home/end or g/G | Select the first or last session |
 | enter | Type into the session; starts or resumes it if it isn't running |
-| shift+enter | Start a new session with the same agent and folder, right below the selected one. The selected session is left as it is, so its conversation can still be resumed. Claude gets a fresh conversation; a custom agent runs its normal command, not its `resume` one. Where a terminal sends plain enter for shift+enter, it acts like enter |
+| shift+enter | Start a new session with the same agent and folder, right below the selected one. The selected session is left as it is, so its conversation can still be resumed. Claude gets a fresh conversation; a custom agent runs its normal command, not its `resume` one. ESC enter (what a remapped shift+enter sends) does the same. Where a terminal sends plain enter for shift+enter, it acts like enter |
 | 1–9 | Jump straight into session N |
 | tab | Select the next session that needs you, then the next one that finished |
 | / | Filter the list as you type. Matches the name, agent, folder and branch, ignoring case; letters in order also match, and every word must match. enter keeps the filter (or opens the session if only one matches), tab keeps it, esc clears it |
@@ -101,7 +101,10 @@ Press `?` in the session list, or `F1` anywhere (also inside a session), for a s
 | shift+PgUp / shift+PgDn | Scroll back through the output a page at a time |
 | F1 | Show the keys. deckhand keeps F1, so it doesn't reach the agent. `?` is typed text and goes to the agent. |
 
-Modified keys that plain terminal input can't express, such as shift+enter (a new line in Claude), ctrl+enter and ctrl+tab, go to the agent in the keyboard protocol it asked for (kitty `CSI u`, or xterm modifyOtherKeys), and as plain enter/tab to apps that asked for neither. For deckhand to see those modifiers, the terminal it runs in has to report them. In Windows Terminal, deckhand turns on win32-input-mode for this. In other terminals, shift+enter may arrive as plain enter; Claude's `\` then enter still adds a new line.
+Modified keys that plain terminal input can't express, such as shift+enter (a new line in Claude), ctrl+enter and ctrl+tab, go to the agent in the keyboard protocol it asked for (kitty `CSI u`, or xterm modifyOtherKeys), and as plain enter/tab to apps that asked for neither. For deckhand to see those modifiers, the terminal it runs in has to report them. In Windows Terminal and WezTerm, deckhand turns on win32-input-mode for this. Without it, Windows turns shift+enter into plain enter and `ctrl+\` into ctrl+space. In other terminals, shift+enter may arrive as plain enter; Claude's `\` then enter still adds a new line.
+
+- **Terminals with shift+enter remapped:** a common Claude Code setup makes shift+enter send ESC enter (for example a Windows Terminal `sendInput` action with `"\u001b\r"`). In the session list, ESC enter starts a new session just like shift+enter. Inside a session it reaches the agent unchanged, and Claude reads it as a new line.
+- **Forcing the mode:** set `DECKHAND_KEY_RECORDS=1` to turn win32-input-mode on in another terminal that sends win32-input-mode records, or `0` to turn it off. With it on in a terminal that doesn't send records, some keys arrive garbled.
 
 **Mouse**
 
@@ -226,4 +229,4 @@ Install the binary in a folder without spaces in its path. Hook commands then do
 
 ## Debugging
 
-Set `DECKHAND_DEBUG=C:\path\to\log.txt` to log key presses, the bytes forwarded to each agent, and notification errors. `DECKHAND_NOTIFY_LOG=C:\path\to\file` writes notifications to that file instead of showing them (the tests use this). Each session's hook events are in `%LOCALAPPDATA%\deckhand\sessions\<id>\events.jsonl`.
+Set `DECKHAND_DEBUG=C:\path\to\log.txt` to log key presses and releases (as deckhand received them), whether win32-input-mode was turned on and why, the bytes forwarded to each agent, and notification errors. If a key does nothing, this log shows what the terminal actually sent. `DECKHAND_NOTIFY_LOG=C:\path\to\file` writes notifications to that file instead of showing them (the tests use this). Each session's hook events are in `%LOCALAPPDATA%\deckhand\sessions\<id>\events.jsonl`.

@@ -72,6 +72,10 @@ type model struct {
 	// Whether the session list is hidden (the toggle key, ctrl+\ by default).
 	listHidden bool
 
+	// Keys pressed and not yet released, to spot a release whose press
+	// never arrived (see releaseOnlyKey).
+	pressed map[string]bool
+
 	// The config screen ("c"), and whether there's a config file (the
 	// welcome screen suggests the config screen when there isn't).
 	cfg        *configScreen
@@ -224,10 +228,31 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
+		debugf("key press %q code=%d mod=%d", msg.String(), msg.Code, msg.Mod)
 		if lockOrModifierKey(msg.Code) {
 			return m, nil
 		}
+		if m.pressed == nil {
+			m.pressed = map[string]bool{}
+		}
+		m.pressed[pressID(tea.Key(msg))] = true
 		return m.handleKey(msg)
+
+	case tea.KeyReleaseMsg:
+		debugf("key release %q code=%d mod=%d", msg.String(), msg.Code, msg.Mod)
+		if lockOrModifierKey(msg.Code) {
+			return m, nil
+		}
+		id := pressID(tea.Key(msg))
+		seen := m.pressed[id]
+		delete(m.pressed, id)
+		if !seen && releaseOnlyKey(tea.Key(msg)) {
+			// Some terminals' win32-input-mode encoding of a ctrl+symbol
+			// press (WezTerm's ctrl+\) never reaches us; only the release
+			// does. Treat the lone release as the press.
+			return m.handleKey(tea.KeyPressMsg(msg))
+		}
+		return m, nil
 
 	case tea.MouseMsg:
 		return m, m.handleMouse(msg)
@@ -414,7 +439,9 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter", "right", "l":
 		return m, m.openSelected()
-	case "shift+enter":
+	case "shift+enter", "alt+enter":
+		// alt+enter is ESC CR: terminals with shift+enter remapped to send
+		// it (a common setup for Claude Code) deliver shift+enter this way.
 		return m, m.startLikeSelected()
 	case "tab":
 		m.jumpToAttention()
@@ -806,6 +833,19 @@ func sessionName(dir string) string {
 // Agents never got these before, and x/vt has no encoding for them.
 func lockOrModifierKey(code rune) bool {
 	return code >= uv.KeyCapsLock && code <= uv.KeyIsoLevel5Shift
+}
+
+// pressID identifies a key for matching its press and release, ignoring
+// lock-key states.
+func pressID(k tea.Key) string {
+	return fmt.Sprintf("%d/%d", k.Code, k.Mod&^(uv.ModCapsLock|uv.ModNumLock|uv.ModScrollLock))
+}
+
+// releaseOnlyKey reports whether a release with no press before it should
+// count as a press: only ctrl or alt combinations. A plain key's lone
+// release (the enter that started deckhand, say) is ignored.
+func releaseOnlyKey(k tea.Key) bool {
+	return k.Code != 0 && k.Mod&(uv.ModCtrl|uv.ModAlt) != 0
 }
 
 // toUVKey converts a key press for the session's emulator. The emulator

@@ -45,7 +45,7 @@ var helpGroups = []helpGroup{
 		{keys: "↑↓ j k", desc: "select a session", match: []string{"up", "k", "down", "j"}, footer: "↑↓ select", short: "↑↓"},
 		{keys: "home end", desc: "first / last (also g, G)", match: []string{"home", "g", "end", "G"}},
 		{keys: "enter", desc: "open (starts or resumes it)", match: []string{"enter", "right", "l"}, footer: "enter open", short: "⏎ open"},
-		{keys: "shift+enter", desc: "new session, same folder", match: []string{"shift+enter"}, footer: "⇧⏎ new here", short: "⇧⏎ here"},
+		{keys: "shift+enter", desc: "new session, same folder", match: []string{"shift+enter", "alt+enter"}, footer: "⇧⏎ new here", short: "⇧⏎ here"},
 		{keys: "n", desc: "new session", match: []string{"n"}, footer: "n new"},
 		{keys: "1–9", desc: "jump into session N", match: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9"}},
 		{keys: "tab", desc: "next one that needs you", match: []string{"tab"}, footer: "tab next"},

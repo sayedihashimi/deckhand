@@ -13,6 +13,9 @@ import (
 // records on, so deckhand sees shift+enter, ctrl+enter and so on. See
 // wantKeyRecords for when.
 func enableKeyRecords() {
+	debugf("startup: WT_SESSION set=%v TERM_PROGRAM=%q DECKHAND_SESSION_ID set=%v DECKHAND_KEY_RECORDS=%q keyRecords=%v",
+		os.Getenv("WT_SESSION") != "", os.Getenv("TERM_PROGRAM"), os.Getenv("DECKHAND_SESSION_ID") != "",
+		os.Getenv("DECKHAND_KEY_RECORDS"), wantKeyRecords(os.Getenv))
 	if wantKeyRecords(os.Getenv) {
 		writeConsoleVT("\x1b[?9001h")
 	}

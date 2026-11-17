@@ -134,9 +134,14 @@ func envWith(home, path string) []string {
 	var env []string
 	for _, kv := range os.Environ() {
 		k := strings.ToUpper(strings.SplitN(kv, "=", 2)[0])
-		// The harness isn't Windows Terminal (see wantKeyRecords); tests
-		// that act like it set WT_SESSION themselves (wtEnv).
-		if k == "DECKHAND_HOME" || k == "WT_SESSION" || k == "DECKHAND_SESSION_ID" || (path != "" && k == "PATH") {
+		// The harness isn't Windows Terminal or WezTerm (see
+		// wantKeyRecords); tests that act like one set WT_SESSION or
+		// TERM_PROGRAM themselves (wtEnv, weztermEnv).
+		switch k {
+		case "DECKHAND_HOME", "WT_SESSION", "TERM_PROGRAM", "DECKHAND_SESSION_ID", "DECKHAND_KEY_RECORDS":
+			continue
+		}
+		if path != "" && k == "PATH" {
 			continue
 		}
 		env = append(env, kv)
