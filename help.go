@@ -40,6 +40,7 @@ type helpGroup struct {
 const (
 	helpList     = "Session list"
 	helpTerminal = "Inside a session"
+	helpDiff     = "Diff preview (d)"
 	helpMouse    = "Mouse"
 	helpDialog   = "New-session dialog"
 )
@@ -50,9 +51,10 @@ var helpGroups = []helpGroup{
 		{keys: "home end", desc: "first / last (also g, G)", match: []string{"home", "g", "end", "G"}},
 		{keys: "enter", desc: "open (starts or resumes it)", match: []string{"enter", "right", "l"}, footer: "enter open", short: "⏎ open"},
 		{keys: "shift+enter", desc: "new session, same folder", match: []string{"shift+enter", "alt+enter"}, footer: "⇧⏎ new here", short: "⇧⏎ here"},
-		{keys: "n W", desc: "new session (W: worktree here)", match: []string{"n", "W"}, footer: "n new"},
+		{keys: "n W", desc: "new session; W: new worktree", match: []string{"n", "W"}, footer: "n new"},
 		{keys: "1–9", desc: "jump into session N", match: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9"}},
 		{keys: "tab", desc: "next one that needs you", match: []string{"tab"}, footer: "tab next"},
+		{keys: "d", desc: "diff vs the default branch", match: []string{"d"}, footer: "d diff", short: "-"},
 		{keys: "v", desc: "last output / conversation", match: []string{"v"}, footer: "v switch view", short: "v view", when: hintHistory},
 		{keys: "⇧PgUp/Dn", desc: "scroll an exited session", match: []string{"shift+pgup", "shift+pgdown"}},
 		{keys: "/", desc: "filter the list as you type", match: []string{"/"}, footer: "/ filter", short: "/@ filter"},
@@ -75,14 +77,17 @@ var helpGroups = []helpGroup{
 		{keys: "F3", desc: "hide / show the list", match: []string{defaultToggleKey}, footer: "F3 hide list"},
 		{keys: "F1", desc: "this help", match: []string{"f1"}, footer: "F1 help"},
 	}},
+	{helpDiff, []helpEntry{
+		{keys: "n N", desc: "next / previous file", match: []string{"n", "N", "up", "k", "down", "j", "pgup", "shift+pgup", "pgdown", "shift+pgdown", "space", "home", "g", "end", "G"}},
+		{keys: "esc d q", desc: "close", match: []string{"esc", "q", "d"}},
+	}},
 	{helpMouse, []helpEntry{
 		{keys: "wheel", desc: "scroll output or list"},
 		{keys: "click", desc: "select, focus terminal"},
 		{keys: "shift+drag", desc: "select text"},
 	}},
 	{helpDialog, []helpEntry{
-		{keys: "tab", desc: "complete the folder", match: []string{"tab"}},
-		{keys: "↑↓", desc: "choose a folder", match: []string{"up", "down"}},
+		{keys: "tab ↑↓", desc: "complete, pick a folder", match: []string{"tab", "up", "down"}},
 		{keys: "ctrl+w", desc: "up a level", match: []string{"ctrl+w", "ctrl+backspace", "alt+backspace"}},
 		{keys: "shift+tab", desc: "agent row, ←→ to change", match: []string{"shift+tab", "left", "h", "right", "l", "space"}},
 		{keys: "ctrl+t", desc: "worktree on / off", match: []string{"ctrl+t"}},

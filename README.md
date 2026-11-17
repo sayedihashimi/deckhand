@@ -82,6 +82,7 @@ Press `?` in the session list, or `F1` anywhere (also inside a session), for a s
 | esc | Clear the filter |
 | v | For an exited Claude session, switch between its last output and the conversation from its transcript (see [Output after a restart](#output-after-a-restart)) |
 | shift+PgUp / shift+PgDn | Scroll an exited session's output a page at a time |
+| d | Preview the session's changes as a diff against the default branch (see [Diff preview](#diff-preview)) |
 | n | New session (see below) |
 | o | Open the session's folder in your editor (see [Opening a session's folder](#opening-a-sessions-folder)) |
 | O | Open the session's folder in Explorer |
@@ -170,6 +171,16 @@ type    = "claude"
 **How status works when your script starts Claude:** for a `pwsh` agent (and a `.ps1` script) with `type = "claude"`, deckhand defines a PowerShell function named `claude` for that session only (`%LOCALAPPDATA%\deckhand\claude-shim.ps1`). PowerShell prefers functions to programs, so when your function or script calls `claude`, it calls the shim. The shim runs the real `claude.exe` and adds deckhand's `--settings` (the hooks) and `--session-id`, leaving out `--session-id` when you're resuming. Your script doesn't need to forward arguments, and neither it nor `~/.claude/settings.json` is changed.
 
 A `command` agent that is a program or `.cmd` file gets the extra arguments on its command line, so it must pass them on to `claude`.
+
+## Diff preview
+
+Press `d` in the session list to see what the selected session changed, without leaving deckhand. It's read-only and works whether the session is running or not.
+
+- **What it compares:** the session folder's work tree against the merge base with the repo's default branch, so it shows the branch's commits plus staged, unstaged and untracked changes. The default branch is `origin/HEAD`, then `origin/main` or `origin/master`, then (with no remote) the local `main` or `master`. deckhand doesn't fetch first, so the base is as recent as your last fetch. With no default branch it shows only uncommitted changes, and in a repo with no commits everything is new.
+- **Layout:** a summary (`2 files changed +83 −1 vs origin/main (merge base b01a2cc)`), the files with their status (`M`, `A`, `D`, `R`, `?` for untracked) and `+`/`−` counts, then each file's hunks in colour. Untracked files show as added; binary files are listed without content.
+- **Keys:** `↑/↓` (or `j/k`), `PgUp/PgDn`, `home/end` and the mouse wheel scroll; `n` and `N` jump to the next and previous file; `esc` (or `d`, `q`) closes it.
+- **Big diffs:** at most 2 MB of `git diff` output and 30,000 lines are shown, and untracked files are cut at 1,000 lines (64 KB) each, 200 files in all. A note says when something was left out.
+- A session whose folder isn't in a git repo gets a message saying so.
 
 ## Hiding the session list
 
