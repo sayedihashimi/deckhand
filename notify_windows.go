@@ -3,12 +3,10 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"os/exec"
 	"strings"
 	"syscall"
-	"unicode/utf16"
 )
 
 const createNoWindow = 0x08000000
@@ -47,15 +45,4 @@ func showToast(title, body, tag string) error {
 		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
-}
-
-// encodePS encodes a script for powershell -EncodedCommand (UTF-16LE, base64).
-func encodePS(s string) string {
-	u := utf16.Encode([]rune(s))
-	b := make([]byte, len(u)*2)
-	for i, c := range u {
-		b[2*i] = byte(c)
-		b[2*i+1] = byte(c >> 8)
-	}
-	return base64.StdEncoding.EncodeToString(b)
 }

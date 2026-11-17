@@ -97,11 +97,11 @@ type config struct {
 
 type agentConfig struct {
 	Name    string   `toml:"name"`
-	Command string   `toml:"command"`
-	Args    []string `toml:"args"`
-	Pwsh    string   `toml:"pwsh"`
-	Type    string   `toml:"type"`
-	Resume  string   `toml:"resume"`
+	Command string   `toml:"command,omitempty"`
+	Args    []string `toml:"args,omitempty"`
+	Pwsh    string   `toml:"pwsh,omitempty"`
+	Type    string   `toml:"type,omitempty"`
+	Resume  string   `toml:"resume,omitempty"`
 }
 
 // configPath is ~/.config/deckhand/config.toml (DECKHAND_CONFIG overrides).
@@ -204,6 +204,7 @@ func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + 
 
 const sampleConfig = `# deckhand agents: each [[agents]] entry shows up in the new-session dialog,
 # before the built-in ones (claude, codex, gemini, pwsh, cmd).
+# To change these settings without editing this file, press c in deckhand.
 #
 # A PowerShell command, function or alias from your profile:
 #

@@ -28,8 +28,8 @@ const (
 )
 
 type openConfig struct {
-	Editor   string `toml:"editor"`
-	Terminal string `toml:"terminal"`
+	Editor   string `toml:"editor,omitempty"`
+	Terminal string `toml:"terminal,omitempty"`
 }
 
 // openSettings is [open] from the config file.
