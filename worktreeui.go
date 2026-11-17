@@ -47,12 +47,19 @@ func (s *Session) repoNameLocked() string {
 }
 
 // launchExtrasLocked is what the session adds to its agent's command line:
-// a worktree outside the start folder reaches Claude through --add-dir and
+// a worktree (or a code repo without one) outside the start folder reaches
+// Claude through --add-dir and
 // --append-system-prompt (custom agents get them from the claude shim),
 // and every agent gets DECKHAND_WORKTREE and DECKHAND_BRANCH.
 func (s *Session) launchExtrasLocked() launchExtras {
 	var x launchExtras
 	if s.Worktree == "" {
+		// A code repo beside the start folder, without a worktree: Claude
+		// may work on the repo's checkout itself.
+		if s.separateRepoLocked() {
+			x.addDir = s.CodeRepo
+			x.prompt = codeRepoPrompt(s.CodeRepo)
+		}
 		return x
 	}
 	x.env = []string{"DECKHAND_WORKTREE=" + s.Worktree, "DECKHAND_BRANCH=" + s.Branch}
@@ -423,28 +430,33 @@ func (m *model) renderClose(w, h int) []string {
 	if ck.missing {
 		add(stMuted.Render("   The worktree folder is already gone."))
 	}
-	list := func(title string, items []string) {
+	list := func(title string, items []string, total int) {
 		if len(items) == 0 {
 			return
 		}
+		total = max(total, len(items))
 		add("")
-		add(fmt.Sprintf("   %s (%d):", title, len(items)))
+		add(fmt.Sprintf("   %s (%d):", title, total))
 		const most = 8
 		for i, it := range items {
 			if i == most {
-				add(stMuted.Render(fmt.Sprintf("     … %d more", len(items)-most)))
 				break
 			}
 			add("     " + it)
 		}
+		if total > min(len(items), most) {
+			add(stMuted.Render(fmt.Sprintf("     … %d more", total-min(len(items), most))))
+		}
 	}
-	list("Uncommitted files", ck.dirty)
-	list("Commits not on "+base, ck.commits)
+	list("Uncommitted files", ck.dirty, 0)
+	list("Commits not on "+base, ck.commits, ck.ahead)
 	key := lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	add("")
 	add("   " + key.Render("k") + "    keep the worktree and branch; remove only the session")
 	add("   " + key.Render("D") + "    delete anyway: the worktree, its uncommitted files and the local branch")
-	add(stMuted.Render("        (the branch on origin, if any, is kept)"))
+	for _, l := range deleteWarning(ck, branch, base) {
+		add("        " + l)
+	}
 	add("   " + key.Render("esc") + "  cancel")
 	for len(lines) < h {
 		lines = append(lines, strings.Repeat(" ", w))
@@ -461,4 +473,27 @@ func renderPrep(log []string, w, rows int) []string {
 		out = append(out, fit(stMuted.Render("  "+l), w))
 	}
 	return out
+}
+
+// deleteWarning says what "delete anyway" loses beyond the worktree: the
+// commits that aren't on the default branch, unless origin has them.
+func deleteWarning(ck closeCheck, branch, base string) []string {
+	n := max(ck.ahead, len(ck.commits))
+	warn := lipgloss.NewStyle().Foreground(colError).Bold(true)
+	commits, are := fmt.Sprintf("%d commit", n), "is"
+	if n != 1 {
+		commits, are = commits+"s", "are"
+	}
+	switch {
+	case n == 0 || ck.merged:
+		if ck.onOrigin {
+			return []string{stMuted.Render("(the branch on origin is kept)")}
+		}
+		return nil
+	case !ck.onOrigin:
+		return []string{warn.Render("The " + commits + " not on " + base + " will be lost: " + branch + " isn't on origin (not pushed).")}
+	case ck.pushed:
+		return []string{stMuted.Render("The " + commits + " not on " + base + " " + are + " kept on origin/" + branch + ", which isn't deleted.")}
+	}
+	return []string{warn.Render("origin/" + branch + " is at another commit, so commits not pushed will be lost (" + commits + " not on " + base + ").")}
 }

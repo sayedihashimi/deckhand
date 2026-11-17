@@ -219,9 +219,19 @@ func TestCheckMerged(t *testing.T) {
 
 	commitFile(t, w.path, "feature.txt", "new")
 	c := checkMerged(root, w.path, w.branch, "main")
-	if c.merged || c.safe() || len(c.commits) != 1 || !strings.Contains(c.commits[0], "Change feature.txt") || c.pr != "no PR" {
+	if c.merged || c.safe() || len(c.commits) != 1 || !strings.Contains(c.commits[0], "Change feature.txt") || c.pr != "no PR" ||
+		c.ahead != 1 || c.onOrigin || c.pushed {
 		t.Errorf("unmerged: %+v", c)
 	}
+	git(t, w.path, "push", "-q", "origin", w.branch)
+	if c := checkMerged(root, w.path, w.branch, "main"); c.merged || !c.onOrigin || !c.pushed {
+		t.Errorf("pushed, not merged: %+v", c)
+	}
+	commitFile(t, w.path, "more.txt", "more")
+	if c := checkMerged(root, w.path, w.branch, "main"); !c.onOrigin || c.pushed || c.ahead != 2 {
+		t.Errorf("pushed, then another commit: %+v", c)
+	}
+	git(t, w.path, "reset", "-q", "--hard", "HEAD~1")
 
 	// Merged on origin (a merge or fast-forward): the tip is in origin/main.
 	git(t, w.path, "push", "-q", "origin", "HEAD:main")

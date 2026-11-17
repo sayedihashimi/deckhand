@@ -39,11 +39,17 @@ func TestLaunchExtras(t *testing.T) {
 		t.Errorf("git dir %s, repo %s", s.gitDirLocked(), s.repoNameLocked())
 	}
 
-	// A code repo without a worktree: the branch line uses it, nothing is
-	// added to the command line.
+	// A code repo without a worktree: the branch line uses it, and Claude
+	// gets the repo itself.
 	s = &Session{Dir: `C:\notes`, CodeRepo: `C:\src\api`, RepoRoot: `C:\src\api`}
-	if x := s.launchExtrasLocked(); x.addDir != "" || len(x.env) != 0 || s.gitDirLocked() != `C:\src\api` {
+	x = s.launchExtrasLocked()
+	if x.addDir != `C:\src\api` || !strings.Contains(x.prompt, `C:\src\api`) || strings.Contains(x.prompt, `"`) ||
+		strings.Contains(x.prompt, "worktree") || len(x.env) != 0 || s.gitDirLocked() != `C:\src\api` {
 		t.Errorf("code repo only: %+v", x)
+	}
+	// The code repo holds the start folder: nothing to add.
+	if x := (&Session{Dir: `C:\src\api\sub`, CodeRepo: `C:\src\api`, RepoRoot: `C:\src\api`}).launchExtrasLocked(); x.addDir != "" {
+		t.Errorf("code repo holding the start folder: %+v", x)
 	}
 	if (&Session{Dir: `C:\src\api`}).gitDirLocked() != `C:\src\api` {
 		t.Error("a plain session's git dir is its folder")
@@ -316,7 +322,8 @@ func TestWorktreeSessionLifecycle(t *testing.T) {
 		t.Fatal("unmerged work should show the warning")
 	}
 	screen := ansi.Strip(strings.Join(m2.renderClose(100, 30), "\n"))
-	for _, want := range []string{"isn't merged into main", "Commits not on main (1)", "Change feature.txt", "no PR", "delete anyway"} {
+	for _, want := range []string{"isn't merged into main", "Commits not on main (1)", "Change feature.txt", "no PR", "delete anyway",
+		"The 1 commit not on main will be lost: " + s.Branch + " isn't on origin (not pushed)."} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("warning is missing %q:\n%s", want, screen)
 		}
@@ -394,5 +401,54 @@ func TestWorktreeSetupFailure(t *testing.T) {
 	}
 	if !strings.Contains(m.flash, "Setup failed") {
 		t.Errorf("flash %q", m.flash)
+	}
+}
+
+// A code repo without a worktree reaches Claude too: --add-dir and the
+// prompt, on resume as well, and through the shim for wrapper agents.
+func TestBuildLaunchCodeRepoOnly(t *testing.T) {
+	t.Setenv("DECKHAND_HOME", t.TempDir())
+	repo := filepath.Join(t.TempDir(), "api")
+	s := &Session{Dir: filepath.Join(t.TempDir(), "notes"), CodeRepo: repo, RepoRoot: repo}
+	x := s.launchExtrasLocked()
+	for _, resume := range []bool{false, true} {
+		spec, err := buildLaunch(Agent{Name: "claude", Exe: "git", Claude: true}, "s1", "c1", resume, x)
+		if err != nil {
+			t.Fatal(err)
+		}
+		i := slices.Index(spec.args, "--add-dir")
+		j := slices.Index(spec.args, "--append-system-prompt")
+		if i != 0 || spec.args[1] != repo || j != 2 || !strings.Contains(spec.args[3], repo) {
+			t.Errorf("resume=%v: args %q", resume, spec.args)
+		}
+	}
+	if pwshPath() == "" {
+		return
+	}
+	for _, resume := range []bool{false, true} {
+		spec, _ := buildLaunch(Agent{Name: "smc", Pwsh: "smc", Resume: "smc -Resume {id}", Claude: true}, "s1", "c1", resume, x)
+		env := strings.Join(spec.env, "\n")
+		if !strings.Contains(env, "DECKHAND_CLAUDE_ADD_DIR="+repo) || !strings.Contains(env, "DECKHAND_CLAUDE_PROMPT=This session works on the git repository at "+repo) {
+			t.Errorf("resume=%v: shim env %s", resume, env)
+		}
+	}
+}
+
+func TestDeleteWarning(t *testing.T) {
+	text := func(ck closeCheck) string {
+		return ansi.Strip(strings.Join(deleteWarning(ck, "quiet-otter", "main"), " "))
+	}
+	two := []string{"a1 One", "b2 Two"}
+	if got := text(closeCheck{commits: two, ahead: 2}); got != "The 2 commits not on main will be lost: quiet-otter isn't on origin (not pushed)." {
+		t.Errorf("not pushed: %q", got)
+	}
+	if got := text(closeCheck{commits: two[:1], ahead: 1, onOrigin: true, pushed: true}); got != "The 1 commit not on main is kept on origin/quiet-otter, which isn't deleted." {
+		t.Errorf("pushed: %q", got)
+	}
+	if got := text(closeCheck{commits: two, ahead: 25, onOrigin: true}); !strings.Contains(got, "will be lost") || !strings.Contains(got, "25 commits") {
+		t.Errorf("pushed earlier: %q", got)
+	}
+	if got := text(closeCheck{merged: true, onOrigin: true}); !strings.Contains(got, "kept") || strings.Contains(got, "lost") {
+		t.Errorf("merged: %q", got)
 	}
 }

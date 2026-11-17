@@ -188,6 +188,7 @@ func TestE2EWorktreeSession(t *testing.T) {
 	h.send("y")
 	h.waitFor("isn't merged into main", 30*time.Second)
 	h.waitFor("Change a.txt", 3*time.Second)
+	h.waitFor("The 1 commit not on main will be lost", 3*time.Second) // a isn't pushed
 	h.waitFor("k keep the worktree · D delete anyway", 3*time.Second)
 	h.send("k")
 	h.waitFor("No sessions yet", 5*time.Second)
@@ -287,11 +288,51 @@ resume = "claude --resume {id}"
 	checkArgs(second, "resume")
 	h.send("\x11")
 
-	// The code repo is remembered for the notes folder.
+	// The code repo is remembered for the notes folder. Start a session
+	// on it without a worktree: Claude gets the repo itself.
 	h.send("n")
 	h.waitFor("Start in", 5*time.Second)
 	h.waitFor("Code repo "+clone, 3*time.Second)
-	h.send("\x1b")
+	h.waitFor("same folder, no new branch", 3*time.Second) // the worktree is off
+	h.send("\r")
+	codeOnly := func(l argsLaunch, what string) {
+		t.Helper()
+		if !sameDir(l.Cwd, notes) {
+			t.Errorf("%s: the agent should stay in the notes folder, not %s", what, l.Cwd)
+		}
+		i := slices.Index(l.Args, "--add-dir")
+		if i < 0 || i+1 >= len(l.Args) || !sameDir(l.Args[i+1], clone) {
+			t.Errorf("%s: --add-dir %s missing: %q", what, clone, l.Args)
+		}
+		j := slices.Index(l.Args, "--append-system-prompt")
+		if j < 0 || j+1 >= len(l.Args) || !strings.Contains(l.Args[j+1], clone) || strings.Contains(l.Args[j+1], "worktree") {
+			t.Errorf("%s: --append-system-prompt about the repo missing: %q", what, l.Args)
+		}
+		if l.Worktree != "" {
+			t.Errorf("%s: no worktree, so no DECKHAND_WORKTREE: %q", what, l.Worktree)
+		}
+	}
+	codeOnly(waitLaunches(t, h, log, 3)[2], "code repo, start")
+	h.send("\x11")
+	h.waitFor("api:main", 10*time.Second) // the code repo's branch line
+	h.send("K")
+	h.waitFor("End ", 3*time.Second)
+	h.send("y")
+	h.waitFor("⏎ resume", 10*time.Second)
+	h.send("\r")
+	resumed := waitLaunches(t, h, log, 4)[3]
+	if !slices.Contains(resumed.Args, "--resume") {
+		t.Errorf("code repo, resume: %q", resumed.Args)
+	}
+	codeOnly(resumed, "code repo, resume")
+	h.send("\x11")
+	h.send("x") // a plain session: removed from the list, nothing else
+	h.waitFor("and remove it?", 3*time.Second)
+	h.send("y")
+	h.waitGone("api:main", 5*time.Second)
+	if !isDir(clone) {
+		t.Fatal("the code repo must never be touched")
+	}
 
 	// Closing: nothing committed, so it's removed; the notes folder stays.
 	h.send("x")

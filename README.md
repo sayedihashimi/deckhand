@@ -207,7 +207,8 @@ You can run Claude from a folder that isn't a git repo, such as your notes, whil
 - **Claude** gets `--add-dir <worktree>` and an `--append-system-prompt` telling it to make code changes for that repo in the worktree, on its branch, and not in the main checkout. Resume passes them again.
 - **Custom agents** (`type = "claude"`, such as a PowerShell function around claude) get both through the same session-only `claude` function that adds the hooks. Your script isn't changed.
 - **Other CLIs** get `DECKHAND_WORKTREE` and `DECKHAND_BRANCH` in their environment (every agent in a worktree session gets these).
-- The branch line and the diff preview use the code repo's worktree, never the notes folder. A code repo without a worktree is useful too: the branch line then shows its checkout.
+- The branch line and the diff preview use the code repo's worktree, never the notes folder.
+- **A code repo without a worktree** (the worktree line off) works too. Claude gets `--add-dir <repo>` and a short `--append-system-prompt` saying the session works on that repo and may edit it there (through the shim for custom agents, and again on resume), and the branch line shows the repo's checkout.
 
 **Showing**
 
@@ -220,7 +221,7 @@ You can run Claude from a folder that isn't a git repo, such as your notes, whil
 After you confirm (a running agent is stopped first), deckhand fetches and checks whether the work is merged: the branch tip is in `origin/<default>`, or GitHub (`gh pr view`) has a merged pull request whose head is the branch tip. The second check catches squash merges, which git can't see.
 
 - **Merged, and nothing uncommitted:** `git worktree remove`, then the local branch and the branch on `origin` are deleted.
-- **Otherwise** (including merged with uncommitted files): a warning lists the uncommitted files, the commits that aren't on the default branch and the PR state. Press `k` to keep the worktree and branch and remove only the session, `D` to delete anyway (the worktree with its uncommitted files, and the local branch; the branch on origin is kept), or `esc` to cancel.
+- **Otherwise** (including merged with uncommitted files): a warning lists the uncommitted files, the commits that aren't on the default branch and the PR state. Press `k` to keep the worktree and branch and remove only the session, `D` to delete anyway (the worktree with its uncommitted files, and the local branch; the branch on origin is kept), or `esc` to cancel. The `D` line says how many commits aren't on the default branch and whether they'll be lost: they are when the branch isn't on origin, or origin's copy is at another commit.
 - Only a worktree of that repo is ever removed, never the main checkout or the session's start folder.
 
 ```toml

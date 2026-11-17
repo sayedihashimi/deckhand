@@ -397,6 +397,9 @@ type closeCheck struct {
 	fetchErr string   // the fetch failed; the result may be stale
 	noBranch bool     // the local branch is gone
 	missing  bool     // the worktree folder is gone
+	ahead    int      // how many commits aren't on the default branch (commits is capped)
+	onOrigin bool     // origin has the branch
+	pushed   bool     // origin's branch is at the local tip
 }
 
 // safe reports whether the worktree and branch can be removed without
@@ -453,6 +456,15 @@ func checkMerged(repoRoot, wt, branch, base string) closeCheck {
 		}
 		if out, err := gitRun(repoRoot, "log", "--format=%h %s", "-n", "20", ref+".."+tip); err == nil {
 			c.commits = outLines(out)
+		}
+		if out, err := gitRun(repoRoot, "rev-list", "--count", ref+".."+tip); err == nil {
+			_, _ = fmt.Sscanf(out, "%d", &c.ahead)
+		}
+		if hasOrigin(repoRoot) {
+			if out, err := gitRun(repoRoot, "ls-remote", "--heads", "origin", "refs/heads/"+branch); err == nil && out != "" {
+				c.onOrigin = true
+				c.pushed = strings.EqualFold(strings.Fields(out)[0], tip)
+			}
 		}
 	}
 
@@ -556,6 +568,14 @@ func worktreePrompt(repoRoot, wt, branch string) string {
 		"Make every code change for that repository in the worktree, on that branch, and commit there. "+
 		"Don't edit files in the main checkout or switch its branch. "+
 		"Your working folder is separate and isn't part of that repository.", repoRoot, wt, branch)
+}
+
+// codeRepoPrompt is appended to Claude's system prompt for a code repo
+// beside the start folder that has no worktree. No double quotes, as above.
+func codeRepoPrompt(repo string) string {
+	return fmt.Sprintf("This session works on the git repository at %s. "+
+		"You may edit files and commit there. "+
+		"Your working folder is separate and isn't part of that repository.", repo)
 }
 
 // repoRootGuess finds a folder's main checkout from the files alone, for
