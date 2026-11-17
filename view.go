@@ -165,14 +165,13 @@ func (m *model) renderSidebar(w, h int) []string {
 		row3 := fit("     "+infoLine(s, sn.info, w-6), w)
 
 		if selected {
-			bg := lipgloss.NewStyle().Background(colSelBg)
 			marker := lipgloss.NewStyle().Foreground(colAccent).Render("▌")
 			if m.focus == focusTerminal {
 				marker = lipgloss.NewStyle().Foreground(colMuted).Render("▌")
 			}
-			row1 = marker + bg.Render(fit(left, w-len(age)-2)+stMuted.Render(age)+" ")
-			row2 = marker + bg.Render(fit("    "+stMuted.Render(s.Agent+" · ")+detailStyle.Render(detail), w-1))
-			row3 = marker + bg.Render(fit("    "+infoLine(s, sn.info, w-6), w-1))
+			row1 = marker + onBackground(fit(left, w-len(age)-2)+stMuted.Render(age)+" ", selBgSeq)
+			row2 = marker + onBackground(fit("    "+stMuted.Render(s.Agent+" · ")+detailStyle.Render(detail), w-1), selBgSeq)
+			row3 = marker + onBackground(fit("    "+infoLine(s, sn.info, w-6), w-1), selBgSeq)
 		}
 		lines = append(lines, row1, row2, row3)
 	}
@@ -180,6 +179,19 @@ func (m *model) renderSidebar(w, h int) []string {
 		lines = append(lines, strings.Repeat(" ", w))
 	}
 	return lines[:h]
+}
+
+// selBgSeq is the SGR sequence for the selected row's background (colSelBg).
+const selBgSeq = "\x1b[48;2;42;47;69m"
+
+// onBackground puts an already-styled string on a background. Wrapping it
+// in another lipgloss style doesn't work: each inner piece ends with a
+// reset, which also clears the outer background, so only parts of the row
+// were highlighted. This sets the background again after every reset.
+func onBackground(s, bgSeq string) string {
+	s = strings.ReplaceAll(s, "\x1b[0m", "\x1b[0m"+bgSeq)
+	s = strings.ReplaceAll(s, "\x1b[m", "\x1b[m"+bgSeq)
+	return bgSeq + s + "\x1b[m"
 }
 
 // rowsPerSession is how many sidebar lines each session takes.
