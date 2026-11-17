@@ -910,8 +910,9 @@ func (h *harness) waitGone(text string, timeout time.Duration) {
 	h.t.Fatalf("timed out waiting for %q to go; screen:\n%s", text, h.screen())
 }
 
-// TestE2EToggleList hides and shows the session list with ctrl+\, from inside a
-// session and from the list, and checks that ctrl+q shows a hidden list.
+// TestE2EToggleList hides and shows the session list with F3 (the default
+// toggle key), from inside a session and from the list, and checks that
+// ctrl+q shows a hidden list.
 func TestE2EToggleList(t *testing.T) {
 	exe := buildDeckhand(t)
 	pwsh, err := exec.LookPath("pwsh")
@@ -921,7 +922,7 @@ func TestE2EToggleList(t *testing.T) {
 	path := filepath.Dir(pwsh) + ";" + os.Getenv("SystemRoot") + `\System32`
 	home := t.TempDir()
 	h := startHarness(t, exe, envWith(home, path), t.TempDir()) // 140×40
-	const toggle = "\x1c"                                       // ctrl+\
+	const toggle = "\x1bOR"                                     // F3
 	topRow := func() string { return strings.SplitN(h.screen(), "\n", 2)[0] }
 	waitTop := func(want bool, text string) {
 		t.Helper()
@@ -961,14 +962,14 @@ func TestE2EToggleList(t *testing.T) {
 	h.send("mode con\r")
 	waitColumns(107) // 140 - 32 (list) - 1 (border)
 
-	// ctrl+\ inside the session hides the list; the terminal gets every column.
+	// F3 inside the session hides the list; the terminal gets every column.
 	h.send(toggle)
 	waitTop(false, "deckhand")
-	waitTop(true, `ctrl+\ list`) // the status line
+	waitTop(true, `F3 list`) // the status line
 	if strings.Contains(topRow(), "│") {
 		t.Fatalf("the list's border should be gone; screen:\n%s", h.screen())
 	}
-	h.waitFor(`ctrl+\ show list`, 3*time.Second)
+	h.waitFor(`F3 show list`, 3*time.Second)
 	h.send("cls\r")
 	h.send("mode con\r")
 	waitColumns(140)
@@ -976,12 +977,12 @@ func TestE2EToggleList(t *testing.T) {
 		t.Error("prefs.json should remember the hidden list")
 	}
 
-	// ctrl+\ again shows it; the agent never saw the key.
+	// F3 again shows it; the agent never saw the key.
 	h.send(toggle)
 	waitTop(true, "deckhand")
-	h.waitFor(`ctrl+\ hide list`, 3*time.Second)
+	h.waitFor(`F3 hide list`, 3*time.Second)
 
-	// From the list: ctrl+\ hides it, ctrl+q shows it again.
+	// From the list: F3 hides it, ctrl+q shows it again.
 	h.send("\x11")
 	h.waitFor("n new", 5*time.Second)
 	h.send(toggle)

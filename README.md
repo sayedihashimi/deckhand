@@ -88,7 +88,7 @@ Press `?` in the session list, or `F1` anywhere (also inside a session), for a s
 | c | Config screen: agents, notifications, the session list and open commands (see [The config screen](#the-config-screen)) |
 | K | End the session's process (it stays in the list) |
 | x (or delete) | End and remove the session |
-| `ctrl+\` | Hide or show the session list (see [Hiding the session list](#hiding-the-session-list)) |
+| F3 | Hide or show the session list (see [Hiding the session list](#hiding-the-session-list)) |
 | ? or F1 | Show the keys |
 | q | Quit (Claude sessions can be resumed next time) |
 
@@ -96,8 +96,8 @@ Press `?` in the session list, or `F1` anywhere (also inside a session), for a s
 
 | Key | Action |
 |---|---|
-| ctrl+q (or ctrl+]) | Back to the session list, showing it again if it's hidden. Every other key except `ctrl+\` and F1 goes to the agent. |
-| `ctrl+\` | Hide or show the session list, so the session gets the full width |
+| ctrl+q (or ctrl+]) | Back to the session list, showing it again if it's hidden. Every other key except F3 and F1 goes to the agent. |
+| F3 | Hide or show the session list, so the session gets the full width |
 | shift+PgUp / shift+PgDn | Scroll back through the output a page at a time |
 | F1 | Show the keys. deckhand keeps F1, so it doesn't reach the agent. `?` is typed text and goes to the agent. |
 
@@ -134,7 +134,7 @@ Press `c` in the session list to set deckhand up without editing `config.toml`. 
 - **Agents:** your custom agents, in the order the new-session dialog shows them, then the built-in ones. `enter` edits one, `a` adds one, `d` deletes it and `shift+↑/↓` moves it. The form asks for a name, the kind (a PowerShell command, or a program or script), the command, arguments (for a program), the type (Claude Code or other) and, for a PowerShell command, how to resume it (with `{id}`). It checks the agent with the same rules as loading the file, and shows any problem under the field.
 - **Pick from your PowerShell profile:** for a PowerShell agent, "Pick from your PowerShell profile…" (or `ctrl+p`) lists the functions and aliases your profile defines, leaving out PowerShell's own. Type to filter, `enter` to pick. If the function has a `-Resume` parameter, deckhand assumes it starts Claude and suggests `<name> -Resume {id}` as the resume command. Listing them runs PowerShell once with your profile, in the background (at most 10 s).
 - **Notifications:** on or off, when (only while deckhand isn't focused, or always), and a button that sends a test notification.
-- **Session list:** the key that hides and shows the list (empty means `ctrl+\`), and whether the status line shows while it's hidden. See [Hiding the session list](#hiding-the-session-list).
+- **Session list:** the key that hides and shows the list (empty means `F3`), and whether the status line shows while it's hidden. See [Hiding the session list](#hiding-the-session-list).
 - **Open:** the editor and terminal commands, with presets (VS Code, Rider, IntelliJ IDEA, VS Code Insiders; Windows Terminal in a new tab or a new window). "Try it" runs the command as typed on the selected session's folder.
 
 Keys: `↑/↓` or `tab`/`shift+tab` move, `←/→` change a choice, `enter` confirms, `ctrl+s` saves, and `esc` leaves (asking first if there are unsaved changes). The title says "unsaved changes" until you save.
@@ -170,19 +170,19 @@ A `command` agent that is a program or `.cmd` file gets the extra arguments on i
 
 ## Hiding the session list
 
-Press `ctrl+\` to hide the session list and give the selected session the full window width. Press it again to show the list. It works the same in the list and inside a session, where `ctrl+\` no longer reaches the agent (Claude Code, Codex and Gemini don't use it). It isn't `F2` because Codex uses `F2` to open its warnings, but you can choose `F2` or another key in the config (below).
+Press `F3` to hide the session list and give the selected session the full window width. Press it again to show the list. It works the same in the list and inside a session, where `F3` no longer reaches the agent. Claude Code binds no function keys by default, Codex uses `F2` and Gemini CLI uses `F4`, `F6`–`F9` and `F12`, so `F3` is free in all three, and neither Windows Terminal nor WezTerm binds it. The first default, `ctrl+\`, is 1Password's global shortcut on Windows, so it never reached deckhand on machines running 1Password. You can choose another key in the config (below).
 
 - Every session is resized to the new width, as when the window is resized.
 - `ctrl+q` (or `ctrl+]`) still goes back to the list, and shows it again if it's hidden. `/` shows it too, since the filter is typed at the top of the list.
 - The wheel and clicks all go to the terminal while the list is hidden.
-- The end of the session header shows which sessions need you, by the same rules as the list's badge and `@`: `1 need you · 1 finished · ctrl+\ list`. The window title still says "(n need you)".
+- The end of the session header shows which sessions need you, by the same rules as the list's badge and `@`: `1 need you · 1 finished · F3 list`. The window title still says "(n need you)".
 - deckhand remembers whether the list is hidden (in `%LOCALAPPDATA%\deckhand\prefs.json`) and starts the same way next time.
 
 Change the key, or turn off the status line, on the [config screen](#the-config-screen) or in the config file:
 
 ```toml
 [list]
-toggle_key  = 'ctrl+\'  # or "f2", "f3", ... (single quotes keep the \ as it is)
+toggle_key  = "f3"     # the default; or "f2", 'ctrl+\' (single quotes keep the \), ...
 status_line = true     # false: no "n need you" in the header while the list is hidden
 ```
 

@@ -35,13 +35,14 @@ func savedPwshSession(t *testing.T) string {
 	return home
 }
 
-// listShown waits until the session list is shown (or hidden).
-func (h *harness) listShown(shown bool) {
+// listShown waits until the session list is shown (or hidden, with the
+// status line naming keyLabel).
+func (h *harness) listShown(shown bool, keyLabel string) {
 	h.t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		top := strings.SplitN(h.screen(), "\n", 2)[0]
-		if strings.Contains(top, "deckhand") == shown && (shown || strings.Contains(top, `ctrl+\ list`)) {
+		if strings.Contains(top, "deckhand") == shown && (shown || strings.Contains(top, keyLabel+" list")) {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -50,9 +51,8 @@ func (h *harness) listShown(shown bool) {
 }
 
 // TestE2EWezTermKeys runs deckhand as if in WezTerm (TERM_PROGRAM=WezTerm),
-// so it turns on win32-input-mode. It sends ctrl+\ the way WezTerm was seen
-// to deliver it: the ctrl press, then only the ctrl+\ release (the press
-// never arrives), then the ctrl release. And shift+enter as records.
+// so it turns on win32-input-mode. It checks the default toggle key F3 and
+// shift+enter as records.
 func TestE2EWezTermKeys(t *testing.T) {
 	exe := buildDeckhand(t)
 	pwsh, err := exec.LookPath("pwsh")
@@ -62,19 +62,13 @@ func TestE2EWezTermKeys(t *testing.T) {
 	path := filepath.Dir(pwsh) + ";" + os.Getenv("SystemRoot") + `\System32`
 	home := savedPwshSession(t)
 	h := startHarness(t, exe, weztermEnv(home, path), t.TempDir())
-	res, _, _ := procVkKeyScan.Call(uintptr('\\'))
-	vkBackslash := int(res & 0xff)
-	weztermCtrlBackslash := func() {
-		h.send(win32Key(vkControl, scanCode(vkControl), 0, wtCtrl, true) +
-			win32Key(vkBackslash, scanCode(vkBackslash), 0x1c, wtCtrl, false) +
-			win32Key(vkControl, scanCode(vkControl), 0, 0, false))
-	}
+	const vkF3 = 0x72
 
 	h.waitFor("⏎ restart · ⇧⏎ new", 10*time.Second)
-	weztermCtrlBackslash()
-	h.listShown(false)
-	weztermCtrlBackslash()
-	h.listShown(true)
+	h.wtKey(vkF3, 0, 0)
+	h.listShown(false, "F3")
+	h.wtKey(vkF3, 0, 0)
+	h.listShown(true, "F3")
 
 	h.wtKey(vkReturn, '\r', wtShift)
 	h.waitFor("PS ", 15*time.Second)
@@ -114,5 +108,40 @@ func TestE2EEscEnterInList(t *testing.T) {
 	h.waitFor("n new", 5*time.Second)
 	h.send("q")
 	h.send("y")
+	h.waitExit(10 * time.Second)
+}
+
+// TestE2EWezTermCtrlBackslashRelease configures ctrl+\ as the toggle key and
+// sends it the way WezTerm was seen to deliver it in win32-input-mode: the
+// ctrl press, then only the ctrl+\ release (the press never arrives), then
+// the ctrl release. The lone release must count as the press.
+func TestE2EWezTermCtrlBackslashRelease(t *testing.T) {
+	exe := buildDeckhand(t)
+	pwsh, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh not found")
+	}
+	path := filepath.Dir(pwsh) + ";" + os.Getenv("SystemRoot") + `\System32`
+	home := savedPwshSession(t)
+	cfg := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(cfg, []byte("[list]\ntoggle_key = 'ctrl+\\'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := startHarness(t, exe, append(weztermEnv(home, path), "DECKHAND_CONFIG="+cfg), t.TempDir())
+	res, _, _ := procVkKeyScan.Call(uintptr('\\'))
+	vkBackslash := int(res & 0xff)
+	weztermCtrlBackslash := func() {
+		h.send(win32Key(vkControl, scanCode(vkControl), 0, wtCtrl, true) +
+			win32Key(vkBackslash, scanCode(vkBackslash), 0x1c, wtCtrl, false) +
+			win32Key(vkControl, scanCode(vkControl), 0, 0, false))
+	}
+
+	h.waitFor("⏎ restart · ⇧⏎ new", 10*time.Second)
+	weztermCtrlBackslash()
+	h.listShown(false, `ctrl+\`)
+	weztermCtrlBackslash()
+	h.listShown(true, `ctrl+\`)
+
+	h.wtType("q")
 	h.waitExit(10 * time.Second)
 }
