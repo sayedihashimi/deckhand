@@ -673,12 +673,12 @@ func (m *model) renderFooter(w int) string {
 	case focusDialog:
 		help = " enter start · esc cancel · F1 help"
 	case focusConfig:
-		help = " ↑↓/tab move · ctrl+s save · esc leave without saving"
+		help = footerOnly(helpConfig, "")
 		if m.cfg != nil && m.cfg.form != nil {
-			help = " ↑↓/tab move · enter done · esc cancel"
+			help = footerOnly(helpConfig, hintForm)
 		}
 		if m.cfg != nil && m.cfg.picker != nil {
-			help = " ↑↓ choose · enter pick · esc back"
+			help = footerOnly(helpConfig, hintPicker)
 		}
 	default:
 		var show []string

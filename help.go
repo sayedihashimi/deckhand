@@ -15,9 +15,13 @@ import (
 //
 // Adding a key: add a helpEntry to the right group, with every key string
 // it handles (tea.KeyPressMsg.String()) in match. TestHelpCoversHandledKeys
-// reads handleKey and newDialog.update and fails for any key that isn't in
-// the table. Give it a footer hint if it should show in the footer, and
-// update README.md's Keys section.
+// reads handleKey, newDialog.update, diffKey and the config screen's
+// configKey, formKey and pickerKey, and fails for any key that isn't in the
+// table. Give it a footer hint if it should show in the footer, and update
+// README.md's Keys section.
+//
+// The help is context-aware: it opens with the group for where it was
+// opened from (helpContextFor) first and in full, then the others.
 
 type helpEntry struct {
 	keys  string   // as shown in the overlay: "↑↓ j k"
@@ -43,6 +47,14 @@ const (
 	helpDiff     = "Diff preview (d)"
 	helpMouse    = "Mouse"
 	helpDialog   = "New-session dialog"
+	helpConfig   = "Config screen (c)"
+)
+
+// Footer conditions for the config screen's form and profile picker. Their
+// hints show only in their own footer (footerOnly).
+const (
+	hintForm   = "form"
+	hintPicker = "picker"
 )
 
 var helpGroups = []helpGroup{
@@ -94,6 +106,25 @@ var helpGroups = []helpGroup{
 		{keys: "enter", desc: "start the session", match: []string{"enter"}},
 		{keys: "esc", desc: "cancel", match: []string{"esc"}},
 	}},
+	// configKey, then the agent form (formKey) and the profile picker
+	// (pickerKey). Hints with no when are the screen's own footer.
+	{helpConfig, []helpEntry{
+		{keys: "↑↓ tab", desc: "move (shift+tab back)", match: []string{"up", "down", "tab", "shift+tab"}, footer: "↑↓/tab move"},
+		{keys: "enter e", desc: "edit agent; toggle, run row", match: []string{"enter", "e"}},
+		{keys: "←→ space", desc: "change a choice (also h l)", match: []string{"left", "right", "h", "l", "space"}},
+		{keys: "a", desc: "add an agent", match: []string{"a"}},
+		{keys: "d del", desc: "delete the agent", match: []string{"d", "delete"}},
+		{keys: "shift+↑↓", desc: "move the agent (also K J)", match: []string{"shift+up", "shift+down", "K", "J"}},
+		{keys: "ctrl+s", desc: "save and apply", match: []string{"ctrl+s"}, footer: "ctrl+s save"},
+		{keys: "esc", desc: "leave without saving", match: []string{"esc"}, footer: "esc leave without saving"},
+		{keys: "F1", desc: "this help", match: []string{"f1"}, footer: "F1 help"},
+		{keys: "↑↓ tab", desc: "form: next / previous field", match: []string{"up", "down", "tab", "shift+tab"}, footer: "↑↓/tab move", when: hintForm},
+		{keys: "enter esc", desc: "form: done / cancel", match: []string{"enter", "esc"}, footer: "enter done · esc cancel", when: hintForm},
+		{keys: "ctrl+p", desc: "form: pick from your profile", match: []string{"ctrl+p"}, when: hintForm},
+		{keys: "type", desc: "picker: filter the list", footer: "type to filter", when: hintPicker},
+		{keys: "↑↓ enter", desc: "picker: choose, pick", match: []string{"up", "down", "tab", "shift+tab", "enter"}, footer: "↑↓ choose · enter pick", when: hintPicker},
+		{keys: "esc", desc: "picker: back to the form", match: []string{"esc"}, footer: "esc back", when: hintPicker},
+	}},
 }
 
 func helpGroupByTitle(title string) helpGroup {
@@ -112,9 +143,21 @@ const hintHistory = "history"
 // footerHints joins a group's footer hints: " ↑↓ select · enter open · ...".
 // Hints with a condition show only when it's in show.
 func footerHints(title string, short bool, show ...string) string {
+	return joinHints(title, short, func(e helpEntry) bool {
+		return e.when == "" || slices.Contains(show, e.when)
+	})
+}
+
+// footerOnly joins the hints of a group's entries whose condition is
+// exactly when: "" for the config screen itself, hintForm for its form.
+func footerOnly(title, when string) string {
+	return joinHints(title, false, func(e helpEntry) bool { return e.when == when })
+}
+
+func joinHints(title string, short bool, keep func(helpEntry) bool) string {
 	var parts []string
 	for _, e := range helpGroupByTitle(title).entries {
-		if e.when != "" && !slices.Contains(show, e.when) {
+		if !keep(e) {
 			continue
 		}
 		h := e.footer
@@ -136,11 +179,42 @@ func withToggleKey(s string) string {
 
 // helpOverlay is the open help panel.
 type helpOverlay struct {
-	scroll     int  // first content line shown, when it doesn't fit
-	scrollable bool // it didn't fit when last drawn
+	context    string // the group shown first: where it was opened from
+	scroll     int    // first content line shown, when it doesn't fit
+	scrollable bool   // it didn't fit when last drawn
 }
 
-func (m *model) openHelp() { m.help = &helpOverlay{} }
+func (m *model) openHelp() { m.help = &helpOverlay{context: m.helpContextFor()} }
+
+// helpContextFor is the help group for where the keys go now: the config
+// screen, the new-session dialog, a session or the list.
+func (m *model) helpContextFor() string {
+	switch m.focus {
+	case focusConfig:
+		return helpConfig
+	case focusDialog:
+		return helpDialog
+	case focusTerminal:
+		return helpTerminal
+	}
+	return helpList
+}
+
+// helpOrder is helpGroups with the context's group first.
+func helpOrder(context string) []helpGroup {
+	out := make([]helpGroup, 0, len(helpGroups))
+	for _, g := range helpGroups {
+		if g.title == context {
+			out = append(out, g)
+		}
+	}
+	for _, g := range helpGroups {
+		if g.title != context {
+			out = append(out, g)
+		}
+	}
+	return out
+}
 
 // helpKey handles a key while the help is open: esc, ?, F1 or q close it
 // (focus is untouched, so it goes back to where it was), ↑↓ scroll it, and
@@ -175,33 +249,40 @@ var (
 // helpColumnWidth is the width helpColumn needs to show groups without
 // wrapping.
 func helpColumnWidth(groups []helpGroup) int {
-	keyW, descW, titleW := 0, 0, 0
+	w := 0
 	for _, g := range groups {
-		titleW = max(titleW, ansi.StringWidth(g.title))
+		keyW, descW := 0, 0
 		for _, e := range g.entries {
 			keyW = max(keyW, ansi.StringWidth(e.keys))
 			descW = max(descW, ansi.StringWidth(e.desc))
 		}
+		w = max(w, keyW+2+descW, ansi.StringWidth(g.title))
 	}
-	return max(keyW+2+descW, titleW)
+	return w
 }
 
-// helpColumn renders groups as "key  description" rows, inner cells wide.
-// Long descriptions wrap under themselves.
+// helpColumn renders groups as "key  description" rows, width cells wide,
+// each group with its keys lined up. Long descriptions wrap under
+// themselves.
 func helpColumn(groups []helpGroup, width int) []string {
-	keyW := 0
-	for _, g := range groups {
+	out, _ := helpColumnEnds(groups, width)
+	return out
+}
+
+// helpColumnEnds is helpColumn, and the line after each group's last.
+func helpColumnEnds(groups []helpGroup, width int) ([]string, []int) {
+	var out []string
+	var ends []int
+	for i, g := range groups {
+		if i > 0 {
+			out = append(out, fit("", width))
+		}
+		keyW := 0
 		for _, e := range g.entries {
 			keyW = max(keyW, ansi.StringWidth(e.keys))
 		}
-	}
-	keyW += 2
-	descW := max(width-keyW, 8)
-	var out []string
-	for i, g := range groups {
-		if i > 0 {
-			out = append(out, "")
-		}
+		keyW += 2
+		descW := max(width-keyW, 8)
 		out = append(out, fit(stHelpGroup.Render(g.title), width))
 		for _, e := range g.entries {
 			for j, l := range strings.Split(ansi.Wrap(e.desc, descW, ""), "\n") {
@@ -212,8 +293,9 @@ func helpColumn(groups []helpGroup, width int) []string {
 				out = append(out, fit(stHelpKey.Render(fit(k, keyW))+l, width))
 			}
 		}
+		ends = append(ends, len(out))
 	}
-	return out
+	return out, ends
 }
 
 // statusLegend is the status icons with their meanings, wrapped to width.
@@ -242,34 +324,133 @@ func (m *model) statusLegend(width int) []string {
 	return append(out, fit(line, width))
 }
 
-// helpContent is the overlay's lines, inner cells wide: two columns (the
-// session list on the left) when there's room, otherwise one.
-func (m *model) helpContent(inner int) []string {
-	title := stTitle.Render("Keys") + stMuted.Render("   esc, ? or F1 closes")
-	out := []string{fit(title, inner), ""}
-	const gap = 3
-	// The right column gets what it needs, the session list the rest.
-	rightW := min(helpColumnWidth(helpGroups[1:]), (inner-gap)/2)
-	if colW := inner - gap - rightW; rightW >= 30 && colW >= 36 {
-		left := helpColumn(helpGroups[:1], colW)
-		right := helpColumn(helpGroups[1:], rightW)
-		for i := 0; i < max(len(left), len(right)); i++ {
-			l, r := strings.Repeat(" ", colW), ""
-			if i < len(left) {
-				l = left[i]
-			}
-			if i < len(right) {
-				r = right[i]
-			}
-			out = append(out, fit(l+strings.Repeat(" ", gap)+r, inner))
+// helpLayout is the overlay's content: its lines, and the line after each
+// key group's last, so the scroll line can say how many groups are below.
+type helpLayout struct {
+	lines []string
+	ends  []int
+}
+
+// helpGap is the space between the two columns, and helpMinCol the
+// narrowest a column gets.
+const (
+	helpGap    = 3
+	helpMinCol = 32
+)
+
+// addColumns appends groups side by side, in columns w[0] and w[1] wide.
+func (l *helpLayout) addColumns(left, right []helpGroup, w [2]int) {
+	top := len(l.lines)
+	ll, le := helpColumnEnds(left, w[0])
+	rl, re := helpColumnEnds(right, w[1])
+	for i := 0; i < max(len(ll), len(rl)); i++ {
+		a, b := strings.Repeat(" ", w[0]), ""
+		if i < len(ll) {
+			a = ll[i]
 		}
-	} else {
-		out = append(out, helpColumn(helpGroups, inner)...)
+		if i < len(rl) {
+			b = rl[i]
+		}
+		l.lines = append(l.lines, a+strings.Repeat(" ", helpGap)+b)
 	}
-	out = append(out, "", fit(stHelpGroup.Render("Status icons"), inner))
+	for _, e := range append(le, re...) {
+		l.ends = append(l.ends, top+e)
+	}
+}
+
+// addColumn appends groups one under another, width wide.
+func (l *helpLayout) addColumn(groups []helpGroup, width int) {
+	top := len(l.lines)
+	lines, ends := helpColumnEnds(groups, width)
+	l.lines = append(l.lines, lines...)
+	for _, e := range ends {
+		l.ends = append(l.ends, top+e)
+	}
+}
+
+// packHelp splits groups into two columns w[0] and w[1] wide, each at most
+// limit lines tall (no limit when it's 0). The first group goes left; each
+// other one goes in the shorter column, or the other if it doesn't fit
+// there. Groups that fit in neither are left over, in order.
+func packHelp(groups []helpGroup, w [2]int, limit int) (left, right, rest []helpGroup) {
+	var h [2]int
+	cols := [2]*[]helpGroup{&left, &right}
+	for i, g := range groups {
+		add := func(c int) int {
+			n := len(helpColumn([]helpGroup{g}, w[c]))
+			if h[c] > 0 {
+				n++ // the blank line between groups
+			}
+			return n
+		}
+		fits := func(c int) bool { return i == 0 || limit == 0 || h[c]+add(c) <= limit }
+		c := 0
+		if i > 0 && h[1] < h[0] {
+			c = 1
+		}
+		if !fits(c) {
+			c = 1 - c
+		}
+		if !fits(c) {
+			rest = append(rest, g)
+			continue
+		}
+		h[c] += add(c)
+		*cols[c] = append(*cols[c], g)
+	}
+	return left, right, rest
+}
+
+// helpContent is the overlay's lines, inner cells wide, for a panel with
+// room for rows lines. The context's group comes first, in full: in the
+// left column, sized to it, when there's room for two. The others follow in
+// two columns as far as they fit above the scroll line, and the rest come
+// after, to scroll to.
+func (m *model) helpContent(inner, rows int) helpLayout {
+	context := helpList
+	if m.help != nil && m.help.context != "" {
+		context = m.help.context
+	}
+	title := stTitle.Render("Keys") + stMuted.Render(" · "+context+"   esc, ? or F1 closes")
+	l := helpLayout{lines: []string{title, ""}}
+	groups := helpOrder(context)
+	tail := m.helpTail(inner)
+	if inner-helpGap < 2*helpMinCol {
+		l.addColumn(groups, inner)
+	} else {
+		// The context's group gets the width it needs, the right column
+		// what the widest other group needs, and the left any extra.
+		ctxW := min(max(helpColumnWidth(groups[:1]), helpMinCol), inner-helpGap-helpMinCol)
+		rightW := min(max(helpColumnWidth(groups[1:]), helpMinCol), inner-helpGap-ctxW)
+		w := [2]int{inner - helpGap - rightW, rightW}
+		left, right, _ := packHelp(groups, w, 0)
+		tall := max(len(helpColumn(left, w[0])), len(helpColumn(right, w[1])))
+		if len(l.lines)+tall+len(tail) <= rows {
+			l.addColumns(left, right, w) // it all fits
+		} else {
+			// As many groups as fit above the scroll line, then the rest.
+			var rest []helpGroup
+			left, right, rest = packHelp(groups, w, rows-1-len(l.lines))
+			l.addColumns(left, right, w)
+			if len(rest) > 0 {
+				left, right, _ = packHelp(rest, w, 0)
+				l.lines = append(l.lines, "")
+				l.addColumns(left, right, w)
+			}
+		}
+	}
+	l.lines = append(l.lines, tail...)
+	for i := range l.lines {
+		l.lines[i] = fit(l.lines[i], inner)
+	}
+	return l
+}
+
+// helpTail is what follows the keys: the status icons and the config path.
+func (m *model) helpTail(inner int) []string {
+	out := []string{"", stHelpGroup.Render("Status icons")}
 	out = append(out, m.statusLegend(inner)...)
-	out = append(out, "", fit(stMuted.Render("Config file: ")+configPath()+stMuted.Render("  (c edits it here; deckhand config creates it)"), inner))
-	return out
+	return append(out, "", stMuted.Render("Config file: ")+configPath()+stMuted.Render("  (c edits it here; deckhand config creates it)"))
 }
 
 // overlayHelp draws the help panel over the main pane's lines (w×h),
@@ -280,9 +461,10 @@ func (m *model) overlayHelp(behind []string, w, h int) []string {
 		pw = w
 	}
 	inner := max(pw-4, 1) // border and one space of padding each side
-	content := m.helpContent(inner)
+	rows := max(h-2, 1)   // room inside the border
+	layout := m.helpContent(inner, rows)
+	content := layout.lines
 
-	rows := max(h-2, 1) // room inside the border
 	m.help.scrollable = len(content) > rows
 	if m.help.scrollable {
 		// Scroll, keeping the last row for "↑↓ scroll".
@@ -290,7 +472,18 @@ func (m *model) overlayHelp(behind []string, w, h int) []string {
 		m.help.scroll = min(m.help.scroll, len(content)-view)
 		end := m.help.scroll + view
 		more := stMuted.Render("↑↓ scroll")
-		if n := len(content) - end; n > 0 {
+		groups := 0 // key groups below the view, or cut off by it
+		for _, e := range layout.ends {
+			if e > end {
+				groups++
+			}
+		}
+		switch n := len(content) - end; {
+		case groups == 1:
+			more = stMuted.Render("↓ 1 more group · ↑↓ scroll")
+		case groups > 1:
+			more = stMuted.Render(fmt.Sprintf("↓ %d more groups · ↑↓ scroll", groups))
+		case n > 0:
 			more = stMuted.Render(fmt.Sprintf("↓ %d more lines · ↑↓ scroll", n))
 		}
 		content = append(content[m.help.scroll:end:end], fit(more, inner))

@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -12,9 +13,9 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// handledKeys reads model.go and diff.go and returns the key strings
-// handleKey (and the new-session dialog and the diff preview) handle, by
-// the help group they belong in.
+// handledKeys reads model.go, diff.go and configscreen.go and returns the
+// key strings handleKey (and the new-session dialog, the diff preview and
+// the config screen) handle, by the help group they belong in.
 func handledKeys(t *testing.T) map[string][]string {
 	t.Helper()
 	fset := token.NewFileSet()
@@ -23,6 +24,10 @@ func handledKeys(t *testing.T) map[string][]string {
 		t.Fatal(err)
 	}
 	df, err := parser.ParseFile(fset, "diff.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cf, err := parser.ParseFile(fset, "configscreen.go", nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,6 +83,18 @@ func handledKeys(t *testing.T) map[string][]string {
 			got[helpDiff] = collect(fn.Body)
 		}
 	}
+	// The config screen, its agent form and profile picker, and the keys
+	// that toggle a choice.
+	configFuncs := map[string]bool{"configKey": true, "formKey": true, "pickerKey": true, "isToggleKey": true}
+	for _, d := range cf.Decls {
+		if fn, ok := d.(*ast.FuncDecl); ok && configFuncs[fn.Name.Name] {
+			delete(configFuncs, fn.Name.Name)
+			got[helpConfig] = append(got[helpConfig], collect(fn.Body)...)
+		}
+	}
+	for name := range configFuncs {
+		t.Errorf("configscreen.go has no %s; update handledKeys", name)
+	}
 	for _, d := range f.Decls {
 		fn, ok := d.(*ast.FuncDecl)
 		if !ok {
@@ -96,6 +113,7 @@ func handledKeys(t *testing.T) map[string][]string {
 						if s, ok := lit(b.Y); ok {
 							got[helpList] = append(got[helpList], s)
 							got[helpTerminal] = append(got[helpTerminal], s)
+							got[helpConfig] = append(got[helpConfig], s)
 						}
 					}
 				case *ast.SwitchStmt:
@@ -127,7 +145,7 @@ func handledKeys(t *testing.T) map[string][]string {
 // group. If this fails after adding a key, add it to helpGroups in help.go.
 func TestHelpCoversHandledKeys(t *testing.T) {
 	got := handledKeys(t)
-	for _, title := range []string{helpList, helpTerminal, helpDialog, helpDiff} {
+	for _, title := range []string{helpList, helpTerminal, helpDialog, helpDiff, helpConfig} {
 		if len(got[title]) < 3 {
 			t.Fatalf("%s: found only %q in model.go; has handleKey changed shape?", title, got[title])
 		}
@@ -143,7 +161,7 @@ func TestHelpCoversHandledKeys(t *testing.T) {
 			}
 		}
 	}
-	for _, k := range []string{"?", "f1", "shift+pgup", "ctrl+q", "o", "K"} {
+	for _, k := range []string{"?", "f1", "shift+pgup", "ctrl+q", "o", "K", "ctrl+s", "ctrl+p", "shift+down"} {
 		found := false
 		for _, g := range got {
 			for _, h := range g {
@@ -151,7 +169,7 @@ func TestHelpCoversHandledKeys(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Errorf("key %q not found in model.go; the parser missed it", k)
+			t.Errorf("key %q not found in model.go or configscreen.go; the parser missed it", k)
 		}
 	}
 }
@@ -196,6 +214,7 @@ func TestHelpOpenClose(t *testing.T) {
 		// the terminal branch: F1 is checked before it.
 		{"F1 in a session then F1", focusTerminal, f1, f1},
 		{"F1 in the dialog then esc", focusDialog, f1, tea.KeyPressMsg{Code: tea.KeyEscape}},
+		{"F1 in the config screen then esc", focusConfig, f1, tea.KeyPressMsg{Code: tea.KeyEscape}},
 	} {
 		m.focus, m.help = c.focus, nil
 		press(m, c.open)
@@ -225,56 +244,160 @@ func TestHelpOpenClose(t *testing.T) {
 	}
 }
 
-// The overlay fits at 120×32, the screenshot size, and scrolls when the
-// window is smaller.
+// helpScreen draws the help over an empty main pane, w×h.
+func helpScreen(m *model, w, h int) (string, []string) {
+	lines := m.overlayHelp(make([]string, h), w, h)
+	return ansi.Strip(strings.Join(lines, "\n")), lines
+}
+
+// At 120×32, the screenshot size, the help opened from each context shows
+// that context's group first and in full, then as many others as fit; the
+// rest scroll, and the last line says how many groups are left.
 func TestHelpRender(t *testing.T) {
-	m := testModel("api")
-	m.width, m.height = 120, 32
-	m.openHelp()
-	sw := m.sidebarWidth()
-	mw, h := m.width-sw-1, m.height-1
-	lines := m.overlayHelp(make([]string, h), mw, h)
-	if len(lines) != h {
-		t.Fatalf("%d lines, want %d", len(lines), h)
-	}
-	screen := ansi.Strip(strings.Join(lines, "\n"))
-	for _, want := range []string{"Session list", "Inside a session", "Mouse", "New-session dialog", "Status icons", "Config file:", "shift+drag", "ctrl+w", "not running"} {
-		if !strings.Contains(screen, want) {
-			t.Errorf("missing %q:\n%s", want, screen)
-		}
-	}
-	if strings.Contains(screen, "more lines") {
-		t.Errorf("should fit without scrolling at 120×32:\n%s", screen)
-	}
-	for i, l := range lines {
-		if w := ansi.StringWidth(l); w != mw {
-			t.Errorf("line %d is %d cells, want %d: %q", i, w, mw, ansi.Strip(l))
-		}
-	}
-	// Every entry is listed.
-	for _, g := range helpGroups {
-		for _, e := range g.entries {
-			if !strings.Contains(screen, e.keys) {
-				t.Errorf("missing key %q", e.keys)
+	for _, c := range []struct {
+		focus   focusArea
+		context string
+	}{
+		{focusSidebar, helpList},
+		{focusTerminal, helpTerminal},
+		{focusDialog, helpDialog},
+		{focusConfig, helpConfig},
+	} {
+		t.Run(c.context, func(t *testing.T) {
+			m := testModel("api")
+			m.width, m.height = 120, 32
+			m.focus = c.focus
+			m.openHelp()
+			if m.help.context != c.context {
+				t.Fatalf("context %q, want %q", m.help.context, c.context)
 			}
-		}
+			sw := m.sidebarWidth()
+			mw, h := m.width-sw-1, m.height-1
+			screen, lines := helpScreen(m, mw, h)
+			if len(lines) != h {
+				t.Fatalf("%d lines, want %d", len(lines), h)
+			}
+			for i, l := range lines {
+				if w := ansi.StringWidth(l); w != mw {
+					t.Errorf("line %d is %d cells, want %d: %q", i, w, mw, ansi.Strip(l))
+				}
+			}
+			// The context's group is first, right under the title, and
+			// every entry of it shows.
+			rows := strings.Split(screen, "\n")
+			first := -1
+			for i, r := range rows {
+				if strings.Contains(r, "Keys") {
+					first = i + 2
+					break
+				}
+			}
+			if first < 0 || first >= len(rows) || !strings.Contains(rows[first], c.context) {
+				t.Fatalf("%q should be the first group:\n%s", c.context, screen)
+			}
+			if !strings.Contains(rows[first-2], "Keys · "+c.context) {
+				t.Errorf("title should name the context: %q", rows[first-2])
+			}
+			g := helpGroupByTitle(c.context)
+			for _, e := range g.entries {
+				if !strings.Contains(screen, e.keys) || !strings.Contains(screen, e.desc[:min(len(e.desc), 12)]) {
+					t.Errorf("%s: missing %q %q:\n%s", c.context, e.keys, e.desc, screen)
+				}
+			}
+			// Two columns: at least one other group shows beside it.
+			others := 0
+			for _, o := range helpGroups {
+				if o.title != c.context && strings.Contains(screen, o.title) {
+					others++
+				}
+			}
+			if others == 0 {
+				t.Errorf("no other group shows:\n%s", screen)
+			}
+			// All the groups don't fit, so the last line counts the rest.
+			last := rows[len(rows)-2] // above the bottom border
+			if !strings.Contains(last, "more group") {
+				t.Errorf("last line should say how many more groups: %q\n%s", last, screen)
+			}
+			// Scrolling shows every group and entry, and the tail.
+			seen := screen
+			for i := 0; i < 100; i++ {
+				m.helpKey("down")
+				s, _ := helpScreen(m, mw, h)
+				seen += s
+			}
+			for _, o := range helpGroups {
+				if !strings.Contains(seen, o.title) {
+					t.Errorf("group %q never shows", o.title)
+				}
+				for _, e := range o.entries {
+					if !strings.Contains(seen, e.keys) {
+						t.Errorf("%s: key %q never shows", o.title, e.keys)
+					}
+				}
+			}
+			end, _ := helpScreen(m, mw, h)
+			for _, want := range []string{"Status icons", "not running", "Config file:"} {
+				if !strings.Contains(end, want) {
+					t.Errorf("scrolled to the end, missing %q:\n%s", want, end)
+				}
+			}
+			if strings.Contains(end, "more") {
+				t.Errorf("scrolled to the end, nothing should be left:\n%s", end)
+			}
+		})
 	}
 
-	// Small: it scrolls.
-	small := m.overlayHelp(make([]string, 15), 60, 15)
-	s := ansi.Strip(strings.Join(small, "\n"))
-	if len(small) != 15 || !strings.Contains(s, "more lines") || !strings.Contains(s, "Keys") {
+	// Wide and tall: everything fits without scrolling.
+	m := testModel("api")
+	m.openHelp()
+	if s, _ := helpScreen(m, 120, 60); strings.Contains(s, "↑↓ scroll") || !strings.Contains(s, "Config file:") || !strings.Contains(s, helpConfig) {
+		t.Errorf("120×60 should fit:\n%s", s)
+	}
+
+	// Small: one column, it scrolls.
+	m.help.context = helpConfig
+	s, small := helpScreen(m, 60, 15)
+	if len(small) != 15 || !strings.Contains(s, "more group") || !strings.Contains(s, "Keys") || !strings.Contains(s, helpConfig) {
 		t.Fatalf("small:\n%s", s)
 	}
 	for i := 0; i < 200; i++ {
 		m.helpKey("down")
 	}
-	s = ansi.Strip(strings.Join(m.overlayHelp(make([]string, 15), 60, 15), "\n"))
-	if !strings.Contains(s, "Config file:") || strings.Contains(s, "more lines") {
+	s, _ = helpScreen(m, 60, 15)
+	if !strings.Contains(s, "Config file:") || strings.Contains(s, "more") {
 		t.Errorf("scrolled to the end:\n%s", s)
 	}
 	m.helpKey("up")
 	if m.help.scroll <= 0 {
 		t.Errorf("scroll after up = %d", m.help.scroll)
+	}
+}
+
+// The config screen's footers come from the help table.
+func TestConfigFooter(t *testing.T) {
+	t.Setenv("DECKHAND_CONFIG", filepath.Join(t.TempDir(), "config.toml"))
+	m := testModel("api")
+	m.width, m.height = 120, 32
+	m.openConfigScreen()
+	for _, c := range []struct {
+		name string
+		set  func()
+		want []string
+	}{
+		{"screen", func() {}, []string{"↑↓/tab move", "ctrl+s save", "esc leave without saving", "F1 help"}},
+		{"form", func() { m.cfg.openForm(-1) }, []string{"↑↓/tab move", "enter done", "esc cancel"}},
+		{"picker", func() { m.cfg.picker = &profilePicker{} }, []string{"↑↓ choose", "enter pick", "esc back"}},
+	} {
+		c.set()
+		f := ansi.Strip(m.renderFooter(120))
+		for _, w := range c.want {
+			if !strings.Contains(f, w) {
+				t.Errorf("%s footer %q: missing %q", c.name, f, w)
+			}
+		}
+		if c.name != "screen" && strings.Contains(f, "ctrl+s") {
+			t.Errorf("%s footer has the screen's hints: %q", c.name, f)
+		}
 	}
 }
