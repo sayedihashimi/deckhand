@@ -67,7 +67,10 @@ State is kept in %LOCALAPPDATA%\deckhand (override with DECKHAND_HOME).`)
 		m.setFlash("Config error: " + cfgErr.Error())
 		m.flashAt = m.flashAt.Add(10 * time.Second) // keep it up longer
 	}
-	if _, err := tea.NewProgram(m).Run(); err != nil {
+	enableKeyRecords()
+	_, err := tea.NewProgram(m).Run()
+	disableKeyRecords()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "deckhand:", err)
 		os.Exit(1)
 	}

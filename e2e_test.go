@@ -134,7 +134,9 @@ func envWith(home, path string) []string {
 	var env []string
 	for _, kv := range os.Environ() {
 		k := strings.ToUpper(strings.SplitN(kv, "=", 2)[0])
-		if k == "DECKHAND_HOME" || (path != "" && k == "PATH") {
+		// The harness isn't Windows Terminal (see wantKeyRecords); tests
+		// that act like it set WT_SESSION themselves (wtEnv).
+		if k == "DECKHAND_HOME" || k == "WT_SESSION" || k == "DECKHAND_SESSION_ID" || (path != "" && k == "PATH") {
 			continue
 		}
 		env = append(env, kv)
@@ -345,6 +347,60 @@ func TestE2EMouseForwarding(t *testing.T) {
 	h.send("\x11q")
 	h.send("y")
 	h.waitExit(10 * time.Second)
+}
+
+// shift+enter reaches an agent that asked for the kitty keyboard protocol
+// (as Claude Code does) as CSI 13;2u, which Claude reads as a new line;
+// plain enter stays "\r". The harness sends keys the way Windows Terminal
+// does through ConPTY, as win32-input-mode records, which only keep the
+// modifiers because deckhand asks its console for that mode (it does when
+// WT_SESSION says it's in Windows Terminal).
+func TestE2EShiftEnter(t *testing.T) {
+	exe := buildDeckhand(t)
+	bin := t.TempDir()
+	if out, err := exec.Command("go", "build", "-o", filepath.Join(bin, "pwsh.exe"), "./testdata/keyapp").CombinedOutput(); err != nil {
+		t.Fatalf("build keyapp: %v\n%s", err, out)
+	}
+	path := bin + ";" + os.Getenv("SystemRoot") + `\System32`
+	env := append(envWith(t.TempDir(), path), "WT_SESSION=e2e")
+	h := startHarness(t, exe, env, t.TempDir())
+
+	h.waitFor("No sessions yet", 10*time.Second)
+	h.send("n")
+	h.waitFor("Start in", 5*time.Second)
+	h.send("\r")
+	h.waitFor("keyapp ready", 10*time.Second)
+
+	const shift, ctrl = 0x10, 0x08               // SHIFT_PRESSED, LEFT_CTRL_PRESSED
+	h.send(win32Key(0x10, 0x2a, 0, shift, true)) // shift down: not forwarded
+	h.send(win32Key(0x0d, 0x1c, '\r', shift, true) + win32Key(0x0d, 0x1c, '\r', shift, false))
+	h.send(win32Key(0x10, 0x2a, 0, 0, false))
+	h.waitFor(`got "\x1b[13;2u"`, 5*time.Second)
+	h.send(win32Key(0x11, 0x1d, 0, ctrl, true))
+	h.send(win32Key(0x0d, 0x1c, '\n', ctrl, true) + win32Key(0x0d, 0x1c, '\n', ctrl, false))
+	h.send(win32Key(0x11, 0x1d, 0, 0, false))
+	h.waitFor(`got "\x1b[13;5u"`, 5*time.Second)
+	h.send(win32Key(0x0d, 0x1c, '\r', 0, true) + win32Key(0x0d, 0x1c, '\r', 0, false))
+	h.waitFor(`got "\r"`, 5*time.Second)
+	h.send("\r") // plain VT input still works too
+	time.Sleep(300 * time.Millisecond)
+	if s := h.screen(); strings.Count(s, "got ") != 4 || strings.Count(s, `got "\r"`) != 2 {
+		t.Fatalf("want exactly shift+enter, ctrl+enter and two enters; screen:\n%s", s)
+	}
+
+	h.send("\x11q")
+	h.send("y")
+	h.waitExit(10 * time.Second)
+}
+
+// win32Key is a key press or release as a win32-input-mode record:
+// ESC [ Vk ; Sc ; Uc ; Kd ; Cs ; Rc _
+func win32Key(vk, scan int, char rune, state int, down bool) string {
+	kd := 0
+	if down {
+		kd = 1
+	}
+	return fmt.Sprintf("\x1b[%d;%d;%d;%d;%d;1_", vk, scan, char, kd, state)
 }
 
 // A custom agent that starts Claude through a PowerShell function (like a
@@ -654,7 +710,8 @@ func TestE2EOpenFolder(t *testing.T) {
 
 // shiftEnter is shift+enter as a CSI u sequence. Through the pseudo console
 // it reaches deckhand as shift+enter. (A win32-input-mode key event with the
-// shift state doesn't: the pseudo console drops the shift for enter.)
+// shift state doesn't, unless deckhand turned on win32-input-mode: see
+// TestE2EWTShiftEnterNewSession.)
 const shiftEnter = "[13;2u"
 
 // sessionOrder reads the saved session list: name and folder base, in order.

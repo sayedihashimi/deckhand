@@ -196,6 +196,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
+		if lockOrModifierKey(msg.Code) {
+			return m, nil
+		}
 		return m.handleKey(msg)
 
 	case tea.MouseMsg:
@@ -755,6 +758,14 @@ func sessionName(dir string) string {
 		return dir
 	}
 	return name
+}
+
+// lockOrModifierKey reports keys that only arrive on their own as
+// win32-input-mode records (see enableKeyRecords): shift, ctrl, alt and the
+// windows key pressed alone, the lock keys, and media and volume keys.
+// Agents never got these before, and x/vt has no encoding for them.
+func lockOrModifierKey(code rune) bool {
+	return code >= uv.KeyCapsLock && code <= uv.KeyIsoLevel5Shift
 }
 
 // toUVKey converts a key press for the session's emulator. The emulator
