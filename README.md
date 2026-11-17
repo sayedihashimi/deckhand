@@ -80,12 +80,14 @@ Press `?` in the session list, or `F1` anywhere (also inside a session), for a s
 | / | Filter the list as you type. Matches the name, agent, folder and branch, ignoring case; letters in order also match, and every word must match. enter keeps the filter (or opens the session if only one matches), tab keeps it, esc clears it |
 | @ | Show only sessions that need you or finished since you looked (press again to show all) |
 | esc | Clear the filter |
+| v | For an exited Claude session, switch between its last output and the conversation from its transcript (see [Output after a restart](#output-after-a-restart)) |
+| shift+PgUp / shift+PgDn | Scroll an exited session's output a page at a time |
 | n | New session (see below) |
 | o | Open the session's folder in your editor (see [Opening a session's folder](#opening-a-sessions-folder)) |
 | O | Open the session's folder in Explorer |
 | t | Open a new Windows Terminal tab in the session's folder |
 | r | Rename the session |
-| c | Config screen: agents, notifications, the session list and open commands (see [The config screen](#the-config-screen)) |
+| c | Config screen: agents, notifications, the session list, history and open commands (see [The config screen](#the-config-screen)) |
 | K | End the session's process (it stays in the list) |
 | x (or delete) | End and remove the session |
 | F3 | Hide or show the session list (see [Hiding the session list](#hiding-the-session-list)) |
@@ -135,6 +137,7 @@ Press `c` in the session list to set deckhand up without editing `config.toml`. 
 - **Pick from your PowerShell profile:** for a PowerShell agent, "Pick from your PowerShell profile…" (or `ctrl+p`) lists the functions and aliases your profile defines, leaving out PowerShell's own. Type to filter, `enter` to pick. If the function has a `-Resume` parameter, deckhand assumes it starts Claude and suggests `<name> -Resume {id}` as the resume command. Listing them runs PowerShell once with your profile, in the background (at most 10 s).
 - **Notifications:** on or off, when (only while deckhand isn't focused, or always), and a button that sends a test notification.
 - **Session list:** the key that hides and shows the list (empty means `F3`), and whether the status line shows while it's hidden. See [Hiding the session list](#hiding-the-session-list).
+- **History:** whether each session's output is saved for after a restart, and how many lines are kept (empty means 5000). See [Output after a restart](#output-after-a-restart).
 - **Open:** the editor and terminal commands, with presets (VS Code, Rider, IntelliJ IDEA, VS Code Insiders; Windows Terminal in a new tab or a new window). "Try it" runs the command as typed on the selected session's folder.
 
 Keys: `↑/↓` or `tab`/`shift+tab` move, `←/→` change a choice, `enter` confirms, `ctrl+s` saves, and `esc` leaves (asking first if there are unsaved changes). The title says "unsaved changes" until you save.
@@ -214,6 +217,23 @@ terminal = 'wt.exe -w 0 nt -d "{dir}"'
 ## Resuming
 
 The session list is saved in `%LOCALAPPDATA%\deckhand\sessions.json`. Each Claude session is started with its own `--session-id`, so after you quit and restart deckhand, pressing enter on a Claude session runs `claude --resume <id>`.
+
+## Output after a restart
+
+Each session's output (its scrollback and screen, with colours, at most 5000 lines) is saved to `%LOCALAPPDATA%\deckhand\sessions\<id>\screen.ans`: when deckhand quits (before it ends the running sessions), when a session's process exits, and every 30 s while a session prints something. Writes go to a temporary file that is then renamed, so a crash leaves the previous save. On the alternate screen (a fullscreen app such as Claude's fullscreen renderer) only the visible screen is saved.
+
+After deckhand restarts, an exited session shows that output instead of "Not running", dimmed so it's clear it isn't live. The header says `last output · saved 2h ago · ⏎ resume · ⇧⏎ new`. The wheel and shift+PgUp/PgDn scroll it like a live session's scrollback. Lines saved at another width are cut or padded, not re-wrapped. Pressing enter resumes or restarts the session as before, and the live terminal replaces the saved output.
+
+For a Claude session, deckhand can also show the conversation from Claude's transcript: the last prompts (`> ...`) and replies, without tool calls, sub-agents or Markdown. It shows by itself when there's no saved output (sessions from before this feature, for example), and `v` in the list switches between the two (`last output · v conversation`). The choice isn't saved; each restart starts on the last output.
+
+```toml
+[history]
+save  = true     # false: don't save session output to disk
+lines = 5000     # lines kept per session, 1 to 5000
+```
+
+> [!NOTE]
+> The saved output is whatever was on screen, so it can include secrets a command printed. It stays in your own `%LOCALAPPDATA%\deckhand` folder, next to the hook events deckhand already keeps there. Removing a session (`x`) deletes its folder and the file. `save = false` stops saving; files saved earlier stay (and are still shown) until you remove the session or delete its `screen.ans`.
 
 ## Build
 

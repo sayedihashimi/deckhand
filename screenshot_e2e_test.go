@@ -17,8 +17,8 @@ import (
 
 // TestE2EScreenshot sets up a scripted scene (three fake Claude sessions in
 // different states, in git repos, plus an exited shell) and saves deckhand's
-// screen as a PNG, with the config screen ("c") below it. The PR workflow
-// posts it on each pull request.
+// screen as a PNG, with the exited shell's restored output and the config
+// screen ("c") below it. The PR workflow posts it on each pull request.
 //
 //	$env:DECKHAND_SCREENSHOT="shot.png"; go test -tags e2e -run TestE2EScreenshot -v
 //
@@ -119,6 +119,30 @@ event PreToolUse Bash | go test ./...
 		t.Fatal(err)
 	}
 
+	// The exited shell's output from its last run, as deckhand saved it
+	// when it quit: shown dimmed after the restart.
+	prompt := "\x1b[32mPS\x1b[0m C:\\src\\notes> " // short, unlike the temporary folder
+	notesScreen := savedScreen{width: 87, height: 30, saved: now.Add(-2 * time.Hour), lines: []string{
+		prompt + "\x1b[93mgit\x1b[0m log --oneline -4",
+		"\x1b[33m4f2a9c1\x1b[0m Add notes from the planning review",
+		"\x1b[33m9b7e3d0\x1b[0m Outline the release checklist",
+		"\x1b[33m1c8d5e2\x1b[0m Move meeting notes into one folder",
+		"\x1b[33m7a6f0b4\x1b[0m Start the notes repo",
+		prompt + "\x1b[93mGet-ChildItem\x1b[0m \x1b[90m-Name\x1b[0m",
+		"checklist.md",
+		"planning-review.md",
+		"release.md",
+		prompt + "\x1b[93mSelect-String\x1b[0m \x1b[90m-Path\x1b[0m *.md \x1b[90m-Pattern\x1b[0m \x1b[36m'TODO'\x1b[0m",
+		"",
+		"\x1b[35mchecklist.md\x1b[0m:\x1b[32m12\x1b[0m:- [ ] \x1b[7mTODO\x1b[0m: confirm the release date",
+		"\x1b[35mplanning-review.md\x1b[0m:\x1b[32m31\x1b[0m:\x1b[7mTODO\x1b[0m: share the notes with the team",
+		"",
+		prompt + "\x1b[93mexit\x1b[0m",
+	}}
+	if err := writeScreenFile(filepath.Join(home, "sessions", "shot-notes", screenFile), notesScreen); err != nil {
+		t.Fatal(err)
+	}
+
 	// Two custom agents and an editor, for the config screen.
 	cfg := filepath.Join(home, "config.toml")
 	_ = os.WriteFile(cfg, []byte(`[[agents]]
@@ -157,6 +181,17 @@ editor = 'code "{dir}"'
 	scene := screenFromEmulator(h.emu)
 	sceneText := h.screen()
 
+	// The exited shell selected: its saved output, restored after the
+	// restart.
+	h.send("\x1b[B\x1b[B\x1b[B")
+	h.waitFor("last output · saved 2h ago", 5*time.Second)
+	h.waitFor("planning-review.md", 3*time.Second)
+	time.Sleep(300 * time.Millisecond)
+	restored := screenFromEmulator(h.emu)
+	t.Logf("restored output:\n%s", h.screen())
+	h.send("\x1b[A\x1b[A\x1b[A")
+	h.waitGone("last output", 3*time.Second)
+
 	// The config screen, with the second agent selected.
 	h.send("c")
 	h.waitFor("+ Add agent", 5*time.Second)
@@ -167,12 +202,15 @@ editor = 'code "{dir}"'
 	t.Logf("config screen:\n%s", h.screen())
 	h.send("\x1b")
 
-	// One image: the scene, a blank row, then the config screen.
+	// One image: the scene, the restored output and the config screen,
+	// with a blank row between them.
 	blank := make([]termshot.Cell, len(scene[0]))
 	for i := range blank {
 		blank[i] = termshot.Cell{Text: " ", Width: 1}
 	}
-	both := append(append(append(termshot.Screen{}, scene...), blank), config...)
+	both := append(termshot.Screen{}, scene...)
+	both = append(append(both, blank), restored...)
+	both = append(append(both, blank), config...)
 
 	f, err := os.Create(out)
 	if err != nil {

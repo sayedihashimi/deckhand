@@ -21,7 +21,7 @@ const configHeader = `# deckhand config. Written by deckhand's config screen (pr
 `
 
 // reloadConfig reads the config file and applies it: agents, notifications,
-// [open] and [list]. Settings that fail to load fall back to their defaults;
+// [open], [list] and [history]. Settings that fail to load fall back to their defaults;
 // the first error is returned.
 func reloadConfig() error {
 	agents, err := loadAgents()
@@ -32,7 +32,9 @@ func reloadConfig() error {
 	openSettings = openCfg
 	listCfg, listErr := loadListConfig()
 	listOpts = listCfg
-	for _, e := range []error{err, notifyErr, openErr, listErr} {
+	histCfg, histErr := loadHistoryConfig()
+	setHistorySettings(histCfg)
+	for _, e := range []error{err, notifyErr, openErr, listErr, histErr} {
 		if e != nil {
 			return e
 		}
@@ -46,6 +48,7 @@ type configFile struct {
 	Notifications notifyConfig  `toml:"notifications"`
 	Open          openConfig    `toml:"open"`
 	List          listConfig    `toml:"list"`
+	History       historyConfig `toml:"history"`
 }
 
 // decodeConfig reads the edited settings and, separately, every table in
@@ -73,6 +76,7 @@ func encodeConfig(cfg configFile, raw map[string]any) (string, error) {
 	delete(out, "notifications")
 	delete(out, "open")
 	delete(out, "list")
+	delete(out, "history")
 	if len(cfg.Agents) > 0 {
 		out["agents"] = cfg.Agents
 	}
@@ -84,6 +88,9 @@ func encodeConfig(cfg configFile, raw map[string]any) (string, error) {
 	}
 	if cfg.List.ToggleKey != "" || cfg.List.StatusLine != nil {
 		out["list"] = cfg.List
+	}
+	if cfg.History.Save != nil || cfg.History.Lines != 0 {
+		out["history"] = cfg.History
 	}
 	var b strings.Builder
 	b.WriteString(configHeader)
@@ -106,7 +113,10 @@ func checkConfigText(text string) error {
 	if _, err := parseOpenConfig(text); err != nil {
 		return err
 	}
-	_, err := parseListConfig(text)
+	if _, err := parseListConfig(text); err != nil {
+		return err
+	}
+	_, err := parseHistoryConfig(text)
 	return err
 }
 

@@ -332,9 +332,23 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 
 	sn := s.Snapshot()
 	off := s.ScrollOffset()
+	hs := historyState{view: viewTerminal}
+	if !sn.running {
+		hs = s.historyState()
+	}
+	verb := "restart"
+	if a, ok := agentByName(s.Agent); ok && a.CanResume() {
+		verb = "resume"
+	}
 	// Short details first, so a long folder path is what gets cut off.
 	header := " " + m.statusIcon(sn) + " " + lipgloss.NewStyle().Bold(true).Render(s.Name) +
 		stMuted.Render("  "+s.Agent)
+	label := historyLabel(hs, verb, time.Now())
+	if label != "" {
+		// Right after the agent: it says what the pane shows and which keys
+		// apply, and the rest of the header often gets cut off.
+		header += lipgloss.NewStyle().Foreground(colWorking).Render("  " + label)
+	}
 	if b := gitLabel(sn.info.git); b != "" {
 		header += "  " + stBranch.Render(b)
 	}
@@ -347,22 +361,35 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 		header += stMuted.Render("  · " + strings.Join(sn.reply, " "))
 	}
 	header += stMuted.Render("  " + s.Dir)
-	if !sn.running && sn.exitInfo != "" {
-		verb := "restart"
-		if a, ok := agentByName(s.Agent); ok && a.CanResume() {
-			verb = "resume"
+	switch {
+	case label != "":
+	case !sn.running && sn.exitInfo != "":
+		text := "  " + sn.exitInfo + " · press enter to " + verb + ", shift+enter to start a new one"
+		if hs.canToggle {
+			text += " · v conversation"
 		}
-		header += lipgloss.NewStyle().Foreground(colWorking).Render("  " + sn.exitInfo + " · press enter to " + verb + ", shift+enter to start a new one")
-	} else if sn.title != "" {
+		header += lipgloss.NewStyle().Foreground(colWorking).Render(text)
+	case sn.title != "":
 		header += stMuted.Render("  — " + sn.title)
 	}
 	if off > 0 {
+		back := " · wheel down, shift+PgDn or any key to return"
+		if hs.view == viewScreen {
+			back = " · wheel down or shift+PgDn to return · last output"
+		}
 		header = lipgloss.NewStyle().Foreground(colWorking).Bold(true).
 			Render(fmt.Sprintf(" ↑ %d lines back", off)) +
-			stMuted.Render(" · wheel down, shift+PgDn or any key to return") +
+			stMuted.Render(back) +
 			stMuted.Render("   "+s.Name)
 	}
 	lines = append(lines, fit(header, w))
+
+	switch hs.view {
+	case viewScreen:
+		return append(lines, savedView(hs.hist.screen.lines, w, h-1, off)...), nil
+	case viewConversation:
+		return append(lines, conversationView(hs.hist.conv, hs.hist.convAt, w, h-1, time.Now())...), nil
+	}
 
 	emu := s.Emulator()
 	if emu == nil {
@@ -538,7 +565,16 @@ func (m *model) renderFooter(w int) string {
 			help = " ↑↓ choose · enter pick · esc back"
 		}
 	default:
-		help = footerHints(helpList, false)
+		var show []string
+		if s := m.current(); s != nil && !s.Running() && s.historyState().canToggle {
+			show = append(show, hintHistory)
+		}
+		// The v hint is dropped last of all when the footer doesn't fit;
+		// the header names the key too.
+		help = footerHints(helpList, false, show...)
+		if ansi.StringWidth(help) > w {
+			help = footerHints(helpList, true, show...)
+		}
 		if ansi.StringWidth(help) > w {
 			help = footerHints(helpList, true)
 		}

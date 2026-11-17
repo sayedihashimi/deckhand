@@ -191,6 +191,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					go sendNotice(s, *n)
 				}
 				s.MaybePoll(now, i == m.sel)
+				s.MaybeSaveScreen(now)
 			}
 		}
 		if s := m.current(); s != nil {
@@ -445,6 +446,21 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.startLikeSelected()
 	case "tab":
 		m.jumpToAttention()
+	case "v":
+		// An exited Claude session: its last output or the conversation.
+		if s := m.current(); s != nil {
+			s.ToggleHistory()
+		}
+	case "shift+pgup", "shift+pgdown":
+		// Scroll an exited session's saved output from the list.
+		if s := m.current(); s != nil && !s.Running() {
+			_, th := m.termSize()
+			if key == "shift+pgup" {
+				s.Scroll(th - 2)
+			} else {
+				s.Scroll(-(th - 2))
+			}
+		}
 	case "n":
 		if len(m.agents) == 0 {
 			m.setFlash("No supported CLIs found on PATH")
@@ -618,6 +634,9 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 
 func (m *model) quit() tea.Cmd {
 	_ = saveSessions(m.sessions)
+	// Save each running session's output while its emulator still has it.
+	saveAll(m.sessions)
+	quittingAll.Store(true)
 	for _, s := range m.sessions {
 		s.Kill()
 	}

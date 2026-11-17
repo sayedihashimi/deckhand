@@ -61,6 +61,16 @@ type Session struct {
 	keys *keyProtocol // keyboard enhancements the app asked for
 
 	dirty *atomic.Bool // shared "screen changed" flag owned by the model
+
+	// Saved output (screen.ans) and the conversation, for after a restart
+	// (see history.go).
+	saveMu      sync.Mutex  // one save at a time
+	saving      atomic.Bool // a background save is running
+	savedAt     time.Time   // when the last periodic save started
+	hist        *history    // loaded saved screen and conversation; nil until loaded
+	histLoading atomic.Bool
+	wantConv    bool // v: show the conversation instead of the output
+	viewRows    int  // terminal rows, for scrolling the saved screen
 }
 
 func newSession(agent Agent, dir, name string) *Session {
@@ -117,7 +127,7 @@ func (s *Session) Start(width, height int, resume bool, dirty *atomic.Bool) erro
 		return fmt.Errorf("create pseudo console: %w", err)
 	}
 	emu := vt.NewSafeEmulator(width, height)
-	emu.SetScrollbackSize(5000)
+	emu.SetScrollbackSize(maxHistoryLines)
 	keys := &keyProtocol{}
 	keys.register(emu.Emulator)
 	emu.Emulator.SetCallbacks(vt.Callbacks{
@@ -150,6 +160,9 @@ func (s *Session) Start(width, height int, resume bool, dirty *atomic.Bool) erro
 	s.bell = false
 	s.exitInfo = ""
 	s.lastSeq = 0
+	s.savedAt = time.Now()
+	s.hist = nil // reload after this run: the transcript and screen change
+	s.wantConv = false
 	s.setStatusLocked(StatusStarting, "")
 	s.mu.Unlock()
 
@@ -212,6 +225,9 @@ func (s *Session) waitLoop(cmd *exec.Cmd, pty xpty.Pty) {
 	err := xpty.WaitProcess(context.Background(), cmd)
 	time.Sleep(150 * time.Millisecond) // let the last output drain
 	_ = pty.Close()
+	if !quittingAll.Load() { // quit already saved it, before ending the process
+		s.SaveScreen()
+	}
 	s.mu.Lock()
 	s.running = false
 	info := "exited"
@@ -451,6 +467,7 @@ func (s *Session) Paste(text string) {
 func (s *Session) Resize(width, height int) {
 	s.mu.Lock()
 	emu, pty, running := s.emu, s.pty, s.running
+	s.viewRows = height
 	s.mu.Unlock()
 	if emu == nil || width < 10 || height < 3 {
 		return
@@ -517,6 +534,13 @@ func (s *Session) SendMouse(ev uv.MouseEvent) {
 // history). It returns false when there's nothing to scroll, e.g. on the
 // alternate screen, which has no scrollback.
 func (s *Session) Scroll(delta int) bool {
+	if most, ok := s.savedScroll(); ok {
+		// After a restart: the saved screen, or nothing to scroll.
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.scrollOff = min(max(s.scrollOff+delta, 0), most)
+		return most > 0
+	}
 	emu := s.Emulator()
 	if emu == nil || emu.IsAltScreen() {
 		return false
@@ -546,6 +570,12 @@ func (s *Session) ScrollToBottom() {
 // output would push the content up, so the offset grows with the scrollback
 // to keep the same lines in view.
 func (s *Session) ScrollOffset() int {
+	if most, ok := s.savedScroll(); ok {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.scrollOff = min(max(s.scrollOff, 0), most)
+		return s.scrollOff
+	}
 	emu := s.Emulator()
 	if emu == nil {
 		return 0
@@ -565,6 +595,27 @@ func (s *Session) ScrollOffset() int {
 		s.scrollOff = sb
 	}
 	return s.scrollOff
+}
+
+// savedScroll reports whether the session isn't running and shows
+// something other than this run's terminal, and if so how far back it can
+// scroll: the saved screen's lines beyond one screenful, or 0 for the
+// conversation and the "Not running" message.
+func (s *Session) savedScroll() (most int, ok bool) {
+	if s.Running() {
+		return 0, false
+	}
+	st := s.historyState()
+	switch st.view {
+	case viewTerminal:
+		return 0, false
+	case viewScreen:
+		s.mu.Lock()
+		rows := max(s.viewRows, 1)
+		s.mu.Unlock()
+		return max(len(st.hist.screen.lines)-rows, 0), true
+	}
+	return 0, true
 }
 
 // AltScrollWanted reports whether the wheel should become arrow keys.
