@@ -66,7 +66,7 @@ Run `deckhand notify-test` to check that notifications appear. If they don't, ch
 
 ## Keys
 
-Press `?` in the session list, or `F1` anywhere (also inside a session), for a summary of the keys, the status icons and where the config file is. `esc`, `?`, `F1` or `q` closes it.
+Press `?` in the session list, or `F1` anywhere (also inside a session, the new-session dialog and the config screen), for a summary of the keys, the status icons and where the config file is. The keys for where you pressed it come first, in full; the other groups follow in two columns as far as they fit, and `↑/↓` scrolls to the rest (the last line says how many more groups there are). `esc`, `?`, `F1` or `q` closes it and goes back to where you were, with nothing lost.
 
 **Session list**
 
@@ -148,7 +148,7 @@ Press `c` in the session list to set deckhand up without editing `config.toml`. 
 - **History:** whether each session's output is saved for after a restart, and how many lines are kept (empty means 5000). See [Output after a restart](#output-after-a-restart).
 - **Open:** the editor and terminal commands, with presets (VS Code, Rider, IntelliJ IDEA, VS Code Insiders; Windows Terminal in a new tab or a new window). "Try it" runs the command as typed on the selected session's folder.
 
-Keys: `↑/↓` or `tab`/`shift+tab` move, `←/→` change a choice, `enter` confirms, `ctrl+s` saves, and `esc` leaves (asking first if there are unsaved changes). The title says "unsaved changes" until you save.
+Keys: `↑/↓` or `tab`/`shift+tab` move, `←/→` (or `space`) change a choice, `enter` confirms (on an agent it edits it, like `e`), `a` adds an agent, `d` (or `delete`) deletes it, `shift+↑/↓` (or `K`/`J`) moves it, `ctrl+s` saves, and `esc` leaves (asking first if there are unsaved changes). In the agent form, `↑/↓` or `tab` move between fields, `enter` is done, `esc` cancels and `ctrl+p` picks from your profile; in the profile picker, type to filter, `↑/↓` choose, `enter` picks and `esc` goes back to the form. `F1` shows all of these, with the config screen's keys first. The title says "unsaved changes" until you save.
 
 **Saving** writes the file atomically (a temporary file, then a rename) and keeps the previous one as `config.toml.bak`. The new settings apply straight away, without a restart: new agents show up in the new-session dialog, and running sessions keep running. A session whose agent you renamed or deleted keeps working until it exits.
 
