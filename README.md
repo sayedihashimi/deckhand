@@ -6,7 +6,7 @@ A terminal UI for running several AI agent CLIs side by side on Windows. The lef
  deckhand          1 need you │ ● api-refactor  claude  C:\src\api
 ──────────────────────────────│
 ▌1 ● api-refactor          12s│  Do you want to make this edit to Program.cs?
-▌    claude · Edit: C:\srcp…│  ❯ 1. Yes
+▌    claude · Edit: C:\src\ap…│  ❯ 1. Yes
  2 ⠹ docs                   3m│    2. Yes, and don't ask again
      claude · Bash            │    3. No
  3 ✓ tests                  1m│
