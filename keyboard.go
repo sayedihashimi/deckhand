@@ -189,14 +189,29 @@ func encodeExtendedKey(k uv.KeyPressEvent, kittyFlags, modifyOtherKeys int) (str
 }
 
 // wantKeyRecords reports whether deckhand should ask its console for
-// win32-input-mode (see enableKeyRecords): only directly in Windows
-// Terminal (WT_SESSION set). In this mode the console also passes on raw VT
-// key sequences from terminals that don't send records, and Bubble Tea's
-// reader garbles some of those (an arrow arrives as "up" plus stray
-// characters). Windows Terminal sends keys as records, so it's fine there,
-// but a deckhand started inside a deckhand session (DECKHAND_SESSION_ID
-// set) runs under deckhand's own emulator, which sends plain VT, even
-// though it inherits WT_SESSION.
+// win32-input-mode (see enableKeyRecords): directly in a terminal known to
+// send keys as win32-input-mode records, which is Windows Terminal
+// (WT_SESSION set) and WezTerm (TERM_PROGRAM=WezTerm; its
+// allow_win32_input_mode is on by default). Without the mode the console
+// turns shift+enter into plain enter and ctrl+\ into ctrl+space.
+//
+// In this mode the console also passes on raw VT key sequences from
+// terminals that don't send records, and Bubble Tea's reader garbles some
+// of those (an arrow arrives as "up" plus stray characters), so it stays off
+// elsewhere. A deckhand started inside a deckhand session
+// (DECKHAND_SESSION_ID set) runs under deckhand's own emulator, which sends
+// plain VT, even though it inherits those variables.
+//
+// DECKHAND_KEY_RECORDS=1 or 0 turns the mode on or off regardless.
 func wantKeyRecords(getenv func(string) string) bool {
-	return getenv("WT_SESSION") != "" && getenv("DECKHAND_SESSION_ID") == ""
+	switch getenv("DECKHAND_KEY_RECORDS") {
+	case "1":
+		return true
+	case "0":
+		return false
+	}
+	if getenv("DECKHAND_SESSION_ID") != "" {
+		return false
+	}
+	return getenv("WT_SESSION") != "" || getenv("TERM_PROGRAM") == "WezTerm"
 }

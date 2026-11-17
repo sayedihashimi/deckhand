@@ -113,6 +113,14 @@ func TestWantKeyRecords(t *testing.T) {
 		// A deckhand inside a deckhand session runs under deckhand's emulator.
 		{map[string]string{"WT_SESSION": "abc", "DECKHAND_SESSION_ID": "s1"}, false},
 		{map[string]string{"DECKHAND_SESSION_ID": "s1"}, false},
+		// WezTerm sends win32-input-mode records too.
+		{map[string]string{"TERM_PROGRAM": "WezTerm"}, true},
+		{map[string]string{"TERM_PROGRAM": "WezTerm", "DECKHAND_SESSION_ID": "s1"}, false},
+		{map[string]string{"TERM_PROGRAM": "vscode"}, false},
+		// The override wins either way, even when nested.
+		{map[string]string{"DECKHAND_KEY_RECORDS": "1"}, true},
+		{map[string]string{"DECKHAND_KEY_RECORDS": "1", "DECKHAND_SESSION_ID": "s1"}, true},
+		{map[string]string{"DECKHAND_KEY_RECORDS": "0", "WT_SESSION": "abc"}, false},
 	}
 	for _, c := range cases {
 		if got := wantKeyRecords(func(k string) string { return c.env[k] }); got != c.want {
