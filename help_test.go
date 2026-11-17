@@ -12,12 +12,17 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// handledKeys reads model.go and returns the key strings handleKey (and the
-// new-session dialog) handle, by the help group they belong in.
+// handledKeys reads model.go and diff.go and returns the key strings
+// handleKey (and the new-session dialog and the diff preview) handle, by
+// the help group they belong in.
 func handledKeys(t *testing.T) map[string][]string {
 	t.Helper()
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "model.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	df, err := parser.ParseFile(fset, "diff.go", nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,6 +73,11 @@ func handledKeys(t *testing.T) map[string][]string {
 	}
 
 	got := map[string][]string{}
+	for _, d := range df.Decls {
+		if fn, ok := d.(*ast.FuncDecl); ok && fn.Name.Name == "diffKey" {
+			got[helpDiff] = collect(fn.Body)
+		}
+	}
 	for _, d := range f.Decls {
 		fn, ok := d.(*ast.FuncDecl)
 		if !ok {
@@ -117,7 +127,7 @@ func handledKeys(t *testing.T) map[string][]string {
 // group. If this fails after adding a key, add it to helpGroups in help.go.
 func TestHelpCoversHandledKeys(t *testing.T) {
 	got := handledKeys(t)
-	for _, title := range []string{helpList, helpTerminal, helpDialog} {
+	for _, title := range []string{helpList, helpTerminal, helpDialog, helpDiff} {
 		if len(got[title]) < 3 {
 			t.Fatalf("%s: found only %q in model.go; has handleKey changed shape?", title, got[title])
 		}

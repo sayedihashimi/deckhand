@@ -17,8 +17,9 @@ import (
 
 // TestE2EScreenshot sets up a scripted scene (three fake Claude sessions in
 // different states, in git repos, plus an exited shell) and saves deckhand's
-// screen as a PNG, with the exited shell's restored output and the config
-// screen ("c") below it. The PR workflow posts it on each pull request.
+// screen as a PNG, with the exited shell's restored output, the config
+// screen ("c") and the api session's diff preview ("d") below it. The PR
+// workflow posts it on each pull request.
 //
 //	$env:DECKHAND_SCREENSHOT="shot.png"; go test -tags e2e -run TestE2EScreenshot -v
 //
@@ -79,6 +80,7 @@ event PreToolUse Read | src/auth/login.ts
 event PostToolUse Read
 event PermissionRequest Bash | npm test -- --watch=false
 `)
+	apiWork(t, gitExe, api)
 	docs := repo("docs", "main", false, `sleep 1500
 event SessionStart
 reply 31000 Updated the README with the new install steps.
@@ -201,9 +203,19 @@ editor = 'code "{dir}"'
 	config := screenFromEmulator(h.emu)
 	t.Logf("config screen:\n%s", h.screen())
 	h.send("\x1b")
+	h.waitGone("+ Add agent", 3*time.Second)
 
-	// One image: the scene, the restored output and the config screen,
-	// with a blank row between them.
+	// The diff preview (d) of the api session's work.
+	h.send("d")
+	h.waitFor("files changed", 10*time.Second)
+	time.Sleep(300 * time.Millisecond)
+	diffShot := screenFromEmulator(h.emu)
+	t.Logf("diff preview:\n%s", h.screen())
+	h.send("\x1b")
+	h.waitGone("files changed", 3*time.Second)
+
+	// One image: the scene, the restored output, the config screen and the
+	// diff preview, with a blank row between them.
 	blank := make([]termshot.Cell, len(scene[0]))
 	for i := range blank {
 		blank[i] = termshot.Cell{Text: " ", Width: 1}
@@ -211,6 +223,7 @@ editor = 'code "{dir}"'
 	both := append(termshot.Screen{}, scene...)
 	both = append(append(both, blank), restored...)
 	both = append(append(both, blank), config...)
+	both = append(append(both, blank), diffShot...)
 
 	f, err := os.Create(out)
 	if err != nil {
@@ -259,6 +272,61 @@ editor = 'code "{dir}"'
 	h.send("q")
 	h.send("y")
 	h.waitExit(10 * time.Second)
+}
+
+// apiWork gives the api repo some history for the diff preview: login.ts
+// committed on main, the fix committed on feature/login, and a test added
+// but not committed yet.
+func apiWork(t *testing.T, gitExe, dir string) {
+	t.Helper()
+	run := func(args ...string) {
+		full := append([]string{"-C", dir, "-c", "user.name=Dev", "-c", "user.email=dev@example.com", "-c", "commit.gpgsign=false"}, args...)
+		if out, err := exec.Command(gitExe, full...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	write := func(name, text string) {
+		p := filepath.Join(dir, filepath.FromSlash(name))
+		_ = os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.WriteFile(p, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = os.Remove(filepath.Join(dir, "changed.txt")) // the uncommitted test file makes it dirty instead
+	run("symbolic-ref", "HEAD", "refs/heads/main")
+	write("src/auth/login.ts", `import { checkSession, refreshToken } from "./session";
+
+export async function login(req: Request): Promise<Response> {
+  if (!checkSession(req)) {
+    return redirect("/login");
+  }
+  const token = await refreshToken(req);
+  return withCookie(redirect("/"), token);
+}
+`)
+	write("package.json", "{\n  \"name\": \"api\",\n  \"scripts\": { \"test\": \"vitest\" }\n}\n")
+	run("add", ".")
+	run("commit", "-q", "-m", "Add login")
+	run("switch", "-q", "-c", "feature/login")
+	write("src/auth/login.ts", `import { checkSession, refreshToken } from "./session";
+
+export async function login(req: Request): Promise<Response> {
+  // Refresh first: the session check needs the new cookie.
+  const token = await refreshToken(req);
+  if (!checkSession(req, token)) {
+    return redirect("/login?expired=1");
+  }
+  return withCookie(redirect("/"), token);
+}
+`)
+	run("commit", "-q", "-am", "Check the session after the token refresh")
+	write("src/auth/login.test.ts", `import { login } from "./login";
+
+test("doesn't loop after the token refresh", async () => {
+  const res = await login(fakeRequest({ expired: true }));
+  expect(res.headers.get("location")).toBe("/");
+});
+`)
 }
 
 // screenFromEmulator copies the emulator's cells for rendering.

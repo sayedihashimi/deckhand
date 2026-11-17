@@ -287,6 +287,9 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 	if m.cfg != nil {
 		return m.renderConfig(w, h), nil
 	}
+	if m.diff != nil {
+		return m.renderDiffView(w, h), nil
+	}
 	lines := make([]string, 0, h)
 	if m.dialog != nil {
 		lines = append(lines, fit(stTitle.Render(" New session"), w))
@@ -543,6 +546,9 @@ func (m *model) renderFooter(w int) string {
 	}
 	if m.help != nil {
 		return fit(stMuted.Render(m.helpFooter()), w)
+	}
+	if m.diff != nil {
+		return fit(stMuted.Render(m.diffFooter()), w)
 	}
 	if m.flash != "" && time.Since(m.flashAt) < 4*time.Second {
 		return fit(lipgloss.NewStyle().Foreground(colError).Render(" "+m.flash), w)

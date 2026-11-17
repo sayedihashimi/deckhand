@@ -40,6 +40,7 @@ type helpGroup struct {
 const (
 	helpList     = "Session list"
 	helpTerminal = "Inside a session"
+	helpDiff     = "Diff preview (d)"
 	helpMouse    = "Mouse"
 	helpDialog   = "New-session dialog"
 )
@@ -53,6 +54,7 @@ var helpGroups = []helpGroup{
 		{keys: "n", desc: "new session", match: []string{"n"}, footer: "n new"},
 		{keys: "1–9", desc: "jump into session N", match: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9"}},
 		{keys: "tab", desc: "next one that needs you", match: []string{"tab"}, footer: "tab next"},
+		{keys: "d", desc: "diff vs the default branch", match: []string{"d"}, footer: "d diff", short: "-"},
 		{keys: "v", desc: "last output / conversation", match: []string{"v"}, footer: "v switch view", short: "v view", when: hintHistory},
 		{keys: "⇧PgUp/Dn", desc: "scroll an exited session", match: []string{"shift+pgup", "shift+pgdown"}},
 		{keys: "/", desc: "filter the list as you type", match: []string{"/"}, footer: "/ filter", short: "/@ filter"},
@@ -74,6 +76,10 @@ var helpGroups = []helpGroup{
 		{keys: "shift+PgUp/Dn", desc: "scroll back a page", match: []string{"shift+pgup", "shift+pgdown"}},
 		{keys: "F3", desc: "hide / show the list", match: []string{defaultToggleKey}, footer: "F3 hide list"},
 		{keys: "F1", desc: "this help", match: []string{"f1"}, footer: "F1 help"},
+	}},
+	{helpDiff, []helpEntry{
+		{keys: "n N", desc: "next / previous file", match: []string{"n", "N", "up", "k", "down", "j", "pgup", "shift+pgup", "pgdown", "shift+pgdown", "space", "home", "g", "end", "G"}},
+		{keys: "esc d q", desc: "close", match: []string{"esc", "q", "d"}},
 	}},
 	{helpMouse, []helpEntry{
 		{keys: "wheel", desc: "scroll output or list"},

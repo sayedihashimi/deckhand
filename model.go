@@ -57,6 +57,7 @@ type model struct {
 	filterInput   *textinput.Model // open while typing a filter
 
 	help *helpOverlay // the key help (? or F1), when open
+	diff *diffView    // the diff preview (d), when open
 
 	// Whether deckhand's window has focus, when the terminal reports it.
 	focusKnown    bool
@@ -163,6 +164,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case profileCommandsMsg:
 		m.profileLoading = false
 		m.profile = &msg
+		return m, nil
+
+	case diffLoadedMsg:
+		if m.diff == msg.view { // not closed (or reopened) meanwhile
+			m.diff.setResult(msg.res)
+		}
 		return m, nil
 
 	case configStatusMsg:
@@ -358,6 +365,12 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// The diff preview is read-only; it takes every other key.
+	if m.diff != nil {
+		m.diffKey(key)
+		return m, nil
+	}
+
 	switch m.focus {
 	case focusTerminal:
 		if key == "ctrl+q" || key == "ctrl+]" {
@@ -472,6 +485,8 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.dialog.focusCmd()
 	case "c":
 		return m, m.openConfigScreen()
+	case "d":
+		return m, m.openDiff()
 	case "r":
 		if s := m.current(); s != nil {
 			ti := textinput.New()
@@ -551,6 +566,10 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 
 	if m.help != nil {
 		m.helpMouse(msg)
+		return nil
+	}
+	if m.diff != nil {
+		m.diffMouse(msg)
 		return nil
 	}
 	if m.focus == focusDialog || m.focus == focusConfig || m.rename != nil || m.confirm != nil || m.filterInput != nil {
