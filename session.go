@@ -95,6 +95,20 @@ type Session struct {
 	prPolling atomic.Bool // a PR poll is running
 	prBusy    atomic.Bool // p is checking, pushing or opening
 	mergeBusy atomic.Bool // m is checking or merging (see mergeui.go)
+
+	// Testing an agent from the config screen (see agenttest.go).
+	override *Agent      // the agent as edited, used instead of looking it up by name; set before Start
+	testing  atomic.Bool // a test session: not saved, no notifications
+	exitCode int         // the last run's exit code; -1 when it isn't known
+}
+
+// agent is the session's agent: the one it was tested with, or the one of
+// that name.
+func (s *Session) agent() (Agent, bool) {
+	if s.override != nil {
+		return *s.override, true
+	}
+	return agentByName(s.Agent)
 }
 
 func newSession(agent Agent, dir, name string) *Session {
@@ -115,7 +129,7 @@ func newSession(agent Agent, dir, name string) *Session {
 // Start launches the agent at the given terminal size. resume continues a
 // previous Claude conversation instead of starting a new one.
 func (s *Session) Start(width, height int, resume bool, dirty *atomic.Bool) error {
-	agent, ok := agentByName(s.Agent)
+	agent, ok := s.agent()
 	if !ok {
 		return fmt.Errorf("unknown agent %q (was it removed from the config?)", s.Agent)
 	}
@@ -259,9 +273,14 @@ func (s *Session) waitLoop(cmd *exec.Cmd, pty xpty.Pty) {
 	s.mu.Lock()
 	s.running = false
 	info := "exited"
+	s.exitCode = -1
+	if cmd.ProcessState != nil {
+		s.exitCode = cmd.ProcessState.ExitCode()
+	}
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
 		info = fmt.Sprintf("exited (%d)", ee.ExitCode())
+		s.exitCode = ee.ExitCode()
 	} else if err != nil {
 		info = "exited: " + err.Error()
 	} else if cmd.ProcessState != nil && cmd.ProcessState.ExitCode() > 0 {
@@ -269,7 +288,7 @@ func (s *Session) waitLoop(cmd *exec.Cmd, pty xpty.Pty) {
 	}
 	s.exitInfo = info // full text for the header; the sidebar has little room
 	detail := "exited · ⏎ restart"
-	if a, ok := agentByName(s.Agent); ok && a.CanResume() {
+	if a, ok := s.agent(); ok && a.CanResume() {
 		detail = "exited · ⏎ resume"
 	}
 	s.setStatusLocked(StatusExited, detail)
@@ -305,7 +324,7 @@ func (s *Session) Refresh(now time.Time) {
 	if !s.running {
 		return
 	}
-	agent, _ := agentByName(s.Agent)
+	agent, _ := s.agent()
 	if !agent.Claude {
 		st, d := heuristicStatus(s.lastOutput, now, s.bell)
 		if st != StatusIdle || s.status != StatusStarting || now.Sub(s.since) > 3*time.Second {
@@ -402,7 +421,7 @@ func (s *Session) transcriptPathLocked() string {
 	if s.TranscriptPath != "" {
 		return s.TranscriptPath
 	}
-	if a, ok := agentByName(s.Agent); ok && a.Claude {
+	if a, ok := s.agent(); ok && a.Claude {
 		return guessTranscriptPath(s.Dir, s.ClaudeSessionID)
 	}
 	return ""
@@ -665,6 +684,28 @@ func (s *Session) AltScrollWanted() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.altScroll
+}
+
+// ExitCode is the last run's exit code, or -1 when it isn't known.
+func (s *Session) ExitCode() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.exitCode
+}
+
+// LastLines is the last n lines of output that aren't blank.
+func (s *Session) LastLines(n int) []string {
+	emu := s.Emulator()
+	if emu == nil {
+		return nil
+	}
+	var out []string
+	for _, l := range strings.Split(strings.ReplaceAll(emu.String(), "\r\n", "\n"), "\n") {
+		if l = strings.TrimRight(l, " \t"); l != "" {
+			out = append(out, l)
+		}
+	}
+	return out[max(len(out)-n, 0):]
 }
 
 // Kill ends the agent process.

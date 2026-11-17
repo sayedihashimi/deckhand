@@ -236,7 +236,7 @@ func (m *model) worktreeLikeSelected() tea.Cmd {
 	s.mu.Lock()
 	agentName, dir, code, separate := s.Agent, s.Dir, s.CodeRepo, s.separateRepoLocked()
 	s.mu.Unlock()
-	agent, ok := agentByName(agentName)
+	agent, ok := s.agent()
 	if !ok {
 		m.setFlash(fmt.Sprintf("Couldn't start: unknown agent %q (was it removed from the config?)", agentName))
 		return nil

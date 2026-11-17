@@ -86,6 +86,9 @@ type model struct {
 	// The PowerShell profile's functions and aliases, once loaded.
 	profile        *profileCommandsMsg
 	profileLoading bool
+
+	// An agent being tested from the config screen (see agenttest.go).
+	test *agentTest
 }
 
 type confirmPrompt struct {
@@ -223,13 +226,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			now := time.Now()
 			for i, s := range m.sessions {
 				s.Refresh(now)
-				if n := s.TakeNotice(); n != nil && shouldNotify(notifyMode, m.focusKnown, m.windowFocused, i == m.sel) {
+				if n := s.TakeNotice(); n != nil && !s.testing.Load() && shouldNotify(notifyMode, m.focusKnown, m.windowFocused, i == m.sel) {
 					go sendNotice(s, *n)
 				}
 				s.MaybePoll(now, i == m.sel)
 				s.MaybePollPR(now)
 				s.MaybeSaveScreen(now)
 			}
+			m.tickTest(now)
 		}
 		if s := m.current(); s != nil {
 			s.MarkSeen()
@@ -752,12 +756,13 @@ func (m *model) startLikeSelected() tea.Cmd {
 	s.mu.Lock()
 	agentName, dir := s.Agent, s.Dir
 	s.mu.Unlock()
-	agent, ok := agentByName(agentName)
+	agent, ok := s.agent()
 	if !ok {
 		m.setFlash(fmt.Sprintf("Couldn't start: unknown agent %q (was it removed from the config?)", agentName))
 		return nil
 	}
 	n := newSession(agent, dir, sessionName(dir))
+	n.override = s.override // a kept test of an agent that may not be saved
 	w, h := m.termSize()
 	if err := startSession(n, w, h, false, m.dirty); err != nil {
 		m.setFlash("Couldn't start: " + err.Error())

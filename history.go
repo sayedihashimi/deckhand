@@ -374,7 +374,7 @@ func (s *Session) historyState() historyState {
 	s.mu.Lock()
 	hasTerm, want := s.emu != nil, s.wantConv
 	s.mu.Unlock()
-	a, _ := agentByName(s.Agent)
+	a, _ := s.agent()
 	var hasScreen, hasConv bool
 	if h != nil {
 		hasScreen = h.screen != nil && len(h.screen.lines) > 0

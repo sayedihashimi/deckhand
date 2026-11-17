@@ -188,3 +188,97 @@ func TestE2EConfigHelp(t *testing.T) {
 	h.send("q")
 	h.waitExit(10 * time.Second)
 }
+
+// TestE2EConfigTestAgent tests agents from the config screen. hookapp, a
+// fake claude.exe that sends hooks, reports "hooks work", and is kept. An
+// unsaved agent running argsapp, which never sends hooks, reports "no hook
+// events yet" and is discarded. config.toml doesn't change until ctrl+s.
+func TestE2EConfigTestAgent(t *testing.T) {
+	exe := buildDeckhand(t)
+	bin := t.TempDir()
+	for _, app := range []string{"hookapp", "argsapp"} {
+		if out, err := exec.Command("go", "build", "-o", filepath.Join(bin, app+".exe"), "./testdata/"+app).CombinedOutput(); err != nil {
+			t.Fatalf("build %s: %v\n%s", app, err, out)
+		}
+	}
+	home := t.TempDir()
+	cfg := filepath.Join(t.TempDir(), "config.toml")
+	text := "[[agents]]\nname = \"hooky\"\ncommand = '" + filepath.Join(bin, "hookapp.exe") + "'\ntype = \"claude\"\n"
+	if err := os.WriteFile(cfg, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	read := func() string {
+		data, _ := os.ReadFile(cfg)
+		return string(data)
+	}
+	dir := t.TempDir()
+	h := startHarnessSize(t, exe, append(envWith(home, ""), "DECKHAND_CONFIG="+cfg), dir, 140, 40)
+
+	// hookapp: the first agent row is selected.
+	h.waitFor("No sessions yet", 10*time.Second)
+	h.send("c")
+	h.waitFor("hooky", 5*time.Second)
+	h.send("t")
+	h.waitFor("test · hooky", 5*time.Second)
+	h.waitFor("✓ hooks work (SessionStart received)", 30*time.Second)
+	t.Logf("hooks work:\n%s", h.screen())
+	h.send("\x14") // ctrl+t
+	h.waitFor("k keep it as a session", 3*time.Second)
+	h.send("k")
+	h.waitFor("Kept the test session as", 3*time.Second)
+	h.waitGone("test · hooky", 3*time.Second)
+	if !strings.Contains(h.screen(), filepath.Base(dir)) {
+		t.Fatalf("the kept session should be named after its folder:\n%s", h.screen())
+	}
+
+	// An unsaved agent: argsapp, as a Claude program, sends no hooks.
+	h.send("a")
+	h.waitFor("New agent", 3*time.Second)
+	h.send("noargs")
+	h.send("\t ") // kind: program
+	h.send("\t" + filepath.Join(bin, "argsapp.exe"))
+	h.send("\t\t ") // type: Claude Code
+	h.send("\t")    // [Test]
+	h.waitFor("in a test session", 3*time.Second)
+	h.send("\r")
+	h.waitFor("test · noargs", 5*time.Second)
+	h.waitFor("waiting for Claude's SessionStart hook…", 5*time.Second)
+	h.waitFor("✗ no hook events yet", 45*time.Second)
+	h.waitFor("must pass deckhand's arguments", 3*time.Second)
+	h.waitFor("argsapp done", 3*time.Second) // its last output
+	t.Logf("no hooks:\n%s", h.screen())
+	if read() != text {
+		t.Fatalf("config.toml shouldn't change before ctrl+s:\n%s", read())
+	}
+
+	// Discard it, then add the agent and save.
+	h.send("\x14")
+	h.waitFor("x discard it", 3*time.Second)
+	h.send("x")
+	h.waitFor("Discarded the test session", 5*time.Second)
+	h.waitGone("test · noargs", 3*time.Second)
+	if logs, _ := filepath.Glob(filepath.Join(home, "sessions", "*")); len(logs) == 0 {
+		t.Log("no session folders")
+	}
+	h.send("\x1b[Z\r") // back to Type, then done
+	h.waitFor("unsaved changes", 3*time.Second)
+	if read() != text {
+		t.Fatalf("config.toml shouldn't change before ctrl+s:\n%s", read())
+	}
+	h.send("\x13")
+	h.waitFor("Saved and applied", 5*time.Second)
+	if !strings.Contains(read(), `name = "noargs"`) {
+		t.Fatalf("not saved:\n%s", read())
+	}
+	data, _ := os.ReadFile(filepath.Join(home, "sessions.json"))
+	if strings.Contains(string(data), "test ·") || !strings.Contains(string(data), `"agent": "hooky"`) {
+		t.Errorf("sessions.json should have the kept session only:\n%s", data)
+	}
+
+	h.send("\x1b")
+	h.waitFor("n new", 3*time.Second)
+	h.send("q")
+	h.waitFor("y/n", 3*time.Second)
+	h.send("y")
+	h.waitExit(15 * time.Second)
+}

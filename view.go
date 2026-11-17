@@ -390,7 +390,7 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 		hs = s.historyState()
 	}
 	verb := "restart"
-	if a, ok := agentByName(s.Agent); ok && a.CanResume() {
+	if a, ok := s.agent(); ok && a.CanResume() {
 		verb = "resume"
 	}
 	// Short details first, so a long folder path is what gets cut off.
@@ -463,7 +463,7 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 	}
 	if emu == nil {
 		msg := "  Not running. Press enter to start it, or shift+enter to start a new one."
-		if a, ok := agentByName(s.Agent); ok && a.CanResume() && s.Started {
+		if a, ok := s.agent(); ok && a.CanResume() && s.Started {
 			msg = "  Not running. Press enter to resume this Claude conversation, or shift+enter to start a new one."
 		}
 		lines = append(lines, "", fit(stMuted.Render(msg), w))
@@ -679,6 +679,9 @@ func (m *model) renderFooter(w int) string {
 		}
 		if m.cfg != nil && m.cfg.picker != nil {
 			help = footerOnly(helpConfig, hintPicker)
+		}
+		if m.cfg != nil && m.cfg.testAsk != nil {
+			return fit(stWaitText.Render(" Test session:"+footerOnly(helpConfig, hintTest)), w)
 		}
 	default:
 		var show []string

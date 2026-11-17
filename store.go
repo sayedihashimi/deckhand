@@ -37,10 +37,11 @@ func loadSessions() []*Session {
 
 func saveSessions(all []*Session) error {
 	// A session whose worktree is still being made isn't saved: after a
-	// restart it would start without one.
+	// restart it would start without one. Nor is an agent test that hasn't
+	// been kept.
 	list := make([]*Session, 0, len(all))
 	for _, s := range all {
-		if !s.creating.Load() {
+		if !s.creating.Load() && !s.testing.Load() {
 			list = append(list, s)
 		}
 	}
