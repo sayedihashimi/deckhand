@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
 )
@@ -165,11 +166,39 @@ func TestMaybeSaveScreenTiming(t *testing.T) {
 	t.Error("the background save didn't write screen.ans")
 }
 
+// Only default-foreground text is dimmed; coloured text keeps its colour
+// and intensity, and text the line made faint itself stays faint.
 func TestDimLine(t *testing.T) {
-	got := dimLine("a\x1b[31mb\x1b[0mc\x1b[1;31md\x1b[22me\x1b[m")
-	want := "\x1b[2ma\x1b[31mb\x1b[0m\x1b[2mc\x1b[1;31md\x1b[22m\x1b[2me\x1b[m\x1b[2m"
-	if got != want {
-		t.Errorf("dimLine:\n got %q\nwant %q", got, want)
+	line := "a" +
+		"\x1b[31mb" + // red
+		"\x1b[0mc" + // reset: default again
+		"\x1b[1;38;5;196md" + // bold, 256-colour
+		"\x1b[39me" + // bold, default colour
+		"\x1b[0;38;2;10;200;10mf" + // truecolor
+		"\x1b[38:2::1:2:3mg" + // truecolor, colon form
+		"\x1b[2;32mh" + // the app's own faint green
+		"\x1b[22;39mi" + // normal default
+		"\x1b[32mj\x1b[m"
+	emu := newTestEmulator(20, 2, dimLine(line))
+	for x, want := range []struct {
+		ch          string
+		faint, bold bool
+	}{
+		{"a", true, false}, {"b", false, false}, {"c", true, false}, {"d", false, true},
+		{"e", true, true}, {"f", false, false}, {"g", false, false}, {"h", true, false},
+		{"i", true, false}, {"j", false, false},
+	} {
+		c := emu.CellAt(x, 0)
+		faint, bold := c.Style.Attrs&uv.AttrFaint != 0, c.Style.Attrs&uv.AttrBold != 0
+		if c.Content != want.ch || faint != want.faint || bold != want.bold {
+			t.Errorf("%q: faint %v bold %v, want faint %v bold %v", c.Content, faint, bold, want.faint, want.bold)
+		}
+	}
+	if got := dimLine("plain"); got != faintSeq+"plain" {
+		t.Errorf("plain text: %q", got)
+	}
+	if got := dimLine("\x1b[31mred"); got != faintSeq+"\x1b[31m"+unfaintSeq+"red" {
+		t.Errorf("coloured text should turn our faint off: %q", got)
 	}
 }
 

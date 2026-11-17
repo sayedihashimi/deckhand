@@ -424,23 +424,89 @@ func historyLabel(st historyState, verb string, now time.Time) string {
 	return strings.Join(append(parts, "⏎ "+verb, "⇧⏎ new"), " · ")
 }
 
-// sgrSeq matches an SGR sequence, to keep saved output faint after resets.
+// sgrSeq matches an SGR sequence, to follow a saved line's styles.
 var sgrSeq = regexp.MustCompile(`\x1b\[([0-9;:]*)m`)
 
-const faintSeq = "\x1b[2m"
+const (
+	faintSeq   = "\x1b[2m"
+	unfaintSeq = "\x1b[22m" // normal intensity: clears faint and bold
+	boldSeq    = "\x1b[1m"
+)
 
-// dimLine draws a styled line faint: the faint attribute is set at the start
-// and again after anything that clears it (a reset, or 22 normal intensity).
-func dimLine(l string) string {
-	return faintSeq + sgrSeq.ReplaceAllStringFunc(l, func(seq string) string {
-		params := seq[2 : len(seq)-1]
-		if params == "" {
-			return seq + faintSeq
-		}
-		for _, p := range strings.Split(params, ";") {
-			if p == "0" || p == "00" || p == "22" {
-				return seq + faintSeq
+// sgrState is the part of the SGR state dimLine follows.
+type sgrState struct {
+	fgSet bool // an explicit foreground colour
+	bold  bool
+	faint bool // faint set by the line itself
+}
+
+// apply updates the state for one SGR sequence's parameters and reports
+// whether the sequence clears faint (a reset, 22, or 2 replacing it).
+func (st *sgrState) apply(params string) (clearsFaint bool) {
+	if params == "" {
+		*st = sgrState{}
+		return true
+	}
+	ps := strings.Split(params, ";")
+	for i := 0; i < len(ps); i++ {
+		p := ps[i]
+		code, _, colon := strings.Cut(p, ":")
+		switch n, _ := strconv.Atoi(code); {
+		case n == 0:
+			*st = sgrState{}
+			clearsFaint = true
+		case n == 1:
+			st.bold = true
+		case n == 2:
+			st.faint = true
+			clearsFaint = true
+		case n == 22:
+			st.bold, st.faint = false, false
+			clearsFaint = true
+		case n >= 30 && n <= 37, n >= 90 && n <= 97:
+			st.fgSet = true
+		case n == 39:
+			st.fgSet = false
+		case n == 38 || n == 48 || n == 58:
+			if n == 38 {
+				st.fgSet = true
 			}
+			if colon || i+1 >= len(ps) {
+				continue // 38:2::r:g:b is one parameter
+			}
+			switch ps[i+1] { // 38;5;n or 38;2;r;g;b
+			case "5":
+				i += 2
+			case "2":
+				i += 4
+			}
+		}
+	}
+	return clearsFaint
+}
+
+// dimLine draws the parts of a styled line that use the default foreground
+// faint, so saved output reads as not live. Text with its own colour keeps
+// it, undimmed, since faint colours can be hard to read; text the line
+// itself makes faint stays as it is.
+func dimLine(l string) string {
+	var st sgrState
+	added := true // our faint is on
+	return faintSeq + sgrSeq.ReplaceAllStringFunc(l, func(seq string) string {
+		if st.apply(seq[2 : len(seq)-1]) {
+			added = false
+		}
+		want := !st.fgSet && !st.faint
+		switch {
+		case want && !added:
+			added = true
+			return seq + faintSeq
+		case !want && added:
+			added = false
+			if st.bold {
+				return seq + unfaintSeq + boldSeq
+			}
+			return seq + unfaintSeq
 		}
 		return seq
 	})
@@ -589,7 +655,7 @@ func promptText(raw json.RawMessage) string {
 }
 
 var (
-	stConvPrompt = lipgloss.NewStyle().Foreground(colAccent).Faint(true)
+	stConvPrompt = lipgloss.NewStyle().Foreground(colAccent) // coloured, so not faint (see dimLine)
 	stConvReply  = lipgloss.NewStyle().Faint(true)
 )
 
