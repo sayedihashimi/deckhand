@@ -1,0 +1,51 @@
+name: screenshot
+
+# Renders deckhand in a scripted scene (TestE2EScreenshot) on every pull
+# request, stores the PNG on the "screenshots" branch (which shares no
+# history with main) and shows it in one PR comment, updated on each push.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write # push to the screenshots branch
+  pull-requests: write # add or update the PR comment
+
+concurrency:
+  group: screenshot-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  screenshot:
+    # Pull requests from forks get a read-only token, so they can't publish.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: windows-latest
+    steps:
+      - name: Keep LF line endings
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Render the screenshot
+        env:
+          DECKHAND_SCREENSHOT: ${{ runner.temp }}\deckhand.png
+        run: go test -tags e2e -run TestE2EScreenshot -v
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshot
+          path: ${{ runner.temp }}\deckhand.png
+
+      - name: Publish and comment
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+        run: bash .github/scripts/publish-screenshot.sh "$RUNNER_TEMP/deckhand.png"
