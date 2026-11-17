@@ -154,6 +154,9 @@ func (m *model) renderSidebar(w, h int) []string {
 		row1 := fit(left, w-len(age)-1) + stMuted.Render(age) + " "
 
 		detail, isReply := sessionDetail(sn)
+		if sn.status == StatusExited {
+			detail = exitedDetail(detail, w-6-ansi.StringWidth(s.Agent+" · "))
+		}
 		detailStyle := stMuted
 		switch {
 		case sn.status == StatusWaiting:
@@ -179,6 +182,22 @@ func (m *model) renderSidebar(w, h int) []string {
 		lines = append(lines, strings.Repeat(" ", w))
 	}
 	return lines[:h]
+}
+
+// exitedDetail adds the shift+enter hint to an exited session's detail
+// ("exited · ⏎ resume · ⇧⏎ new"), dropping "exited" and then the separator
+// when the sidebar is too narrow. With no room for it, the detail is kept.
+func exitedDetail(detail string, room int) string {
+	if !strings.Contains(detail, "⏎") {
+		return detail
+	}
+	short := strings.TrimPrefix(detail, "exited · ")
+	for _, d := range []string{detail + " · ⇧⏎ new", short + " · ⇧⏎ new", short + " ⇧⏎ new"} {
+		if ansi.StringWidth(d) <= room {
+			return d
+		}
+	}
+	return detail
 }
 
 // sessionDetail is the text after "claude · " on a session's second
@@ -332,7 +351,7 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 		if a, ok := agentByName(s.Agent); ok && a.CanResume() {
 			verb = "resume"
 		}
-		header += lipgloss.NewStyle().Foreground(colWorking).Render("  " + sn.exitInfo + " · press enter to " + verb)
+		header += lipgloss.NewStyle().Foreground(colWorking).Render("  " + sn.exitInfo + " · press enter to " + verb + ", shift+enter to start a new one")
 	} else if sn.title != "" {
 		header += stMuted.Render("  — " + sn.title)
 	}
@@ -346,9 +365,9 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 
 	emu := s.Emulator()
 	if emu == nil {
-		msg := "  Not running. Press enter to start it."
+		msg := "  Not running. Press enter to start it, or shift+enter to start a new one."
 		if a, ok := agentByName(s.Agent); ok && a.CanResume() && s.Started {
-			msg = "  Not running. Press enter to resume this Claude conversation."
+			msg = "  Not running. Press enter to resume this Claude conversation, or shift+enter to start a new one."
 		}
 		lines = append(lines, "", fit(stMuted.Render(msg), w))
 		for len(lines) < h {
@@ -512,9 +531,9 @@ func (m *model) renderFooter(w int) string {
 			help = " ↑↓ choose · enter pick · esc back"
 		}
 	default:
-		help = " ↑↓ select · enter open · n new · tab next · / filter · @ needs you · o editor · O explorer · t terminal · r rename · K end · x remove · c config · q quit"
+		help = " ↑↓ select · enter open · ⇧⏎ new here · n new · tab next · / filter · @ needs you · o editor · O explorer · t terminal · r rename · K end · x remove · c config · q quit"
 		if ansi.StringWidth(help) > w {
-			help = " enter open · n new · tab next · / filter · @ needs you · o/O/t open · r rename · K end · x remove · c config · q quit"
+			help = " ⏎ open · ⇧⏎ new here · n new · tab next · / @ filter · o/O/t open · r rename · K end · x remove · c config · q quit"
 		}
 		if m.filterInput != nil {
 			help = " type to filter · enter keep · esc clear"
