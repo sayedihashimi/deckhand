@@ -43,7 +43,11 @@ func buildDeckhand(t *testing.T) string {
 
 func startHarness(t *testing.T, exe string, env []string, dir string) *harness {
 	t.Helper()
-	const w, h = 140, 40
+	return startHarnessSize(t, exe, env, dir, 140, 40)
+}
+
+func startHarnessSize(t *testing.T, exe string, env []string, dir string, w, h int) *harness {
+	t.Helper()
 	pty, err := xpty.NewPty(w, h)
 	if err != nil {
 		t.Fatal(err)
@@ -133,7 +137,10 @@ func envWith(home, path string) []string {
 		}
 		env = append(env, kv)
 	}
-	env = append(env, "DECKHAND_HOME="+home)
+	// Don't pick up the user's own config (its custom agents come first in
+	// the new-session dialog). Tests that need a config append their own
+	// DECKHAND_CONFIG later, which wins.
+	env = append(env, "DECKHAND_HOME="+home, "DECKHAND_CONFIG="+filepath.Join(home, "no-config.toml"))
 	if path != "" {
 		env = append(env, "PATH="+path)
 	}
@@ -480,4 +487,97 @@ func TestE2EClaude(t *testing.T) {
 	h.waitFor("Quit and end 1 running", 5*time.Second)
 	h.send("y")
 	h.waitExit(15 * time.Second)
+}
+
+// TestE2ENotifyInfoFilter runs a fake claude.exe (testdata/hookapp) that
+// sends a turn's hook events, in a git repo. It checks the notifications
+// (recorded to a file instead of shown), the branch, model and context in
+// the sidebar and header, and the "/" filter.
+func TestE2ENotifyInfoFilter(t *testing.T) {
+	exe := buildDeckhand(t)
+	pwsh, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh not found")
+	}
+	gitExe, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not found")
+	}
+	bin := t.TempDir()
+	if out, err := exec.Command("go", "build", "-o", filepath.Join(bin, "claude.exe"), "./testdata/hookapp").CombinedOutput(); err != nil {
+		t.Fatalf("build hookapp: %v\n%s", err, out)
+	}
+
+	// A git repo with a change, on a known branch.
+	repo := filepath.Join(t.TempDir(), "repo-e2e")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command(gitExe, "-C", repo, "init", "-b", "e2e-branch").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	_ = os.WriteFile(filepath.Join(repo, "new.txt"), []byte("x"), 0o644)
+
+	// A saved session to filter against.
+	home := t.TempDir()
+	other := t.TempDir()
+	saved := fmt.Sprintf(`[{"id":"zeta-0001","name":"zeta","agent":"pwsh","dir":%q,"created":"2026-01-01T00:00:00Z"}]`, other)
+	if err := os.WriteFile(filepath.Join(home, "sessions.json"), []byte(saved), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(t.TempDir(), "config.toml")
+	_ = os.WriteFile(cfg, []byte("[notifications]\nwhen = \"always\"\n"), 0o644)
+	notifyLog := filepath.Join(t.TempDir(), "notify.log")
+
+	path := bin + ";" + filepath.Dir(pwsh) + ";" + filepath.Dir(gitExe) + ";" + os.Getenv("SystemRoot") + `\System32`
+	env := append(envWith(home, path), "DECKHAND_CONFIG="+cfg, "DECKHAND_NOTIFY_LOG="+notifyLog)
+	h := startHarness(t, exe, env, t.TempDir())
+
+	h.waitFor("zeta", 10*time.Second)
+	h.send("n")
+	h.waitFor("Start in", 5*time.Second)
+	h.send(repo)
+	h.send("\r")
+	h.waitFor("hookapp done", 20*time.Second)
+	h.send("\x11") // back to the list
+
+	// Branch, model and context.
+	h.waitFor("e2e-branch*", 10*time.Second)       // header
+	h.waitFor("opus 5.5 · 83k", 10*time.Second)    // sidebar and header
+	h.waitFor("claude · your turn", 5*time.Second) // status from the Stop hook
+
+	// Notifications: one for the permission request, one when it finished.
+	deadline := time.Now().Add(10 * time.Second)
+	var log string
+	for time.Now().Before(deadline) {
+		data, _ := os.ReadFile(notifyLog)
+		log = string(data)
+		if strings.Count(log, "\n") >= 2 {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	for _, want := range []string{"repo-e2e needs you\tpermission: Bash: npm test", "repo-e2e finished\tFixed the bug."} {
+		if !strings.Contains(log, want) {
+			t.Fatalf("notification %q missing; log:\n%s", want, log)
+		}
+	}
+
+	// Filter: "/" then a name hides the other session; esc brings it back.
+	h.send("/")
+	h.send("zet")
+	h.waitFor("/zet", 3*time.Second)
+	time.Sleep(300 * time.Millisecond)
+	if strings.Contains(h.screen(), "repo-e2e") {
+		t.Fatalf("filter should hide repo-e2e; screen:\n%s", h.screen())
+	}
+	h.send("\t") // keep the filter, back to the list (enter would open the only match)
+	h.waitFor("esc clears", 3*time.Second)
+	h.send("\x1b")
+	h.waitFor("repo-e2e", 3*time.Second)
+	t.Logf("screen:\n%s", h.screen())
+
+	h.send("q")
+	h.send("y")
+	h.waitExit(10 * time.Second)
 }

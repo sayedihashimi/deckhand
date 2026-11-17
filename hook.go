@@ -75,10 +75,12 @@ func runHook(args []string) int {
 		return 0
 	}
 	var payload struct {
-		HookEventName    string `json:"hook_event_name"`
-		ToolName         string `json:"tool_name"`
-		NotificationType string `json:"notification_type"`
-		SessionID        string `json:"session_id"`
+		HookEventName    string          `json:"hook_event_name"`
+		ToolName         string          `json:"tool_name"`
+		NotificationType string          `json:"notification_type"`
+		SessionID        string          `json:"session_id"`
+		TranscriptPath   string          `json:"transcript_path"`
+		ToolInput        json.RawMessage `json:"tool_input"`
 	}
 	data, _ := io.ReadAll(io.LimitReader(os.Stdin, 4<<20))
 	if err := json.Unmarshal(data, &payload); err != nil || payload.HookEventName == "" {
@@ -90,11 +92,31 @@ func runHook(args []string) int {
 		Tool:             payload.ToolName,
 		NotificationType: payload.NotificationType,
 		ClaudeSessionID:  payload.SessionID,
+		Transcript:       payload.TranscriptPath,
+		Summary:          toolSummary(payload.ToolInput),
 	}
 	if err := recordEvent(id, ev); err != nil {
 		fmt.Fprintln(os.Stderr, "deckhand hook:", err)
 	}
 	return 0
+}
+
+// toolSummary picks the most telling field of a tool's input (the Bash
+// command, the file being edited, ...) for the notification text.
+func toolSummary(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var in map[string]any
+	if json.Unmarshal(raw, &in) != nil {
+		return ""
+	}
+	for _, k := range []string{"command", "file_path", "notebook_path", "path", "url", "pattern", "query", "description"} {
+		if v, ok := in[k].(string); ok && v != "" {
+			return clip(oneLine(v), 120)
+		}
+	}
+	return ""
 }
 
 // recordEvent writes the latest event atomically and appends it to a log.

@@ -47,6 +47,16 @@ type model struct {
 	confirm  *confirmPrompt
 	rename   *textinput.Model
 	flash    string
+
+	// Filtering the list ("/" and "@").
+	filter        string
+	attentionOnly bool
+	filterInput   *textinput.Model // open while typing a filter
+
+	// Whether deckhand's window has focus, when the terminal reports it.
+	focusKnown    bool
+	windowFocused bool
+
 	flashAt  time.Time
 	quitting bool
 }
@@ -94,11 +104,16 @@ func (m *model) termSize() (int, int) {
 	return w, h
 }
 
+// current is the selected session, or nil when there's none or the filter
+// hides it.
 func (m *model) current() *Session {
-	if m.sel >= 0 && m.sel < len(m.sessions) {
-		return m.sessions[m.sel]
+	if m.sel < 0 || m.sel >= len(m.sessions) {
+		return nil
 	}
-	return nil
+	if m.filtering() && visiblePos(m.visible(), m.sel) < 0 {
+		return nil
+	}
+	return m.sessions[m.sel]
 }
 
 func (m *model) setFlash(s string) {
@@ -121,12 +136,24 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case tea.FocusMsg:
+		m.focusKnown, m.windowFocused = true, true
+		return m, nil
+
+	case tea.BlurMsg:
+		m.focusKnown, m.windowFocused = true, false
+		return m, nil
+
 	case frameMsg:
 		m.frame++
 		if m.frame%refreshEvery == 0 {
 			now := time.Now()
-			for _, s := range m.sessions {
+			for i, s := range m.sessions {
 				s.Refresh(now)
+				if n := s.TakeNotice(); n != nil && shouldNotify(notifyMode, m.focusKnown, m.windowFocused, i == m.sel) {
+					go sendNotice(s, *n)
+				}
+				s.MaybePoll(now, i == m.sel)
 			}
 		}
 		if s := m.current(); s != nil {
@@ -136,6 +163,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, frameTick()
 
 	case tea.PasteMsg:
+		if m.filterInput != nil {
+			var cmd tea.Cmd
+			*m.filterInput, cmd = m.filterInput.Update(msg)
+			m.applyFilterInput()
+			return m, cmd
+		}
 		if m.rename != nil {
 			var cmd tea.Cmd
 			*m.rename, cmd = m.rename.Update(msg)
@@ -172,6 +205,30 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.confirm = nil
 		if key == "y" || key == "Y" {
 			return m, c.action(m)
+		}
+		return m, nil
+	}
+
+	if m.filterInput != nil {
+		switch key {
+		case "esc":
+			m.filter = ""
+			m.filterInput = nil
+			m.keepSelectionVisible()
+		case "enter", "down", "up", "tab":
+			// Keep the filter and go back to the list.
+			m.filterInput = nil
+			if key == "enter" && len(m.visible()) == 1 {
+				return m, m.openSelected()
+			}
+			if key == "down" || key == "up" {
+				m.moveSel(map[string]int{"down": 1, "up": -1}[key])
+			}
+		default:
+			var cmd tea.Cmd
+			*m.filterInput, cmd = m.filterInput.Update(k)
+			m.applyFilterInput()
+			return m, cmd
 		}
 		return m, nil
 	}
@@ -244,17 +301,30 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// Sidebar.
 	switch key {
 	case "up", "k":
-		if m.sel > 0 {
-			m.sel--
-		}
+		m.moveSel(-1)
 	case "down", "j":
-		if m.sel < len(m.sessions)-1 {
-			m.sel++
-		}
+		m.moveSel(1)
 	case "home", "g":
-		m.sel = 0
+		m.selectVisible(0)
 	case "end", "G":
-		m.sel = len(m.sessions) - 1
+		m.selectVisible(-1)
+	case "/":
+		ti := textinput.New()
+		ti.Prompt = "/"
+		ti.Placeholder = "filter"
+		ti.SetValue(m.filter)
+		ti.CursorEnd()
+		ti.SetWidth(m.sidebarWidth() - 3)
+		m.filterInput = &ti
+		return m, m.filterInput.Focus()
+	case "@":
+		m.attentionOnly = !m.attentionOnly
+		m.keepSelectionVisible()
+	case "esc":
+		if m.filtering() {
+			m.clearFilter()
+			m.keepSelectionVisible()
+		}
 	case "enter", "right", "l":
 		return m, m.openSelected()
 	case "tab":
@@ -313,8 +383,7 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	default:
 		if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
-			if i := int(key[0] - '1'); i < len(m.sessions) {
-				m.sel = i
+			if m.selectVisible(int(key[0] - '1')) {
 				return m, m.openSelected()
 			}
 		}
@@ -337,7 +406,7 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	ms := msg.Mouse()
 	sw := m.sidebarWidth()
 
-	if m.focus == focusDialog || m.rename != nil || m.confirm != nil {
+	if m.focus == focusDialog || m.rename != nil || m.confirm != nil || m.filterInput != nil {
 		return nil
 	}
 
@@ -347,18 +416,13 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		case tea.MouseWheelMsg:
 			switch ms.Button {
 			case tea.MouseWheelUp:
-				if m.sel > 0 {
-					m.sel--
-				}
+				m.moveSel(-1)
 			case tea.MouseWheelDown:
-				if m.sel < len(m.sessions)-1 {
-					m.sel++
-				}
+				m.moveSel(1)
 			}
 		case tea.MouseClickMsg:
 			if ms.Button == tea.MouseLeft && ms.Y >= 2 {
-				if i := m.scroll + (ms.Y-2)/2; i < len(m.sessions) {
-					m.sel = i
+				if m.selectVisible(m.scroll + (ms.Y-2)/rowsPerSession) {
 					m.focus = focusSidebar
 				}
 			}
@@ -461,26 +525,62 @@ func (m *model) removeSelected() {
 	if m.sel >= len(m.sessions) && m.sel > 0 {
 		m.sel--
 	}
+	m.keepSelectionVisible()
 	_ = saveSessions(m.sessions)
 }
 
+// applyFilterInput filters the list as the filter is typed.
+func (m *model) applyFilterInput() {
+	m.filter = strings.TrimSpace(m.filterInput.Value())
+	m.keepSelectionVisible()
+}
+
 // jumpToAttention selects the next session that needs you, then the next one
-// that finished its turn.
+// that finished its turn (among the sessions the filter shows).
 func (m *model) jumpToAttention() {
-	n := len(m.sessions)
+	vis := m.visible()
+	n := len(vis)
+	p := visiblePos(vis, m.sel)
 	for _, want := range []func(snapshot) bool{
 		func(s snapshot) bool { return s.status == StatusWaiting },
 		func(s snapshot) bool { return s.unread },
 	} {
 		for i := 1; i <= n; i++ {
-			j := (m.sel + i) % n
+			j := vis[(p+i+n)%n]
 			if want(m.sessions[j].Snapshot()) {
 				m.sel = j
 				return
 			}
 		}
 	}
+	if m.filtering() {
+		m.setFlash("Nothing in this filter needs you (esc clears the filter)")
+		return
+	}
 	m.setFlash("Nothing needs you")
+}
+
+// sendNotice shows a desktop notification for a session's status change.
+func sendNotice(s *Session, n notice) {
+	s.mu.Lock()
+	name, agent, id := s.Name, s.Agent, s.ID
+	s.mu.Unlock()
+	last := ""
+	if n.kind == noticeFinished {
+		last = s.LastText()
+	}
+	title, body := noticeText(name, agent, n, last)
+	if p := os.Getenv("DECKHAND_NOTIFY_LOG"); p != "" {
+		// Tests record notifications instead of showing them.
+		if f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+			fmt.Fprintf(f, "%s\t%s\n", title, body)
+			_ = f.Close()
+		}
+		return
+	}
+	if err := showToast(title, body, id[:8]); err != nil {
+		debugf("notify %s: %v", id[:8], err)
+	}
 }
 
 func (m *model) createFromDialog() tea.Cmd {
@@ -499,6 +599,7 @@ func (m *model) createFromDialog() tea.Cmd {
 	}
 	m.sessions = append(m.sessions, s)
 	m.sel = len(m.sessions) - 1
+	m.clearFilter() // so the new session shows
 	m.dialog = nil
 	m.focus = focusTerminal
 	_ = saveSessions(m.sessions)

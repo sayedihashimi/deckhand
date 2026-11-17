@@ -30,6 +30,34 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 - **Other CLIs:** status is guessed from output activity, and a terminal bell counts as "needs you".
 - **Esc interrupts:** if a Claude turn is interrupted with Esc, no `Stop` hook fires. After 20 s of silence the status drops back to idle and shows "interrupted?".
 
+## Session details
+
+The third line under each session shows the git branch, then for Claude the model and how much context the conversation uses:
+
+```
+▌2 ✓ api-refactor           1m
+▌    claude · your turn
+▌    feature/login*↑2 · opus 5.5 · 84k
+```
+
+- **Branch:** `*` means uncommitted changes (untracked files count), `↑2↓1` is commits ahead of and behind the upstream. Outside a git repo the line shows the folder.
+- **Model and context:** read from the end of the Claude transcript. The number is the input tokens of the latest reply, including cached ones, which is how much context the next turn starts with. deckhand can't tell the model's context window from the transcript, so it shows tokens rather than a percentage.
+- Details refresh every 3 s for running and selected sessions and every 30 s for the rest, in the background. The session header shows them in full.
+
+## Notifications
+
+deckhand shows a Windows notification when a session needs you (a permission prompt, a question, or a bell from another CLI) or a Claude session finishes its turn. A permission notification says what the tool wants to do (for example the Bash command), and a "finished" one quotes the start of Claude's reply.
+
+By default it only notifies while deckhand's window isn't focused (the terminal reports focus changes). If the terminal doesn't report focus, it notifies for every session except the one on screen. Change this in the config file:
+
+```toml
+[notifications]
+enabled = true          # false turns them off
+when    = "unfocused"   # or "always"
+```
+
+Run `deckhand notify-test` to check that notifications appear. If they don't, check Windows' notification settings and Do Not Disturb. Notifications come from Windows PowerShell, so that's the name they show.
+
 ## Keys
 
 **Session list**
@@ -40,6 +68,9 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 | enter | Type into the session; starts or resumes it if it isn't running |
 | 1–9 | Jump straight into session N |
 | tab | Select the next session that needs you, then the next one that finished |
+| / | Filter the list as you type. Matches the name, agent, folder and branch, ignoring case; letters in order also match, and every word must match. enter keeps the filter (or opens the session if only one matches), tab keeps it, esc clears it |
+| @ | Show only sessions that need you or finished since you looked (press again to show all) |
+| esc | Clear the filter |
 | n | New session (see below) |
 | r | Rename the session |
 | K | End the session's process (it stays in the list) |
@@ -116,4 +147,4 @@ Install the binary in a folder without spaces in its path. Hook commands then do
 
 ## Debugging
 
-Set `DECKHAND_DEBUG=C:\path\to\log.txt` to log key presses and the bytes forwarded to each agent. Each session's hook events are in `%LOCALAPPDATA%\deckhand\sessions\<id>\events.jsonl`.
+Set `DECKHAND_DEBUG=C:\path\to\log.txt` to log key presses, the bytes forwarded to each agent, and notification errors. `DECKHAND_NOTIFY_LOG=C:\path\to\file` writes notifications to that file instead of showing them (the tests use this). Each session's hook events are in `%LOCALAPPDATA%\deckhand\sessions\<id>\events.jsonl`.
