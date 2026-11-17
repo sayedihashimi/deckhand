@@ -284,6 +284,9 @@ func shortDir(dir string, w int) string {
 
 // renderMain returns the session header and terminal (or dialog) lines.
 func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
+	if m.cfg != nil {
+		return m.renderConfig(w, h), nil
+	}
 	lines := make([]string, 0, h)
 	if m.dialog != nil {
 		lines = append(lines, fit(stTitle.Render(" New session"), w))
@@ -314,8 +317,12 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 			"  tab      jump to the next session that needs you",
 			"  / and @  filter the list; @ shows only sessions that need you",
 			"  ? or F1  all the keys",
+			"  c        settings: your own agents, notifications, open commands",
 		} {
 			lines = append(lines, fit(stMuted.Render(l), w))
+		}
+		if !m.haveConfig {
+			lines = append(lines, "", fit(lipgloss.NewStyle().Foreground(colAccent).Render("  No config file yet: press c to set up deckhand."), w))
 		}
 		for len(lines) < h {
 			lines = append(lines, strings.Repeat(" ", w))
@@ -519,6 +526,14 @@ func (m *model) renderFooter(w int) string {
 		help = footerHints(helpTerminal, false)
 	case focusDialog:
 		help = " enter start · esc cancel · F1 help"
+	case focusConfig:
+		help = " ↑↓/tab move · ctrl+s save · esc leave without saving"
+		if m.cfg != nil && m.cfg.form != nil {
+			help = " ↑↓/tab move · enter done · esc cancel"
+		}
+		if m.cfg != nil && m.cfg.picker != nil {
+			help = " ↑↓ choose · enter pick · esc back"
+		}
 	default:
 		help = footerHints(helpList, false)
 		if ansi.StringWidth(help) > w {

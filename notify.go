@@ -49,8 +49,8 @@ const (
 var notifyMode = notifyUnfocused
 
 type notifyConfig struct {
-	Enabled *bool  `toml:"enabled"`
-	When    string `toml:"when"`
+	Enabled *bool  `toml:"enabled,omitempty"`
+	When    string `toml:"when,omitempty"`
 }
 
 // loadNotifyMode reads [notifications] from the config file.
@@ -140,4 +140,20 @@ func clip(s string, n int) string {
 // xmlEscape escapes text for the toast XML.
 func xmlEscape(s string) string {
 	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&apos;").Replace(s)
+}
+
+// sendTestNotification shows the notification "deckhand notify-test" and
+// the config screen send. DECKHAND_NOTIFY_LOG records it instead (tests).
+func sendTestNotification() error {
+	title, body := "deckhand", "Notifications work. You'll see one like this when a session needs you."
+	if p := os.Getenv("DECKHAND_NOTIFY_LOG"); p != "" {
+		f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_, err = fmt.Fprintf(f, "%s\t%s\n", title, body)
+		return err
+	}
+	return showToast(title, body, "test")
 }

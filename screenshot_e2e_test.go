@@ -17,7 +17,8 @@ import (
 
 // TestE2EScreenshot sets up a scripted scene (three fake Claude sessions in
 // different states, in git repos, plus an exited shell) and saves deckhand's
-// screen as a PNG. The PR workflow posts it on each pull request.
+// screen as a PNG, with the config screen ("c") below it. The PR workflow
+// posts it on each pull request.
 //
 //	$env:DECKHAND_SCREENSHOT="shot.png"; go test -tags e2e -run TestE2EScreenshot -v
 //
@@ -117,8 +118,26 @@ event PreToolUse Bash | go test ./...
 		t.Fatal(err)
 	}
 
+	// Two custom agents and an editor, for the config screen.
+	cfg := filepath.Join(home, "config.toml")
+	_ = os.WriteFile(cfg, []byte(`[[agents]]
+name   = "review"
+pwsh   = "Start-Review"
+type   = "claude"
+resume = "Start-Review -Resume {id}"
+
+[[agents]]
+name    = "claude-opus"
+command = "claude"
+args    = ["--model", "opus"]
+type    = "claude"
+
+[open]
+editor = 'code "{dir}"'
+`), 0o644)
+
 	path := bin + ";" + filepath.Dir(pwsh) + ";" + filepath.Dir(gitExe) + ";" + os.Getenv("SystemRoot") + `\System32`
-	env := append(envWith(home, path), "DECKHAND_NOTIFY_LOG="+filepath.Join(home, "notify.log"))
+	env := append(envWith(home, path), "DECKHAND_NOTIFY_LOG="+filepath.Join(home, "notify.log"), "DECKHAND_CONFIG="+cfg)
 	h := startHarnessSize(t, exe, env, src, 120, 32)
 
 	h.waitFor("notes", 10*time.Second)
@@ -134,15 +153,35 @@ event PreToolUse Bash | go test ./...
 	h.waitFor("opus 5.5", 10*time.Second)
 	time.Sleep(3500 * time.Millisecond) // let every session's git details arrive
 
+	scene := screenFromEmulator(h.emu)
+	sceneText := h.screen()
+
+	// The config screen, with the second agent selected.
+	h.send("c")
+	h.waitFor("+ Add agent", 5*time.Second)
+	h.send("\x1b[B")
+	h.waitFor("› claude-opus", 3*time.Second)
+	time.Sleep(300 * time.Millisecond)
+	config := screenFromEmulator(h.emu)
+	t.Logf("config screen:\n%s", h.screen())
+	h.send("\x1b")
+
+	// One image: the scene, a blank row, then the config screen.
+	blank := make([]termshot.Cell, len(scene[0]))
+	for i := range blank {
+		blank[i] = termshot.Cell{Text: " ", Width: 1}
+	}
+	both := append(append(append(termshot.Screen{}, scene...), blank), config...)
+
 	f, err := os.Create(out)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	if err := termshot.Render(f, screenFromEmulator(h.emu), termshot.Options{}); err != nil {
+	if err := termshot.Render(f, both, termshot.Options{}); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("wrote %s\n%s", out, h.screen())
+	t.Logf("wrote %s\n%s", out, sceneText)
 
 	// Optionally the help overlay too (? in the list), to check it by hand.
 	if helpOut := os.Getenv("DECKHAND_SCREENSHOT_HELP"); helpOut != "" {

@@ -27,6 +27,7 @@ const (
 	focusSidebar focusArea = iota
 	focusTerminal
 	focusDialog
+	focusConfig
 )
 
 type frameMsg time.Time
@@ -67,6 +68,15 @@ type model struct {
 	// Whether "o" has said how to set an editor (it does once, the first
 	// time it falls back to Explorer).
 	editorHinted bool
+
+	// The config screen ("c"), and whether there's a config file (the
+	// welcome screen suggests the config screen when there isn't).
+	cfg        *configScreen
+	haveConfig bool
+
+	// The PowerShell profile's functions and aliases, once loaded.
+	profile        *profileCommandsMsg
+	profileLoading bool
 }
 
 type confirmPrompt struct {
@@ -79,6 +89,9 @@ func newModel() *model {
 		sessions: loadSessions(),
 		dirty:    &atomic.Bool{},
 		agents:   availableAgents(),
+	}
+	if _, err := os.Stat(configPath()); err == nil {
+		m.haveConfig = true
 	}
 	return m
 }
@@ -142,6 +155,22 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.dialog != nil {
 			m.dialog.setWidth(w)
 		}
+		if m.cfg != nil {
+			m.cfg.setWidth(w)
+		}
+		return m, nil
+
+	case profileCommandsMsg:
+		m.profileLoading = false
+		m.profile = &msg
+		return m, nil
+
+	case configStatusMsg:
+		if m.cfg != nil {
+			m.cfg.setStatus(msg.text, msg.isErr)
+		} else {
+			m.setFlash(msg.text)
+		}
 		return m, nil
 
 	case tea.FocusMsg:
@@ -193,6 +222,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case focusDialog:
 			return m, m.dialog.update(msg)
+		case focusConfig:
+			return m, m.cfg.updateInputs(msg)
 		}
 		return m, nil
 
@@ -207,6 +238,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if m.focus == focusDialog && m.dialog != nil {
 		return m, m.dialog.update(msg)
+	}
+	if m.focus == focusConfig && m.cfg != nil {
+		return m, m.cfg.updateInputs(msg)
 	}
 	return m, nil
 }
@@ -321,6 +355,9 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, m.createFromDialog()
 		}
 		return m, m.dialog.update(k)
+
+	case focusConfig:
+		return m, m.configKey(k)
 	}
 
 	// Sidebar.
@@ -367,6 +404,8 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.dialog = newNewDialog(m.agents, w, m.sessions)
 		m.focus = focusDialog
 		return m, m.dialog.focusCmd()
+	case "c":
+		return m, m.openConfigScreen()
 	case "r":
 		if s := m.current(); s != nil {
 			ti := textinput.New()
@@ -445,7 +484,7 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		m.helpMouse(msg)
 		return nil
 	}
-	if m.focus == focusDialog || m.rename != nil || m.confirm != nil || m.filterInput != nil {
+	if m.focus == focusDialog || m.focus == focusConfig || m.rename != nil || m.confirm != nil || m.filterInput != nil {
 		return nil
 	}
 
