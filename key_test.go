@@ -88,3 +88,17 @@ func TestForwardedKeys(t *testing.T) {
 	}
 }
 
+// With win32-input-mode on, modifier and lock keys arrive as presses of
+// their own; they mustn't reach the agent or the sidebar.
+func TestLockOrModifierKey(t *testing.T) {
+	for _, c := range []rune{uv.KeyLeftShift, uv.KeyRightCtrl, uv.KeyLeftAlt, uv.KeyLeftSuper, uv.KeyCapsLock, uv.KeyNumLock, uv.KeyMediaPlay} {
+		if !lockOrModifierKey(c) {
+			t.Errorf("%v should be dropped", c)
+		}
+	}
+	for _, c := range []rune{tea.KeyEnter, tea.KeyTab, tea.KeyEscape, tea.KeyUp, tea.KeyF1, tea.KeyPgDown, 'a', ' '} {
+		if lockOrModifierKey(c) {
+			t.Errorf("%v should be kept", c)
+		}
+	}
+}

@@ -84,6 +84,8 @@ Run `deckhand notify-test` to check that notifications appear. If they don't, ch
 | ctrl+q (or ctrl+]) | Back to the session list. Every other key goes to the agent. |
 | shift+PgUp / shift+PgDn | Scroll back through the output a page at a time |
 
+Modified keys that plain terminal input can't express, such as shift+enter (a new line in Claude), ctrl+enter and ctrl+tab, go to the agent in the keyboard protocol it asked for (kitty `CSI u`, or xterm modifyOtherKeys), and as plain enter/tab to apps that asked for neither. For deckhand to see those modifiers, the terminal it runs in has to report them. In Windows Terminal, deckhand turns on win32-input-mode for this. In other terminals, shift+enter may arrive as plain enter; Claude's `\` then enter still adds a new line.
+
 **Mouse**
 
 - **Wheel over the terminal:** scrolls back through the output. Any key, or wheeling back down, returns to the live view. If the app turns on mouse reporting itself (a fullscreen TUI such as Claude's fullscreen renderer), the wheel and clicks go to the app instead, so it scrolls its own view.
