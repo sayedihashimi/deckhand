@@ -68,10 +68,14 @@ func statusFromHook(ev hookEvent) (st Status, detail string, ok bool) {
 		}
 		return 0, "", false
 	case "Stop":
-		return StatusIdle, "your turn", true
+		return StatusIdle, detailYourTurn, true
 	}
 	return 0, "", false
 }
+
+// detailYourTurn is the detail after a Stop. The sidebar shows the reply
+// in its place once it has been read from the transcript.
+const detailYourTurn = "your turn"
 
 func toolDetail(tool string) string {
 	if tool == "" {

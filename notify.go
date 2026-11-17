@@ -31,7 +31,7 @@ func noticeFor(prev, next Status, detail, summary string) (notice, bool) {
 	switch {
 	case next == StatusWaiting && prev != StatusWaiting:
 		return notice{kind: noticeWaiting, detail: detail, summary: summary}, true
-	case next == StatusIdle && prev == StatusWorking && detail == "your turn":
+	case next == StatusIdle && prev == StatusWorking && detail == detailYourTurn:
 		// Only the Stop hook says "your turn"; the silence heuristic says
 		// "interrupted?" and shouldn't make noise.
 		return notice{kind: noticeFinished, detail: detail}, true
