@@ -11,19 +11,22 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// Hiding the session list: one key (ctrl+\ by default) hides and shows the
-// list from anywhere, so a session gets the full window width. While the
-// list is hidden, the session header row ends with a short status line
-// ("2 need you · 1 finished · ctrl+\ list"), which can be turned off.
+// Hiding the session list: one key (F3 by default) hides and shows the list
+// from anywhere, so a session gets the full window width. While the list is
+// hidden, the session header row ends with a short status line
+// ("2 need you · 1 finished · F3 list"), which can be turned off.
 //
-// The default isn't F2 (the key first proposed) because Codex opens its
-// warnings with F2. Claude Code, Codex and Gemini don't bind ctrl+\.
+// Why F3: Claude Code binds no function keys by default, Codex opens its
+// warnings with F2, and Gemini CLI uses F4, F6-F9 and F12. Neither Windows
+// Terminal nor WezTerm binds F3. The first default, ctrl+\, is 1Password's
+// global shortcut on Windows, so it never reached deckhand on machines
+// running 1Password.
 
-const defaultToggleKey = "ctrl+\\"
+const defaultToggleKey = "f3"
 
 // listSettings come from [list] in the config file.
 type listSettings struct {
-	toggleKey  string // as Bubble Tea names it, e.g. "f2" or "ctrl+\\"
+	toggleKey  string // as Bubble Tea names it, e.g. "f3" or "ctrl+\\"
 	statusLine bool   // show the status line while the list is hidden
 }
 
@@ -85,7 +88,7 @@ func checkToggleKey(s string) (string, error) {
 	key := strings.ToLower(strings.TrimSpace(s))
 	if key != "" && (utf8.RuneCountInString(key) == 1 || reservedToggleKeys[key]) {
 		// A plain character would stop you typing it into a session.
-		return "", fmt.Errorf("can't be %q (it's needed for typing or by deckhand); try ctrl+\\ or f3", s)
+		return "", fmt.Errorf("can't be %q (it's needed for typing or by deckhand); try f3, f2 or ctrl+\\", s)
 	}
 	return key, nil
 }

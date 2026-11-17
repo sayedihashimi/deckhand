@@ -10,9 +10,12 @@ import (
 var ctrlBackslash = tea.Key{Code: '\\', Mod: uv.ModCtrl}
 
 // WezTerm's win32-input-mode encoding of ctrl+\ delivers only the release.
-// A lone release of a ctrl/alt combination counts as the press.
+// A lone release of a ctrl/alt combination counts as the press. ctrl+\ is
+// no longer the default toggle key (F3 is), but it can be configured, and
+// the fallback covers any ctrl+symbol key.
 func TestLoneReleaseCountsAsPress(t *testing.T) {
 	t.Setenv("DECKHAND_HOME", t.TempDir())
+	withListOpts(t, listSettings{toggleKey: "ctrl+\\", statusLine: true})
 	m := testModel("api")
 	if tea.KeyPressMsg(ctrlBackslash).String() != listOpts.toggleKey {
 		t.Fatalf("test key %q isn't the toggle key %q", tea.KeyPressMsg(ctrlBackslash).String(), listOpts.toggleKey)
@@ -30,6 +33,7 @@ func TestLoneReleaseCountsAsPress(t *testing.T) {
 // A normal press and release acts once, on the press.
 func TestPressThenReleaseActsOnce(t *testing.T) {
 	t.Setenv("DECKHAND_HOME", t.TempDir())
+	withListOpts(t, listSettings{toggleKey: "ctrl+\\", statusLine: true})
 	m := testModel("api")
 	// NumLock is often on; the release must still match the press.
 	press := ctrlBackslash

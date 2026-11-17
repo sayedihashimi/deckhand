@@ -342,7 +342,7 @@ func TestE2EWTConfigScreen(t *testing.T) {
 	h.waitExit(10 * time.Second)
 }
 
-// The toggle key (ctrl+\ by default) hides and shows the session list when
+// The toggle key (F3 by default) hides and shows the session list when
 // Windows Terminal sends it as win32-input-mode records, in a session and in
 // the list.
 func TestE2EWTToggleList(t *testing.T) {
@@ -353,15 +353,14 @@ func TestE2EWTToggleList(t *testing.T) {
 	}
 	path := filepath.Dir(pwsh) + ";" + os.Getenv("SystemRoot") + `\System32`
 	h := startHarness(t, exe, wtEnv(t.TempDir(), path), t.TempDir())
-	res, _, _ := procVkKeyScan.Call(uintptr('\\'))
-	vkBackslash := int(res & 0xff)
-	toggle := func() { h.wtKey(vkBackslash, 0x1c, wtCtrl) }
+	const vkF3 = 0x72
+	toggle := func() { h.wtKey(vkF3, 0, 0) }
 	waitTop := func(shown bool) {
 		t.Helper()
 		deadline := time.Now().Add(3 * time.Second)
 		for time.Now().Before(deadline) {
 			top := strings.SplitN(h.screen(), "\n", 2)[0]
-			if strings.Contains(top, "deckhand") == shown && (shown || strings.Contains(top, `ctrl+\ list`)) {
+			if strings.Contains(top, "deckhand") == shown && (shown || strings.Contains(top, `F3 list`)) {
 				return
 			}
 			time.Sleep(100 * time.Millisecond)
@@ -377,7 +376,7 @@ func TestE2EWTToggleList(t *testing.T) {
 
 	toggle() // in the session
 	waitTop(false)
-	h.waitFor(`ctrl+\ show list`, 3*time.Second)
+	h.waitFor(`F3 show list`, 3*time.Second)
 	toggle()
 	waitTop(true)
 

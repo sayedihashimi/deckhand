@@ -27,14 +27,14 @@ func TestToggleListTermSize(t *testing.T) {
 	if w, h := m.termSize(); w != 120-m.sidebarWidth()-1 || h != 30 {
 		t.Fatalf("list shown: termSize = %d×%d", w, h)
 	}
-	// ctrl+\ by default, as the Windows console reports it.
-	toggle := tea.KeyPressMsg{Code: '\\', Mod: uv.ModCtrl | uv.ModNumLock}
+	// F3 by default, as the Windows console reports it (NumLock on).
+	toggle := tea.KeyPressMsg{Code: tea.KeyF3, Mod: uv.ModNumLock}
 	if toggle.String() != defaultToggleKey {
-		t.Fatalf("ctrl+\\ is %q", toggle.String())
+		t.Fatalf("F3 is %q", toggle.String())
 	}
 	m.handleKey(toggle)
 	if !m.listHidden {
-		t.Fatal("ctrl+\\ should hide the list")
+		t.Fatal("F3 should hide the list")
 	}
 	if w, h := m.termSize(); w != 120 || h != 30 {
 		t.Errorf("list hidden: termSize = %d×%d, want 120×30", w, h)
@@ -50,7 +50,7 @@ func TestToggleListTermSize(t *testing.T) {
 	m.focus = focusTerminal
 	m.handleKey(toggle)
 	if m.listHidden || m.focus != focusTerminal {
-		t.Errorf("ctrl+\\ in a session: hidden=%v focus=%v", m.listHidden, m.focus)
+		t.Errorf("F3 in a session: hidden=%v focus=%v", m.listHidden, m.focus)
 	}
 	if loadPrefs().ListHidden {
 		t.Error("shown state should be saved in prefs.json")
@@ -68,9 +68,9 @@ func TestToggleKeyFromConfig(t *testing.T) {
 	withListOpts(t, listSettings{toggleKey: "f2", statusLine: true})
 	m := testModel("api")
 	m.width, m.height = 120, 32
-	m.handleKey(tea.KeyPressMsg{Code: '\\', Mod: uv.ModCtrl})
+	m.handleKey(tea.KeyPressMsg{Code: tea.KeyF3})
 	if m.listHidden {
-		t.Fatal("ctrl+\\ shouldn't toggle when another key is configured")
+		t.Fatal("the default F3 shouldn't toggle when another key is configured")
 	}
 	k := tea.KeyPressMsg{Code: tea.KeyF2, Mod: uv.ModNumLock}
 	if k.String() != "f2" {
@@ -118,7 +118,7 @@ func TestStatusLineCounts(t *testing.T) {
 	if w, f := attentionCounts(m.sessions); w != 2 || f != 1 {
 		t.Errorf("attentionCounts = %d, %d; want 2, 1", w, f)
 	}
-	if got := ansi.Strip(m.statusLine()); got != `2 need you · 1 finished · ctrl+\ list ` {
+	if got := ansi.Strip(m.statusLine()); got != `2 need you · 1 finished · F3 list ` {
 		t.Errorf("statusLine = %q", got)
 	}
 }
@@ -135,7 +135,7 @@ func TestStatusLineInView(t *testing.T) {
 	m.width, m.height = 100, 20
 
 	row := headerRow(m)
-	if !strings.Contains(row, "deckhand") || strings.Contains(row, `ctrl+\ list`) {
+	if !strings.Contains(row, "deckhand") || strings.Contains(row, `F3 list`) {
 		t.Errorf("list shown: header row %q", row)
 	}
 
@@ -144,7 +144,7 @@ func TestStatusLineInView(t *testing.T) {
 	if strings.Contains(row, "deckhand") || strings.Contains(row, "│") {
 		t.Errorf("list hidden: the sidebar still shows: %q", row)
 	}
-	if !strings.HasSuffix(row, `1 need you · ctrl+\ list `) || !strings.HasPrefix(row, " ") || !strings.Contains(row, "api") {
+	if !strings.HasSuffix(row, `1 need you · F3 list `) || !strings.HasPrefix(row, " ") || !strings.Contains(row, "api") {
 		t.Errorf("list hidden: header row %q", row)
 	}
 	if n := ansi.StringWidth(row); n != 100 {
@@ -154,7 +154,7 @@ func TestStatusLineInView(t *testing.T) {
 	// status_line = false: the plain session header.
 	listOpts.statusLine = false
 	row = headerRow(m)
-	if strings.Contains(row, "need you") || strings.Contains(row, `ctrl+\ list`) || !strings.Contains(row, "api") {
+	if strings.Contains(row, "need you") || strings.Contains(row, `F3 list`) || !strings.Contains(row, "api") {
 		t.Errorf("status line off: header row %q", row)
 	}
 }
@@ -212,16 +212,16 @@ func TestFooterFitsWithToggleKey(t *testing.T) {
 	m := testModel("api")
 	for _, w := range []int{120, 200} {
 		f := ansi.Strip(m.renderFooter(w))
-		if !strings.Contains(f, `ctrl+\ list`) || !strings.Contains(f, "q quit") {
+		if !strings.Contains(f, `F3 list`) || !strings.Contains(f, "q quit") {
 			t.Errorf("width %d: footer %q", w, f)
 		}
 	}
 	m.focus = focusTerminal
-	if f := ansi.Strip(m.renderFooter(120)); !strings.Contains(f, `ctrl+\ hide list`) {
+	if f := ansi.Strip(m.renderFooter(120)); !strings.Contains(f, `F3 hide list`) {
 		t.Errorf("terminal footer %q", f)
 	}
 	m.listHidden = true
-	if f := ansi.Strip(m.renderFooter(120)); !strings.Contains(f, `ctrl+\ show list`) {
+	if f := ansi.Strip(m.renderFooter(120)); !strings.Contains(f, `F3 show list`) {
 		t.Errorf("terminal footer while hidden %q", f)
 	}
 

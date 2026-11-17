@@ -58,15 +58,15 @@ var helpGroups = []helpGroup{
 		{keys: "K", desc: "end it (it stays in the list)", match: []string{"K"}},
 		{keys: "x del", desc: "end and remove from the list", match: []string{"x", "delete"}},
 		// The toggle key is configurable ([list] toggle_key); withToggleKey
-		// shows the configured one in place of ctrl+\.
-		{keys: `ctrl+\`, desc: "hide / show this list", match: []string{defaultToggleKey, "ctrl+q", "ctrl+]"}, footer: `ctrl+\ list`},
+		// shows the configured one in place of F3.
+		{keys: "F3", desc: "hide / show this list", match: []string{defaultToggleKey, "ctrl+q", "ctrl+]"}, footer: "F3 list"},
 		{keys: "? F1", desc: "this help", match: []string{"?", "f1"}, footer: "? help"},
 		{keys: "q", desc: "quit; Claude sessions resume", match: []string{"q", "ctrl+c"}, footer: "q quit"},
 	}},
 	{helpTerminal, []helpEntry{
 		{keys: "ctrl+q ctrl+]", desc: "back to the list", match: []string{"ctrl+q", "ctrl+]"}, footer: "ctrl+q back to the list"},
 		{keys: "shift+PgUp/Dn", desc: "scroll back a page", match: []string{"shift+pgup", "shift+pgdown"}},
-		{keys: `ctrl+\`, desc: "hide / show the list", match: []string{defaultToggleKey}, footer: `ctrl+\ hide list`},
+		{keys: "F3", desc: "hide / show the list", match: []string{defaultToggleKey}, footer: "F3 hide list"},
 		{keys: "F1", desc: "this help", match: []string{"f1"}, footer: "F1 help"},
 	}},
 	{helpMouse, []helpEntry{
@@ -109,7 +109,7 @@ func footerHints(title string, short bool) string {
 }
 
 // withToggleKey puts the configured toggle key in place of the default
-// (ctrl+\) in a help text.
+// (F3) in a help text.
 func withToggleKey(s string) string {
 	return strings.ReplaceAll(s, keyLabel(defaultToggleKey), keyLabel(listOpts.toggleKey))
 }

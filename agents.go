@@ -249,7 +249,7 @@ const sampleConfig = `# deckhand agents: each [[agents]] entry shows up in the n
 # status_line shows how many sessions need you at the end of the header row.
 #
 # [list]
-# toggle_key  = 'ctrl+\'      # or "f2", "f3", ...
+# toggle_key  = "f3"          # the default; or "f2", 'ctrl+\', ...
 # status_line = true
 `
 
