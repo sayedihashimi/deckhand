@@ -50,6 +50,6 @@ jobs:
       - name: Unit tests
         run: go test ./...
 
-      # Drives deckhand in a real ConPTY; about a minute.
+      # Drives deckhand in a real ConPTY; about 4 minutes here.
       - name: E2E tests
-        run: go test -tags e2e -v
+        run: go test -tags e2e -v -timeout 20m
