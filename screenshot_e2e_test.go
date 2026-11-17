@@ -15,8 +15,9 @@ import (
 	"github.com/sayedihashimi/deckhand/internal/termshot"
 )
 
-// TestE2EScreenshot sets up a scripted scene (three fake Claude sessions in
-// different states, in git repos, plus an exited shell) and saves deckhand's
+// TestE2EScreenshot sets up a scripted scene (four fake Claude sessions in
+// different states, in git repos (one in a worktree, run from a notes
+// folder), plus an exited shell) and saves deckhand's
 // screen as a PNG, with the exited shell's restored output, the config
 // screen ("c") and the api session's diff preview ("d") below it. The PR
 // workflow posts it on each pull request.
@@ -98,6 +99,7 @@ event PreToolUse Bash | go test ./...
 `)
 	notes := filepath.Join(src, "notes")
 	_ = os.MkdirAll(notes, 0o755)
+	plans, cli, wt := worktreeScene(t, gitExe, src)
 
 	home := t.TempDir()
 	type saved struct {
@@ -108,13 +110,23 @@ event PreToolUse Bash | go test ./...
 		Created time.Time `json:"created"`
 		Claude  string    `json:"claude_session_id,omitempty"`
 		Started bool      `json:"started,omitempty"`
+
+		CodeRepo   string `json:"code_repo,omitempty"`
+		RepoRoot   string `json:"repo_root,omitempty"`
+		Worktree   string `json:"worktree,omitempty"`
+		Branch     string `json:"branch,omitempty"`
+		BaseBranch string `json:"base_branch,omitempty"`
 	}
 	now := time.Now()
 	list := []saved{
-		{"shot-api", "api", "claude", api, now, "11111111-1111-1111-1111-111111111111", true},
-		{"shot-docs", "docs", "claude", docs, now, "22222222-2222-2222-2222-222222222222", true},
-		{"shot-web", "web", "claude", web, now, "33333333-3333-3333-3333-333333333333", true},
-		{"shot-notes", "notes", "pwsh", notes, now, "", true},
+		{ID: "shot-api", Name: "api", Agent: "claude", Dir: api, Created: now, Claude: "11111111-1111-1111-1111-111111111111", Started: true},
+		{ID: "shot-docs", Name: "docs", Agent: "claude", Dir: docs, Created: now, Claude: "22222222-2222-2222-2222-222222222222", Started: true},
+		{ID: "shot-web", Name: "web", Agent: "claude", Dir: web, Created: now, Claude: "33333333-3333-3333-3333-333333333333", Started: true},
+		// A worktree session run from a notes folder that isn't git, on
+		// the cli repo: the sidebar shows the marker and the repo's name.
+		{ID: "shot-worktree", Name: "quiet-otter", Agent: "claude", Dir: plans, Created: now, Claude: "44444444-4444-4444-4444-444444444444", Started: true,
+			CodeRepo: cli, RepoRoot: cli, Worktree: wt, Branch: "quiet-otter", BaseBranch: "main"},
+		{ID: "shot-notes", Name: "notes", Agent: "pwsh", Dir: notes, Created: now, Started: true},
 	}
 	data, _ := json.Marshal(list)
 	if err := os.WriteFile(filepath.Join(home, "sessions.json"), data, 0o600); err != nil {
@@ -168,9 +180,9 @@ editor = 'code "{dir}"'
 	h := startHarnessSize(t, exe, env, src, 120, 32)
 
 	h.waitFor("notes", 10*time.Second)
-	// Start the three Claude sessions (resuming them), coming back to the
+	// Start the four Claude sessions (resuming them), coming back to the
 	// list after each.
-	for _, k := range []string{"3", "2", "1"} {
+	for _, k := range []string{"4", "3", "2", "1"} {
 		h.send(k)
 		time.Sleep(700 * time.Millisecond)
 		h.send("\x11")
@@ -178,6 +190,7 @@ editor = 'code "{dir}"'
 	h.waitFor("claude · Bash: npm test", 15*time.Second) // needs you: the command
 	h.waitFor("claude · Updated the", 15*time.Second)    // finished: the reply
 	h.waitFor("opus 5.5", 10*time.Second)
+	h.waitFor("⎇ cli:quiet-otter", 10*time.Second)
 	time.Sleep(3500 * time.Millisecond) // let every session's git details arrive
 
 	scene := screenFromEmulator(h.emu)
@@ -185,13 +198,13 @@ editor = 'code "{dir}"'
 
 	// The exited shell selected: its saved output, restored after the
 	// restart.
-	h.send("\x1b[B\x1b[B\x1b[B")
+	h.send("\x1b[B\x1b[B\x1b[B\x1b[B")
 	h.waitFor("last output · saved 2h ago", 5*time.Second)
 	h.waitFor("planning-review.md", 3*time.Second)
 	time.Sleep(300 * time.Millisecond)
 	restored := screenFromEmulator(h.emu)
 	t.Logf("restored output:\n%s", h.screen())
-	h.send("\x1b[A\x1b[A\x1b[A")
+	h.send("\x1b[A\x1b[A\x1b[A\x1b[A")
 	h.waitGone("last output", 3*time.Second)
 
 	// The config screen, with the second agent selected.
@@ -272,6 +285,42 @@ editor = 'code "{dir}"'
 	h.send("q")
 	h.send("y")
 	h.waitExit(10 * time.Second)
+}
+
+// worktreeScene makes the cli repo with a worktree, quiet-otter, that has
+// one commit more than main, and a notes folder (plans) whose fake Claude
+// works on it.
+func worktreeScene(t *testing.T, gitExe, src string) (plans, cli, wt string) {
+	t.Helper()
+	run := func(dir string, args ...string) {
+		full := append([]string{"-C", dir, "-c", "user.name=Dev", "-c", "user.email=dev@example.com", "-c", "commit.gpgsign=false"}, args...)
+		if out, err := exec.Command(gitExe, full...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	cli = filepath.Join(src, "cli")
+	wt = filepath.Join(src, "cli-wt", "quiet-otter")
+	plans = filepath.Join(src, "plans")
+	for _, d := range []string{cli, plans} {
+		_ = os.MkdirAll(d, 0o755)
+	}
+	run(src, "init", "-q", "-b", "main", cli)
+	_ = os.WriteFile(filepath.Join(cli, "upload.go"), []byte("package cli\n"), 0o644)
+	run(cli, "add", ".")
+	run(cli, "commit", "-q", "-m", "Add the upload client")
+	run(cli, "worktree", "add", "-q", "-b", "quiet-otter", wt, "main")
+	_ = os.WriteFile(filepath.Join(wt, "upload.go"), []byte("package cli\n\n// Retry failed uploads.\n"), 0o644)
+	run(wt, "commit", "-q", "-am", "Retry failed uploads")
+	_ = os.WriteFile(filepath.Join(plans, "hookapp.txt"), []byte(`sleep 800
+event SessionStart
+reply 64100 Added retries to the upload client, committed on quiet-otter.
+say \e[1m> add retries to the upload client\e[0m
+event UserPromptSubmit
+event PreToolUse Edit | upload.go
+event PostToolUse Edit
+event Stop
+`), 0o644)
+	return plans, cli, wt
 }
 
 // apiWork gives the api repo some history for the diff preview: login.ts

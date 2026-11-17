@@ -281,21 +281,27 @@ func infoLine(s *Session, sn snapshot, w int) string {
 		}
 		return stMuted.Render(shortDir(s.Dir, w))
 	}
-	room := max(w, 2)
-	if tail != "" {
-		room = max(w-ansi.StringWidth(tail)-3, 4)
+	room := func() int {
+		if tail == "" {
+			return max(w, 2)
+		}
+		return max(w-ansi.StringWidth(tail)-3, 4)
 	}
-	// The branch is cut first, then the repo name.
+	// With the code repo's name too, the model goes first when there's
+	// little room, then the branch is cut, then the repo name.
 	head := ansi.StringWidth(mark + repo)
-	if head > room-4 {
-		if n := room - 4 - ansi.StringWidth(mark); n >= 2 {
+	if repo != "" && in.model != "" && room()-head < 8 {
+		tail = strings.TrimPrefix(strings.TrimPrefix(tail, shortModel(in.model)), " · ")
+	}
+	if head > room()-4 {
+		if n := room() - 4 - ansi.StringWidth(mark); n >= 2 {
 			repo = clip(repo, n)
 		} else {
 			repo = ""
 		}
 		head = ansi.StringWidth(mark + repo)
 	}
-	line := stBranch.Render(mark) + stMuted.Render(repo) + stBranch.Render(clip(branch, max(room-head, 2)))
+	line := stBranch.Render(mark) + stMuted.Render(repo) + stBranch.Render(clip(branch, max(room()-head, 2)))
 	if tail == "" {
 		return line
 	}

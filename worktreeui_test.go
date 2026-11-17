@@ -108,6 +108,15 @@ func TestSnapshotWorktreeLabel(t *testing.T) {
 	if got := ansi.Strip(infoLine(s, sn, 12)); !strings.HasPrefix(got, "⎇ api:") || ansi.StringWidth(got) > 12 {
 		t.Errorf("narrow info line %q", got)
 	}
+	// With Claude's model and context: the model goes before the repo name.
+	s.info.model, s.info.ctxTokens = "claude-opus-5-5", 64100
+	if got := ansi.Strip(infoLine(s, s.Snapshot(), 26)); got != "⎇ api:quiet-otter↑2 · 64k" {
+		t.Errorf("info line with a model %q", got)
+	}
+	if got := ansi.Strip(infoLine(s, s.Snapshot(), 40)); got != "⎇ api:quiet-otter↑2 · opus 5.5 · 64k" {
+		t.Errorf("wide info line %q", got)
+	}
+	s.info.model, s.info.ctxTokens = "", 0
 	// In the repo itself: no repo name.
 	s.Dir = `C:\src\api-wt\quiet-otter`
 	if got := ansi.Strip(infoLine(s, s.Snapshot(), 26)); got != "⎇ quiet-otter↑2" {
