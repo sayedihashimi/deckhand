@@ -45,7 +45,7 @@ The third line under each session shows the git branch, then for Claude the mode
 ▌    feature/login*↑2 · opus 5.5 · 84k
 ```
 
-- **Branch:** `*` means uncommitted changes (untracked files count), `↑2↓1` is commits ahead of and behind the upstream. Outside a git repo the line shows the folder.
+- **Branch:** `*` means uncommitted changes (untracked files count), `↑2↓1` is commits ahead of and behind the upstream (for a worktree session, the branch it started from). `⎇` marks a worktree session. Outside a git repo the line shows the folder.
 - **Model and context:** read from the end of the Claude transcript. The number is the input tokens of the latest reply, including cached ones, which is how much context the next turn starts with. deckhand can't tell the model's context window from the transcript, so it shows tokens rather than a percentage.
 - Details refresh every 3 s for running and selected sessions and every 30 s for the rest, in the background. The session header shows them in full.
 
@@ -84,13 +84,14 @@ Press `?` in the session list, or `F1` anywhere (also inside a session), for a s
 | shift+PgUp / shift+PgDn | Scroll an exited session's output a page at a time |
 | d | Preview the session's changes as a diff against the default branch (see [Diff preview](#diff-preview)) |
 | n | New session (see below) |
-| o | Open the session's folder in your editor (see [Opening a session's folder](#opening-a-sessions-folder)) |
+| W | Start a new worktree session with the same agent and repo, right below the selected one (see [Worktree sessions](#worktree-sessions)) |
+| o | Open the session's folder (its worktree, if it has one) in your editor (see [Opening a session's folder](#opening-a-sessions-folder)) |
 | O | Open the session's folder in Explorer |
-| t | Open a new Windows Terminal tab in the session's folder |
+| t | Open a new Windows Terminal tab in the session's folder (its worktree, if it has one) |
 | r | Rename the session |
 | c | Config screen: agents, notifications, the session list, history and open commands (see [The config screen](#the-config-screen)) |
 | K | End the session's process (it stays in the list) |
-| x (or delete) | End and remove the session |
+| x (or delete) | End and remove the session. For a worktree session, its worktree and branch are removed too if the work is merged; otherwise you choose (see [Worktree sessions](#worktree-sessions)) |
 | F3 | Hide or show the session list (see [Hiding the session list](#hiding-the-session-list)) |
 | ? or F1 | Show the keys |
 | q | Quit (Claude sessions can be resumed next time) |
@@ -122,13 +123,16 @@ The folder box lists matching folders as you type. Recent folders come first, th
 | Key | Action |
 |---|---|
 | tab | Complete the highlighted (or best) match and list its subfolders |
-| ↑/↓ | Choose from the list (↑ from the top moves to the agent row) |
+| ↑/↓ | Choose from the list (↑ from the top moves to the row above, ↓ past the bottom to the row below) |
 | ctrl+w | Up one level |
-| shift+tab | Switch to the agent row, then ←/→ to change agent |
+| shift+tab | Back a row (to the agent row, then ←/→ to change agent) |
+| ctrl+t | Turn the worktree on or off (when there's a git repo; see [Worktree sessions](#worktree-sessions)) |
 | enter | Start the session (with an empty box: the current folder) |
 | esc | Cancel |
 
-The last agent you used is preselected. Sessions are named after their folder; press `r` to rename one.
+When the folder isn't in a git repo, a **Repo** row lets you pick a code repo for the session, and when there's a repo, a **Worktree** line turns on a worktree for it (see [Worktree sessions](#worktree-sessions)).
+
+The last agent you used is preselected. Sessions are named after their folder (worktree sessions after their branch); press `r` to rename one.
 
 ## The config screen
 
@@ -176,11 +180,58 @@ A `command` agent that is a program or `.cmd` file gets the extra arguments on i
 
 Press `d` in the session list to see what the selected session changed, without leaving deckhand. It's read-only and works whether the session is running or not.
 
-- **What it compares:** the session folder's work tree against the merge base with the repo's default branch, so it shows the branch's commits plus staged, unstaged and untracked changes. The default branch is `origin/HEAD`, then `origin/main` or `origin/master`, then (with no remote) the local `main` or `master`. deckhand doesn't fetch first, so the base is as recent as your last fetch. With no default branch it shows only uncommitted changes, and in a repo with no commits everything is new.
+- **What it compares:** the session's work tree (its worktree, or its code repo when it was started from a notes folder) against the merge base with the repo's default branch, so it shows the branch's commits plus staged, unstaged and untracked changes. The default branch is `origin/HEAD`, then `origin/main` or `origin/master`, then (with no remote) the local `main` or `master`. deckhand doesn't fetch first, so the base is as recent as your last fetch. With no default branch it shows only uncommitted changes, and in a repo with no commits everything is new.
 - **Layout:** a summary (`2 files changed +83 −1 vs origin/main (merge base b01a2cc)`), the files with their status (`M`, `A`, `D`, `R`, `?` for untracked) and `+`/`−` counts, then each file's hunks in colour. Untracked files show as added; binary files are listed without content.
 - **Keys:** `↑/↓` (or `j/k`), `PgUp/PgDn`, `home/end` and the mouse wheel scroll; `n` and `N` jump to the next and previous file; `esc` (or `d`, `q`) closes it.
 - **Big diffs:** at most 2 MB of `git diff` output and 30,000 lines are shown, and untracked files are cut at 1,000 lines (64 KB) each, 200 files in all. A note says when something was left out.
 - A session whose folder isn't in a git repo gets a message saying so.
+
+## Worktree sessions
+
+A session can run in its own git worktree, on its own branch, so several agents can work on one repo at once without changing each other's files.
+
+**Creating one**
+
+- In the new-session dialog, a **Worktree** line shows up when git is involved: the folder is in a git repo, or you pick a code repo (below). Turn it on with `ctrl+t`, or move to it (↓ past the folder suggestions) and use ←/→ or space.
+- `W` in the list starts a new worktree session right below the selected one, with its agent and repo, the way shift+enter does for a plain session.
+- deckhand finds the repo's main checkout (even when the folder is itself a worktree), reads the default branch from `origin/HEAD` (then `main`, then `master`), runs `git fetch origin <default>` and then `git worktree add -b <name> <repo>-wt\<name> origin/<default>`. Offline, it starts from the local default branch and says so. The new branch doesn't track the default branch, so a later push can't go to it by mistake.
+- The name is two readable words, such as `quiet-otter`, not used by a branch or folder yet. The branch, the folder and the session share it. `r` renames only the session.
+- If you picked a subfolder of the repo, the agent starts in the same subfolder of the worktree.
+- The steps (and the setup command's output) show in the main pane while it works. If the setup command fails, it says so; press enter to start the agent anyway.
+
+**A notes folder with a separate code repo**
+
+You can run Claude from a folder that isn't a git repo, such as your notes, while the session works on a code repo somewhere else. When the folder isn't in git, the dialog has a **Repo** row: type or pick the code repo (with the same completions). deckhand remembers the code repo for each folder and fills it in next time.
+
+- The agent still starts in the notes folder.
+- **Claude** gets `--add-dir <worktree>` and an `--append-system-prompt` telling it to make code changes for that repo in the worktree, on its branch, and not in the main checkout. Resume passes them again.
+- **Custom agents** (`type = "claude"`, such as a PowerShell function around claude) get both through the same session-only `claude` function that adds the hooks. Your script isn't changed.
+- **Other CLIs** get `DECKHAND_WORKTREE` and `DECKHAND_BRANCH` in their environment (every agent in a worktree session gets these).
+- The branch line and the diff preview use the code repo's worktree, never the notes folder.
+- **A code repo without a worktree** (the worktree line off) works too. Claude gets `--add-dir <repo>` and a short `--append-system-prompt` saying the session works on that repo and may edit it there (through the shim for custom agents, and again on resume), and the branch line shows the repo's checkout.
+
+**Showing**
+
+- The third line under the session starts with `⎇`, and with the code repo's name when it isn't the session's folder: `⎇ cli:quiet-otter↑1 · 64k`. Ahead/behind is counted against the branch it started from, not an upstream.
+- `O` opens the session's folder; `o` (editor) and `t` (terminal) open the worktree.
+- The repo, worktree, branch, base branch and base commit are saved with the session, so resume and the restored output keep working.
+
+**Closing (`x`)**
+
+After you confirm (a running agent is stopped first), deckhand fetches and checks whether the work is merged: the branch tip is in `origin/<default>`, or GitHub (`gh pr view`) has a merged pull request whose head is the branch tip. The second check catches squash merges, which git can't see.
+
+- **Merged, and nothing uncommitted:** `git worktree remove`, then the local branch and the branch on `origin` are deleted.
+- **Otherwise** (including merged with uncommitted files): a warning lists the uncommitted files, the commits that aren't on the default branch and the PR state. Press `k` to keep the worktree and branch and remove only the session, `D` to delete anyway (the worktree with its uncommitted files, and the local branch; the branch on origin is kept), or `esc` to cancel. The `D` line says how many commits aren't on the default branch and whether they'll be lost: they are when the branch isn't on origin, or origin's copy is at another commit.
+- Only a worktree of that repo is ever removed, never the main checkout or the session's start folder.
+
+```toml
+[worktree]
+root  = "{repo}-wt"   # where worktrees go; {repo} is the main checkout. A relative path is next to the repo
+base  = ""            # the branch to start from; default: the repo's default branch
+setup = ""            # run in each new worktree before the agent starts, e.g. "npm ci"
+```
+
+The setup command runs in PowerShell (`pwsh`, else Windows PowerShell, else `cmd /c`) in the worktree's folder. The config screen doesn't edit `[worktree]` yet, but keeps it when it saves.
 
 ## Hiding the session list
 

@@ -41,11 +41,12 @@ const (
 )
 
 // gitDir is the folder whose git repo the diff preview (and later the PR
-// and merge) use. For now it's the session's folder.
+// and merge) use: the session's worktree, else its code repo, else its
+// folder. A notes start folder with a code repo is never used.
 func (s *Session) gitDir() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.Dir
+	return s.gitDirLocked()
 }
 
 // diffFile is one file's part of a diff.

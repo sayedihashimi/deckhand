@@ -35,7 +35,15 @@ func loadSessions() []*Session {
 	return out
 }
 
-func saveSessions(list []*Session) error {
+func saveSessions(all []*Session) error {
+	// A session whose worktree is still being made isn't saved: after a
+	// restart it would start without one.
+	list := make([]*Session, 0, len(all))
+	for _, s := range all {
+		if !s.creating.Load() {
+			list = append(list, s)
+		}
+	}
 	for _, s := range list {
 		s.mu.Lock()
 	}

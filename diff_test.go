@@ -389,3 +389,41 @@ func TestGitDir(t *testing.T) {
 		t.Errorf("gitDir = %q", s.gitDir())
 	}
 }
+
+// A notes start folder that isn't git, with a code repo and a worktree:
+// the diff is the worktree's, never the notes folder's.
+func TestDiffNotesFolder(t *testing.T) {
+	clone := testRepo(t)
+	w, err := createWorktree(worktreeConfig{}, clone, func(string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitFile(t, w.path, "feature.txt", "new\n")
+	write(t, filepath.Join(w.path, "wip.txt"), "wip\n")
+	notes := t.TempDir()
+	write(t, filepath.Join(notes, "plan.md"), "notes\n")
+
+	s := &Session{Name: w.branch, Dir: notes, CodeRepo: clone, RepoRoot: w.repoRoot, Worktree: w.path, Branch: w.branch}
+	if s.gitDir() != w.path {
+		t.Fatalf("gitDir = %q, want the worktree", s.gitDir())
+	}
+	m := &model{sessions: []*Session{s}}
+	msg := m.openDiff()().(diffLoadedMsg)
+	res := msg.res
+	if res.notGit || res.err != "" || res.dir != w.path {
+		t.Fatalf("loadDiff: %+v", res)
+	}
+	var paths []string
+	for _, f := range res.files {
+		paths = append(paths, f.path)
+	}
+	if strings.Join(paths, ",") != "feature.txt,wip.txt" {
+		t.Errorf("files %q, want the worktree's commit and change", paths)
+	}
+
+	// A code repo without a worktree: its checkout.
+	s = &Session{Dir: notes, CodeRepo: clone, RepoRoot: clone}
+	if s.gitDir() != clone {
+		t.Errorf("gitDir = %q, want the code repo", s.gitDir())
+	}
+}

@@ -165,7 +165,7 @@ func (m *model) renderSidebar(w, h int) []string {
 			detailStyle = stMuted.Bold(true)
 		}
 		row2 := fit("     "+stMuted.Render(s.Agent+" · ")+detailStyle.Render(detail), w)
-		row3 := fit("     "+infoLine(s, sn.info, w-6), w)
+		row3 := fit("     "+infoLine(s, sn, w-6), w)
 
 		if selected {
 			marker := lipgloss.NewStyle().Foreground(colAccent).Render("▌")
@@ -174,7 +174,7 @@ func (m *model) renderSidebar(w, h int) []string {
 			}
 			row1 = marker + onBackground(fit(left, w-len(age)-2)+stMuted.Render(age)+" ", selBgSeq)
 			row2 = marker + onBackground(fit("    "+stMuted.Render(s.Agent+" · ")+detailStyle.Render(detail), w-1), selBgSeq)
-			row3 = marker + onBackground(fit("    "+infoLine(s, sn.info, w-6), w-1), selBgSeq)
+			row3 = marker + onBackground(fit("    "+infoLine(s, sn, w-6), w-1), selBgSeq)
 		}
 		lines = append(lines, row1, row2, row3)
 	}
@@ -240,11 +240,32 @@ const rowsPerSession = 3
 
 var stBranch = lipgloss.NewStyle().Foreground(lipgloss.Color("#BB9AF7"))
 
+// worktreeMark comes before the branch of a session with its own worktree.
+const worktreeMark = "⎇ "
+
+// branchLabel is the branch with its markers, for the sidebar and header:
+// the worktree mark, and the code repo's name when it isn't the start
+// folder's ("⎇ api:quiet-otter↑2").
+func branchLabel(sn snapshot) (mark, repo, branch string) {
+	branch = gitLabel(sn.info.git)
+	if branch == "" {
+		return "", "", ""
+	}
+	if sn.worktree {
+		mark = worktreeMark
+	}
+	if sn.repoName != "" {
+		repo = sn.repoName + ":"
+	}
+	return mark, repo, branch
+}
+
 // infoLine is a session's third sidebar line: the git branch, then the
 // Claude model and context size ("main* · opus 5.5 · 84k"). The branch is
 // shortened first so the model and context stay visible. Outside git and
 // Claude it's the folder.
-func infoLine(s *Session, in sessionInfo, w int) string {
+func infoLine(s *Session, sn snapshot, w int) string {
+	in := sn.info
 	var right []string
 	if in.model != "" {
 		right = append(right, shortModel(in.model))
@@ -253,21 +274,38 @@ func infoLine(s *Session, in sessionInfo, w int) string {
 		right = append(right, shortTokens(in.ctxTokens))
 	}
 	tail := strings.Join(right, " · ")
-	branch := gitLabel(in.git)
+	mark, repo, branch := branchLabel(sn)
 	if branch == "" {
 		if tail != "" {
 			return stMuted.Render(tail)
 		}
 		return stMuted.Render(shortDir(s.Dir, w))
 	}
+	room := func() int {
+		if tail == "" {
+			return max(w, 2)
+		}
+		return max(w-ansi.StringWidth(tail)-3, 4)
+	}
+	// With the code repo's name too, the model goes first when there's
+	// little room, then the branch is cut, then the repo name.
+	head := ansi.StringWidth(mark + repo)
+	if repo != "" && in.model != "" && room()-head < 8 {
+		tail = strings.TrimPrefix(strings.TrimPrefix(tail, shortModel(in.model)), " · ")
+	}
+	if head > room()-4 {
+		if n := room() - 4 - ansi.StringWidth(mark); n >= 2 {
+			repo = clip(repo, n)
+		} else {
+			repo = ""
+		}
+		head = ansi.StringWidth(mark + repo)
+	}
+	line := stBranch.Render(mark) + stMuted.Render(repo) + stBranch.Render(clip(branch, max(room()-head, 2)))
 	if tail == "" {
-		return stBranch.Render(clip(branch, max(w, 2)))
+		return line
 	}
-	room := w - ansi.StringWidth(tail) - 3
-	if room < 4 {
-		room = 4
-	}
-	return stBranch.Render(clip(branch, room)) + stMuted.Render(" · "+tail)
+	return line + stMuted.Render(" · "+tail)
 }
 
 // shortDir shows a folder in w cells, keeping its end ("…\src\api").
@@ -286,6 +324,9 @@ func shortDir(dir string, w int) string {
 func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 	if m.cfg != nil {
 		return m.renderConfig(w, h), nil
+	}
+	if m.closing != nil {
+		return m.renderClose(w, h), nil
 	}
 	if m.diff != nil {
 		return m.renderDiffView(w, h), nil
@@ -352,8 +393,8 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 		// apply, and the rest of the header often gets cut off.
 		header += lipgloss.NewStyle().Foreground(colWorking).Render("  " + label)
 	}
-	if b := gitLabel(sn.info.git); b != "" {
-		header += "  " + stBranch.Render(b)
+	if mark, repo, b := branchLabel(sn); b != "" {
+		header += "  " + stBranch.Render(mark) + stMuted.Render(repo) + stBranch.Render(b)
 	}
 	if sn.info.model != "" {
 		header += stMuted.Render("  " + shortModel(sn.info.model) + " · " + shortTokens(sn.info.ctxTokens) + " context")
@@ -364,6 +405,12 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 		header += stMuted.Render("  · " + strings.Join(sn.reply, " "))
 	}
 	header += stMuted.Render("  " + s.Dir)
+	if sn.worktree && sn.repoName != "" {
+		s.mu.Lock()
+		wt := s.Worktree
+		s.mu.Unlock()
+		header += stMuted.Render("  worktree " + wt)
+	}
 	switch {
 	case label != "":
 	case !sn.running && sn.exitInfo != "":
@@ -395,6 +442,13 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 	}
 
 	emu := s.Emulator()
+	if prep := s.PrepLog(); emu == nil && len(prep) > 0 {
+		lines = append(lines, renderPrep(prep, w, h-1)...)
+		for len(lines) < h {
+			lines = append(lines, strings.Repeat(" ", w))
+		}
+		return lines[:h], nil
+	}
 	if emu == nil {
 		msg := "  Not running. Press enter to start it, or shift+enter to start a new one."
 		if a, ok := agentByName(s.Agent); ok && a.CanResume() && s.Started {
@@ -488,8 +542,64 @@ func (m *model) renderDialog(w int) []string {
 		"",
 		fit(" "+label(fieldFolder, "Folder")+"  "+d.dir.View(), w),
 	}
+	if d.field != fieldRepo {
+		out = append(out, m.renderSuggestions(w)...)
+	}
+	if d.showRepo() {
+		out = append(out, "", fit(" "+label(fieldRepo, "Repo  ")+"  "+d.repo.View(), w))
+		if d.field == fieldRepo {
+			out = append(out, m.renderSuggestions(w)...)
+		}
+	}
+	repo := d.gitRepo()
+	if repo != "" {
+		on := lipgloss.NewStyle().Reverse(true).Render(" on ") + stMuted.Render("  off ")
+		if !d.worktree {
+			on = stMuted.Render(" on  ") + lipgloss.NewStyle().Reverse(true).Render(" off ")
+		}
+		if d.field == fieldWorktree {
+			on = lipgloss.NewStyle().Foreground(colAccent).Render(on)
+		}
+		what := stMuted.Render("  same folder, no new branch")
+		if d.worktree {
+			what = stMuted.Render("  a new branch and folder for ") + sessionName(repo) + stMuted.Render(" (ctrl+t)")
+		} else {
+			what += stMuted.Render(" (ctrl+t)")
+		}
+		out = append(out, "", fit(" "+label(fieldWorktree, "Worktree")+" "+on+what, w))
+	}
 
-	// Suggestions, indented under the input.
+	// Exactly where the session will start.
+	target := d.target()
+	mark := lipgloss.NewStyle().Foreground(colIdle).Render("✓")
+	if fi, err := os.Stat(target); err != nil || !fi.IsDir() {
+		mark = lipgloss.NewStyle().Foreground(colError).Render("✗ not found")
+	}
+	out = append(out, "", fit(stMuted.Render("   Start in  ")+target+"  "+mark, w))
+	if r := d.repoTarget(); d.showRepo() && r != "" {
+		rmark := lipgloss.NewStyle().Foreground(colIdle).Render("✓")
+		if !isDir(r) || !inGitRepo(r) {
+			rmark = lipgloss.NewStyle().Foreground(colError).Render("✗ not a git repo")
+		}
+		out = append(out, fit(stMuted.Render("   Code repo ")+r+"  "+rmark, w))
+	}
+	if d.useWorktree() {
+		out = append(out, fit(stMuted.Render("   Worktree  in ")+worktreeRoot(worktreeSettings, repoRootGuess(repo))+stMuted.Render(`\<new name>`), w))
+	}
+	out = append(out, "",
+		fit(stMuted.Render("   tab complete · ↑↓ choose · ctrl+w up a level · ctrl+t worktree · shift+tab back · enter start · esc cancel"), w),
+	)
+	if d.err != "" {
+		out = append(out, "", fit(lipgloss.NewStyle().Foreground(colError).Render("   "+d.err), w))
+	}
+	return out
+}
+
+// renderSuggestions lists the focused picker's matching folders, indented
+// under it.
+func (m *model) renderSuggestions(w int) []string {
+	d := m.dialog
+	var out []string
 	const indent = "             "
 	if len(d.sugg) == 0 {
 		out = append(out, fit(stMuted.Render(indent+"no matching folders"), w))
@@ -519,27 +629,15 @@ func (m *model) renderDialog(w int) []string {
 		}
 		out = append(out, fit(style.Render(line)+stMuted.Render(tag), w))
 	}
-
-	// Exactly where the session will start.
-	target := d.target()
-	mark := lipgloss.NewStyle().Foreground(colIdle).Render("✓")
-	if fi, err := os.Stat(target); err != nil || !fi.IsDir() {
-		mark = lipgloss.NewStyle().Foreground(colError).Render("✗ not found")
-	}
-	out = append(out, "",
-		fit(stMuted.Render("   Start in  ")+target+"  "+mark, w),
-		"",
-		fit(stMuted.Render("   tab complete · ↑↓ choose · ctrl+w up a level · shift+tab agent · enter start · esc cancel"), w),
-	)
-	if d.err != "" {
-		out = append(out, "", fit(lipgloss.NewStyle().Foreground(colError).Render("   "+d.err), w))
-	}
 	return out
 }
 
 func (m *model) renderFooter(w int) string {
 	if m.confirm != nil {
 		return fit(stWaitText.Render(" "+m.confirm.text), w)
+	}
+	if m.closing != nil {
+		return fit(stWaitText.Render(" k keep the worktree · D delete anyway · esc cancel"), w)
 	}
 	if m.rename != nil {
 		return fit(m.rename.View()+stMuted.Render("   enter save · esc cancel"), w)

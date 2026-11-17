@@ -48,6 +48,7 @@ type model struct {
 	agents   []Agent
 	dialog   *newDialog
 	confirm  *confirmPrompt
+	closing  *closePrompt // x's warning for a worktree session that isn't merged
 	rename   *textinput.Model
 	flash    string
 
@@ -159,6 +160,19 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.resizeAll()
+		return m, nil
+
+	case worktreeCreatedMsg:
+		return m, m.worktreeCreated(msg)
+
+	case worktreeSetupMsg:
+		return m, m.worktreeSetupDone(msg)
+
+	case closeCheckedMsg:
+		return m, m.closeChecked(msg)
+
+	case closeDoneMsg:
+		m.closeDone(msg)
 		return m, nil
 
 	case profileCommandsMsg:
@@ -304,6 +318,10 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, c.action(m)
 		}
 		return m, nil
+	}
+
+	if m.closing != nil {
+		return m, m.closeKey(key)
 	}
 
 	// F1 opens the help from anywhere, so it never reaches the agent.
@@ -457,6 +475,8 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		// alt+enter is ESC CR: terminals with shift+enter remapped to send
 		// it (a common setup for Claude Code) deliver shift+enter this way.
 		return m, m.startLikeSelected()
+	case "W":
+		return m, m.worktreeLikeSelected()
 	case "tab":
 		m.jumpToAttention()
 	case "v":
@@ -498,7 +518,11 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, m.rename.Focus()
 		}
 	case "x", "delete":
-		if s := m.current(); s != nil {
+		if s := m.current(); s != nil && s.hasWorktree() {
+			m.closeWorktreeSession(s)
+		} else if s != nil && s.preparing.Load() {
+			m.setFlash("Still creating its worktree; wait for it to finish")
+		} else if s != nil {
 			name := s.Name
 			text := fmt.Sprintf("Remove %q from the list? y/n", name)
 			if s.Running() {
@@ -572,7 +596,7 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		m.diffMouse(msg)
 		return nil
 	}
-	if m.focus == focusDialog || m.focus == focusConfig || m.rename != nil || m.confirm != nil || m.filterInput != nil {
+	if m.focus == focusDialog || m.focus == focusConfig || m.rename != nil || m.confirm != nil || m.closing != nil || m.filterInput != nil {
 		return nil
 	}
 
@@ -670,6 +694,9 @@ func (m *model) openSelected() tea.Cmd {
 	if s == nil {
 		return nil
 	}
+	if s.preparing.Load() {
+		return nil // its worktree log shows until the agent starts
+	}
 	if !s.Running() {
 		w, h := m.termSize()
 		resume := s.Started // Start ignores it for agents that can't resume
@@ -738,6 +765,9 @@ func (m *model) openFolder(target openTarget) {
 	}
 	s.mu.Lock()
 	dir := s.Dir
+	if target != openExplorer && s.Worktree != "" {
+		dir = s.Worktree // the editor and the terminal open the worktree
+	}
 	s.mu.Unlock()
 	var tmpl string
 	fallback := false
@@ -760,18 +790,9 @@ func (m *model) openFolder(target openTarget) {
 }
 
 func (m *model) removeSelected() {
-	s := m.current()
-	if s == nil {
-		return
+	if s := m.current(); s != nil {
+		m.removeSession(s)
 	}
-	s.Kill()
-	removeSessionFiles(s.ID)
-	m.sessions = append(m.sessions[:m.sel], m.sessions[m.sel+1:]...)
-	if m.sel >= len(m.sessions) && m.sel > 0 {
-		m.sel--
-	}
-	m.keepSelectionVisible()
-	_ = saveSessions(m.sessions)
 }
 
 // applyFilterInput filters the list as the filter is typed.
@@ -835,8 +856,38 @@ func (m *model) createFromDialog() tea.Cmd {
 		d.err = "Folder not found: " + dir
 		return nil
 	}
+	codeRepo := ""
+	if !inGitRepo(dir) {
+		if r := d.repoTarget(); r != "" {
+			if !isDir(r) || !inGitRepo(r) {
+				d.err = "Not a git repo: " + r
+				return nil
+			}
+			codeRepo = r
+		}
+	}
 	agent := d.agents[d.agentIdx]
+	remember := func() {
+		p := loadPrefs()
+		p.useDir(dir)
+		p.LastAgent = agent.Name
+		if !inGitRepo(dir) {
+			p.setCodeRepo(dir, codeRepo)
+		}
+		_ = p.save()
+	}
+	if d.useWorktree() {
+		m.dialog = nil
+		remember()
+		return m.startWorktreeSession(agent, dir, codeRepo, len(m.sessions))
+	}
 	s := newSession(agent, dir, sessionName(dir))
+	if codeRepo != "" {
+		s.CodeRepo = codeRepo
+		if r, err := findRepo(codeRepo); err == nil {
+			s.RepoRoot = r.root
+		}
+	}
 	w, h := m.termSize()
 	if err := s.Start(w, h, false, m.dirty); err != nil {
 		d.err = err.Error()
@@ -848,11 +899,7 @@ func (m *model) createFromDialog() tea.Cmd {
 	m.dialog = nil
 	m.focus = focusTerminal
 	_ = saveSessions(m.sessions)
-
-	p := loadPrefs()
-	p.useDir(dir)
-	p.LastAgent = agent.Name
-	_ = p.save()
+	remember()
 	return nil
 }
 
@@ -900,15 +947,20 @@ func toUVKey(k tea.KeyPressMsg) uv.KeyPressEvent {
 
 // New-session dialog --------------------------------------------------------
 //
-// Two rows: the agent (←/→ to change) and a folder picker. The picker lists
-// matching folders as you type, recent ones first; tab completes like
-// PowerShell, ↑/↓ choose, ctrl+w goes up a level, enter starts.
+// Rows: the agent (←/→ to change) and a folder picker, then, when git is
+// involved, a code repo picker (only when the folder isn't in git) and the
+// worktree line. The pickers list matching folders as you type, recent ones
+// first; tab completes like PowerShell, ↑/↓ choose (↓ past the last one
+// goes to the next row), ctrl+w goes up a level, ctrl+t turns the worktree
+// on or off, enter starts.
 
 const maxFolderSuggestions = 8
 
 const (
 	fieldAgent = iota
 	fieldFolder
+	fieldRepo     // the code repo, when the folder isn't in git
+	fieldWorktree // worktree on/off, when there's a repo
 )
 
 type newDialog struct {
@@ -916,11 +968,15 @@ type newDialog struct {
 	agentIdx int
 	field    int
 	dir      textinput.Model
+	repo     textinput.Model // the code repo
+	repoSet  bool            // the repo box was edited: a new folder doesn't replace it
+	worktree bool
+	prefs    prefs // for the code repo last used with each folder
 	cwd      string
 	recents  []string
 	lister   *dirLister
-	sugg     []folderSuggestion
-	hi       int // highlighted suggestion, -1 for none (use what's typed)
+	sugg     []folderSuggestion // for the focused picker (the folder, unless it's the repo)
+	hi       int                // highlighted suggestion, -1 for none (use what's typed)
 	err      string
 }
 
@@ -931,6 +987,8 @@ func newNewDialog(agents []Agent, width int, sessions []*Session) *newDialog {
 		agents:  agents,
 		field:   fieldFolder,
 		dir:     textinput.New(),
+		repo:    textinput.New(),
+		prefs:   p,
 		cwd:     cwd,
 		recents: recentDirs(p, sessions),
 		lister:  newDirLister(),
@@ -943,8 +1001,11 @@ func newNewDialog(agents []Agent, width int, sessions []*Session) *newDialog {
 	}
 	d.dir.Prompt = ""
 	d.dir.Placeholder = "type a path or a folder name; tab completes"
+	d.repo.Prompt = ""
+	d.repo.Placeholder = "optional: a git repo this session works on"
 	d.setWidth(width)
 	d.refresh()
+	d.syncRepo()
 	return d
 }
 
@@ -957,18 +1018,31 @@ func (d *newDialog) setWidth(w int) {
 		iw = 10
 	}
 	d.dir.SetWidth(iw)
+	d.repo.SetWidth(iw)
+}
+
+// input is the picker the suggestions are for.
+func (d *newDialog) input() *textinput.Model {
+	if d.field == fieldRepo {
+		return &d.repo
+	}
+	return &d.dir
 }
 
 func (d *newDialog) focusCmd() tea.Cmd {
-	if d.field == fieldFolder {
-		return d.dir.Focus()
-	}
 	d.dir.Blur()
+	d.repo.Blur()
+	switch d.field {
+	case fieldFolder:
+		return d.dir.Focus()
+	case fieldRepo:
+		return d.repo.Focus()
+	}
 	return nil
 }
 
 func (d *newDialog) refresh() {
-	d.sugg = folderSuggestions(d.dir.Value(), d.cwd, d.recents, d.lister.list, maxFolderSuggestions)
+	d.sugg = folderSuggestions(d.input().Value(), d.cwd, d.recents, d.lister.list, maxFolderSuggestions)
 	if d.hi >= len(d.sugg) {
 		d.hi = len(d.sugg) - 1
 	}
@@ -976,22 +1050,133 @@ func (d *newDialog) refresh() {
 
 // target is the folder the session will start in.
 func (d *newDialog) target() string {
-	if d.hi >= 0 && d.hi < len(d.sugg) {
+	if d.field != fieldRepo && d.hi >= 0 && d.hi < len(d.sugg) {
 		return d.sugg[d.hi].Path
 	}
 	return resolvePath(d.dir.Value(), d.cwd)
 }
 
+// repoTarget is the code repo typed or highlighted, or "".
+func (d *newDialog) repoTarget() string {
+	if d.field == fieldRepo && d.hi >= 0 && d.hi < len(d.sugg) {
+		return d.sugg[d.hi].Path
+	}
+	if strings.TrimSpace(d.repo.Value()) == "" {
+		return ""
+	}
+	return resolvePath(d.repo.Value(), d.cwd)
+}
+
+// folderIsGit reports whether the start folder is in a git repo, which is
+// then the code repo too.
+func (d *newDialog) folderIsGit() bool {
+	t := d.target()
+	return isDir(t) && inGitRepo(t)
+}
+
+// showRepo reports whether the code repo row is shown: the start folder
+// isn't in git.
+func (d *newDialog) showRepo() bool { return !d.folderIsGit() }
+
+// gitRepo is the repo a worktree would be made in, or "".
+func (d *newDialog) gitRepo() string {
+	if d.folderIsGit() {
+		return d.target()
+	}
+	if r := d.repoTarget(); r != "" && isDir(r) && inGitRepo(r) {
+		return r
+	}
+	return ""
+}
+
+func (d *newDialog) useWorktree() bool { return d.worktree && d.gitRepo() != "" }
+
+// fields are the rows shown, in order.
+func (d *newDialog) fields() []int {
+	f := []int{fieldAgent, fieldFolder}
+	if d.showRepo() {
+		f = append(f, fieldRepo)
+	}
+	if d.gitRepo() != "" {
+		f = append(f, fieldWorktree)
+	}
+	return f
+}
+
+func (d *newDialog) moveField(delta int) tea.Cmd {
+	fs := d.fields()
+	i := slices.Index(fs, d.field)
+	if j := i + delta; i >= 0 && j >= 0 && j < len(fs) {
+		return d.setField(fs[j])
+	}
+	return nil
+}
+
+// setField moves to a row. Leaving a picker whose suggestions are about to
+// be replaced keeps the highlighted folder by typing it in.
+func (d *newDialog) setField(f int) tea.Cmd {
+	if f == d.field {
+		return nil
+	}
+	swap := d.field == fieldRepo || f == fieldRepo
+	if swap {
+		if d.hi >= 0 && d.hi < len(d.sugg) {
+			in := d.input()
+			in.SetValue(d.sugg[d.hi].Path)
+			in.CursorEnd()
+			if d.field == fieldRepo {
+				d.repoSet = true
+			}
+		}
+		d.hi = -1
+	}
+	d.field = f
+	if swap {
+		d.refresh()
+	}
+	return d.focusCmd()
+}
+
+// syncRepo fills in the code repo last used with the start folder, unless
+// the repo box has been edited.
+func (d *newDialog) syncRepo() {
+	if d.repoSet {
+		return
+	}
+	want := ""
+	if !d.folderIsGit() {
+		want = d.prefs.codeRepoFor(d.target())
+	}
+	if d.repo.Value() != want {
+		d.repo.SetValue(want)
+		d.repo.CursorEnd()
+	}
+}
+
 func (d *newDialog) setInput(s string) {
-	d.dir.SetValue(s)
-	d.dir.CursorEnd()
+	in := d.input()
+	in.SetValue(s)
+	in.CursorEnd()
+	if d.field == fieldRepo {
+		d.repoSet = true
+	}
 	d.hi = -1
 	d.err = ""
 	d.refresh()
 }
 
 func (d *newDialog) update(msg tea.Msg) tea.Cmd {
+	defer d.syncRepo()
 	k, isKey := msg.(tea.KeyPressMsg)
+	if isKey && k.String() == "ctrl+t" {
+		if d.gitRepo() == "" {
+			d.err = "A worktree needs a git repo: pick a folder in one, or a code repo"
+			return nil
+		}
+		d.worktree = !d.worktree
+		d.err = ""
+		return nil
+	}
 	if isKey && d.field == fieldAgent {
 		switch k.String() {
 		case "left", "h":
@@ -1001,13 +1186,23 @@ func (d *newDialog) update(msg tea.Msg) tea.Cmd {
 			d.agentIdx = (d.agentIdx + 1) % len(d.agents)
 			return nil
 		case "down", "tab", "shift+tab":
-			d.field = fieldFolder
-			return d.focusCmd()
+			return d.setField(fieldFolder)
 		}
 		// Anything else is typing: send it to the folder box.
-		d.field = fieldFolder
-		cmd := d.focusCmd()
+		cmd := d.setField(fieldFolder)
 		return tea.Batch(cmd, d.update(msg))
+	}
+
+	if isKey && d.field == fieldWorktree {
+		switch k.String() {
+		case "left", "right", "h", "l", "space":
+			d.worktree = !d.worktree
+		case "up", "shift+tab":
+			return d.moveField(-1)
+		case "tab":
+			return d.setField(fieldFolder)
+		}
+		return nil
 	}
 
 	if isKey {
@@ -1025,28 +1220,31 @@ func (d *newDialog) update(msg tea.Msg) tea.Cmd {
 		case "down":
 			if d.hi < len(d.sugg)-1 {
 				d.hi++
+				return nil
 			}
-			return nil
+			return d.moveField(1)
 		case "up":
 			if d.hi >= 0 {
 				d.hi--
 				return nil
 			}
-			d.field = fieldAgent
-			return d.focusCmd()
+			return d.moveField(-1)
 		case "shift+tab":
-			d.field = fieldAgent
-			return d.focusCmd()
+			return d.moveField(-1)
 		case "ctrl+w", "ctrl+backspace", "alt+backspace":
-			d.setInput(parentPath(d.dir.Value(), d.cwd))
+			d.setInput(parentPath(d.input().Value(), d.cwd))
 			return nil
 		}
 	}
 
-	before := d.dir.Value()
+	in := d.input()
+	before := in.Value()
 	var cmd tea.Cmd
-	d.dir, cmd = d.dir.Update(msg)
-	if d.dir.Value() != before {
+	*in, cmd = in.Update(msg)
+	if in.Value() != before {
+		if d.field == fieldRepo {
+			d.repoSet = true
+		}
 		d.hi = -1
 		d.err = ""
 		d.refresh()

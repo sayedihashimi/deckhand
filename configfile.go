@@ -21,7 +21,7 @@ const configHeader = `# deckhand config. Written by deckhand's config screen (pr
 `
 
 // reloadConfig reads the config file and applies it: agents, notifications,
-// [open], [list] and [history]. Settings that fail to load fall back to their defaults;
+// [open], [list], [history] and [worktree]. Settings that fail to load fall back to their defaults;
 // the first error is returned.
 func reloadConfig() error {
 	agents, err := loadAgents()
@@ -34,7 +34,9 @@ func reloadConfig() error {
 	listOpts = listCfg
 	histCfg, histErr := loadHistoryConfig()
 	setHistorySettings(histCfg)
-	for _, e := range []error{err, notifyErr, openErr, listErr, histErr} {
+	wtCfg, wtErr := loadWorktreeConfig()
+	worktreeSettings = wtCfg
+	for _, e := range []error{err, notifyErr, openErr, listErr, histErr, wtErr} {
 		if e != nil {
 			return e
 		}
@@ -116,7 +118,10 @@ func checkConfigText(text string) error {
 	if _, err := parseListConfig(text); err != nil {
 		return err
 	}
-	_, err := parseHistoryConfig(text)
+	if _, err := parseHistoryConfig(text); err != nil {
+		return err
+	}
+	_, err := parseWorktreeConfig(text)
 	return err
 }
 
