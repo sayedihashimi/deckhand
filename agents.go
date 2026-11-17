@@ -233,6 +233,15 @@ const sampleConfig = `# deckhand agents: each [[agents]] entry shows up in the n
 # [notifications]
 # enabled = true
 # when    = "unfocused"
+
+# What o (editor) and t (terminal) run for the selected session's folder.
+# {dir} is the folder. The command is split into words first, then {dir}
+# is filled in, so a folder name can't add arguments. No shell is used.
+# Without an editor, o uses VS Code (code) if it's on PATH, else Explorer.
+#
+# [open]
+# editor   = 'rider64.exe "{dir}"'
+# terminal = 'wt.exe -w 0 nt -d "{dir}"'
 `
 
 // runConfig implements "deckhand config": print the config path, creating
