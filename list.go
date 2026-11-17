@@ -55,6 +55,7 @@ var reservedToggleKeys = map[string]bool{
 	"ctrl+q": true, "ctrl+]": true, "ctrl+c": true, "enter": true, "esc": true,
 	"tab": true, "shift+tab": true, "space": true, "backspace": true,
 	"up": true, "down": true, "left": true, "right": true,
+	"f1": true, // help
 }
 
 func parseListConfig(text string) (listSettings, error) {

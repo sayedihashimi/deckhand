@@ -154,6 +154,9 @@ func (m *model) renderSidebar(w, h int) []string {
 		row1 := fit(left, w-len(age)-1) + stMuted.Render(age) + " "
 
 		detail, isReply := sessionDetail(sn)
+		if sn.status == StatusExited {
+			detail = exitedDetail(detail, w-6-ansi.StringWidth(s.Agent+" · "))
+		}
 		detailStyle := stMuted
 		switch {
 		case sn.status == StatusWaiting:
@@ -179,6 +182,22 @@ func (m *model) renderSidebar(w, h int) []string {
 		lines = append(lines, strings.Repeat(" ", w))
 	}
 	return lines[:h]
+}
+
+// exitedDetail adds the shift+enter hint to an exited session's detail
+// ("exited · ⏎ resume · ⇧⏎ new"), dropping "exited" and then the separator
+// when the sidebar is too narrow. With no room for it, the detail is kept.
+func exitedDetail(detail string, room int) string {
+	if !strings.Contains(detail, "⏎") {
+		return detail
+	}
+	short := strings.TrimPrefix(detail, "exited · ")
+	for _, d := range []string{detail + " · ⇧⏎ new", short + " · ⇧⏎ new", short + " ⇧⏎ new"} {
+		if ansi.StringWidth(d) <= room {
+			return d
+		}
+	}
+	return detail
 }
 
 // sessionDetail is the text after "claude · " on a session's second
@@ -294,6 +313,7 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 			"  enter    type into it; ctrl+q comes back to the list",
 			"  tab      jump to the next session that needs you",
 			"  / and @  filter the list; @ shows only sessions that need you",
+			"  ? or F1  all the keys",
 		} {
 			lines = append(lines, fit(stMuted.Render(l), w))
 		}
@@ -325,7 +345,7 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 		if a, ok := agentByName(s.Agent); ok && a.CanResume() {
 			verb = "resume"
 		}
-		header += lipgloss.NewStyle().Foreground(colWorking).Render("  " + sn.exitInfo + " · press enter to " + verb)
+		header += lipgloss.NewStyle().Foreground(colWorking).Render("  " + sn.exitInfo + " · press enter to " + verb + ", shift+enter to start a new one")
 	} else if sn.title != "" {
 		header += stMuted.Render("  — " + sn.title)
 	}
@@ -339,9 +359,9 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 
 	emu := s.Emulator()
 	if emu == nil {
-		msg := "  Not running. Press enter to start it."
+		msg := "  Not running. Press enter to start it, or shift+enter to start a new one."
 		if a, ok := agentByName(s.Agent); ok && a.CanResume() && s.Started {
-			msg = "  Not running. Press enter to resume this Claude conversation."
+			msg = "  Not running. Press enter to resume this Claude conversation, or shift+enter to start a new one."
 		}
 		lines = append(lines, "", fit(stMuted.Render(msg), w))
 		for len(lines) < h {
@@ -487,24 +507,25 @@ func (m *model) renderFooter(w int) string {
 	if m.rename != nil {
 		return fit(m.rename.View()+stMuted.Render("   enter save · esc cancel"), w)
 	}
+	if m.help != nil {
+		return fit(stMuted.Render(m.helpFooter()), w)
+	}
 	if m.flash != "" && time.Since(m.flashAt) < 4*time.Second {
 		return fit(lipgloss.NewStyle().Foreground(colError).Render(" "+m.flash), w)
 	}
 	var help string
 	switch m.focus {
 	case focusTerminal:
-		verb := " hide list"
+		help = footerHints(helpTerminal, false)
 		if m.listHidden {
-			verb = " show list"
+			help = strings.Replace(help, " hide list", " show list", 1)
 		}
-		help = " ctrl+q back to the list · " + keyLabel(listOpts.toggleKey) + verb
 	case focusDialog:
-		help = " enter start · esc cancel"
+		help = " enter start · esc cancel · F1 help"
 	default:
-		toggle := keyLabel(listOpts.toggleKey) + " list"
-		help = " ↑↓ select · enter open · n new · tab next · / filter · @ needs you · o editor · O explorer · t terminal · r rename · K end · x remove · " + toggle + " · q quit"
+		help = footerHints(helpList, false)
 		if ansi.StringWidth(help) > w {
-			help = " ↑↓ move · enter open · n new · tab next · / @ filter · o/O/t open · r rename · K end · x remove · " + toggle + " · q quit"
+			help = footerHints(helpList, true)
 		}
 		if m.filterInput != nil {
 			help = " type to filter · enter keep · esc clear"
@@ -535,6 +556,9 @@ func (m *model) View() tea.View {
 		// The status line goes at the end of the session header row.
 		st := m.statusLine()
 		main[0] = fit(main[0], mw-ansi.StringWidth(st)-2) + "\x1b[0m  " + st
+	}
+	if m.help != nil {
+		main, cur = m.overlayHelp(main, mw, bodyH), nil
 	}
 	sep := stBorder.Render("│")
 

@@ -175,7 +175,7 @@ func TestParseListConfig(t *testing.T) {
 	if err != nil || got.toggleKey != "ctrl+\\" || !got.statusLine {
 		t.Errorf("ctrl+\\: %+v, %v", got, err)
 	}
-	for _, bad := range []string{"x", "ctrl+q", "enter", "esc"} {
+	for _, bad := range []string{"x", "ctrl+q", "enter", "esc", "f1"} {
 		got, err := parseListConfig("[list]\ntoggle_key = \"" + bad + "\"\n")
 		if err == nil || got.toggleKey != defaultToggleKey {
 			t.Errorf("%q: want an error and the default key, got %+v, %v", bad, got, err)
@@ -227,8 +227,13 @@ func TestFooterFitsWithToggleKey(t *testing.T) {
 	// A configured function key shows as "F2".
 	listOpts.toggleKey = "f2"
 	m.focus, m.listHidden = focusSidebar, false
-	if f := ansi.Strip(m.renderFooter(120)); !strings.Contains(f, "F2 list · q quit") {
+	if f := ansi.Strip(m.renderFooter(120)); !strings.Contains(f, "F2 list · ? help") {
 		t.Errorf("footer with f2: %q", f)
+	}
+	// ... and in the help overlay.
+	m.openHelp()
+	if s := ansi.Strip(strings.Join(m.overlayHelp(make([]string, 31), 89, 31), "\n")); !strings.Contains(s, "F2 ") || strings.Contains(s, `ctrl+\`) {
+		t.Errorf("help overlay with f2:\n%s", s)
 	}
 }
 

@@ -23,7 +23,7 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 | ● (blinking, orange) | Needs you: a permission prompt or a question | `PermissionRequest`, `PreToolUse` on `AskUserQuestion` |
 | ✓ (bold green) | Finished its turn, and you haven't looked yet | `Stop` |
 | ○ | Idle and seen | |
-| ■ | Not running (press enter to resume) | process exit |
+| ■ | Not running (press enter to resume, shift+enter to start a new one) | process exit |
 | ◌ | Starting | |
 
 - **Claude:** status comes from hooks. deckhand passes a per-session settings file with `claude --settings`, so your `~/.claude/settings.json` is never modified.
@@ -65,12 +65,16 @@ Run `deckhand notify-test` to check that notifications appear. If they don't, ch
 
 ## Keys
 
+Press `?` in the session list, or `F1` anywhere (also inside a session), for a summary of the keys, the status icons and where the config file is. `esc`, `?`, `F1` or `q` closes it.
+
 **Session list**
 
 | Key | Action |
 |---|---|
 | ↑/↓ or j/k | Select a session (its terminal shows on the right) |
+| home/end or g/G | Select the first or last session |
 | enter | Type into the session; starts or resumes it if it isn't running |
+| shift+enter | Start a new session with the same agent and folder, right below the selected one. The selected session is left as it is, so its conversation can still be resumed. Claude gets a fresh conversation; a custom agent runs its normal command, not its `resume` one. Where a terminal sends plain enter for shift+enter, it acts like enter |
 | 1–9 | Jump straight into session N |
 | tab | Select the next session that needs you, then the next one that finished |
 | / | Filter the list as you type. Matches the name, agent, folder and branch, ignoring case; letters in order also match, and every word must match. enter keeps the filter (or opens the session if only one matches), tab keeps it, esc clears it |
@@ -82,17 +86,19 @@ Run `deckhand notify-test` to check that notifications appear. If they don't, ch
 | t | Open a new Windows Terminal tab in the session's folder |
 | r | Rename the session |
 | K | End the session's process (it stays in the list) |
-| x | End and remove the session |
+| x (or delete) | End and remove the session |
 | `ctrl+\` | Hide or show the session list (see [Hiding the session list](#hiding-the-session-list)) |
+| ? or F1 | Show the keys |
 | q | Quit (Claude sessions can be resumed next time) |
 
 **Inside a session**
 
 | Key | Action |
 |---|---|
-| ctrl+q (or ctrl+]) | Back to the session list, showing it again if it's hidden. Every other key except `ctrl+\` goes to the agent. |
+| ctrl+q (or ctrl+]) | Back to the session list, showing it again if it's hidden. Every other key except `ctrl+\` and F1 goes to the agent. |
 | `ctrl+\` | Hide or show the session list, so the session gets the full width |
 | shift+PgUp / shift+PgDn | Scroll back through the output a page at a time |
+| F1 | Show the keys. deckhand keeps F1, so it doesn't reach the agent. `?` is typed text and goes to the agent. |
 
 **Mouse**
 
@@ -157,7 +163,7 @@ toggle_key  = 'ctrl+\'  # or "f2", "f3", ... (single quotes keep the \ as it is)
 status_line = true     # false: no "n need you" in the header while the list is hidden
 ```
 
-The key can't be a plain character, or a key deckhand or the agents need (`enter`, `esc`, `tab`, the arrows, `ctrl+q`, `ctrl+]`, `ctrl+c`).
+The key can't be a plain character, or a key deckhand or the agents need (`enter`, `esc`, `tab`, the arrows, `ctrl+q`, `ctrl+]`, `ctrl+c`, `F1`).
 
 ## Opening a session's folder
 

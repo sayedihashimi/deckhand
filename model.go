@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -53,6 +54,8 @@ type model struct {
 	filter        string
 	attentionOnly bool
 	filterInput   *textinput.Model // open while typing a filter
+
+	help *helpOverlay // the key help (? or F1), when open
 
 	// Whether deckhand's window has focus, when the terminal reports it.
 	focusKnown    bool
@@ -167,6 +170,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, frameTick()
 
 	case tea.PasteMsg:
+		if m.help != nil {
+			return m, nil
+		}
 		if m.filterInput != nil {
 			var cmd tea.Cmd
 			*m.filterInput, cmd = m.filterInput.Update(msg)
@@ -215,12 +221,23 @@ func (m *model) resizeAll() {
 func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := k.String()
 
+	if m.help != nil {
+		m.helpKey(key)
+		return m, nil
+	}
+
 	if m.confirm != nil {
 		c := m.confirm
 		m.confirm = nil
 		if key == "y" || key == "Y" {
 			return m, c.action(m)
 		}
+		return m, nil
+	}
+
+	// F1 opens the help from anywhere, so it never reaches the agent.
+	if key == "f1" {
+		m.openHelp()
 		return m, nil
 	}
 
@@ -344,6 +361,8 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		ti.SetWidth(m.sidebarWidth() - 3)
 		m.filterInput = &ti
 		return m, m.filterInput.Focus()
+	case "?":
+		m.openHelp()
 	case "@":
 		m.attentionOnly = !m.attentionOnly
 		m.keepSelectionVisible()
@@ -354,6 +373,8 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter", "right", "l":
 		return m, m.openSelected()
+	case "shift+enter":
+		return m, m.startLikeSelected()
 	case "tab":
 		m.jumpToAttention()
 	case "n":
@@ -442,6 +463,10 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		sw = 0 // no sidebar: everything goes to the terminal
 	}
 
+	if m.help != nil {
+		m.helpMouse(msg)
+		return nil
+	}
 	if m.focus == focusDialog || m.rename != nil || m.confirm != nil || m.filterInput != nil {
 		return nil
 	}
@@ -547,6 +572,44 @@ func (m *model) openSelected() tea.Cmd {
 		_ = saveSessions(m.sessions)
 	}
 	m.focus = focusTerminal
+	return nil
+}
+
+// startSession starts a session's agent. Tests replace it so they don't run
+// real processes.
+var startSession = func(s *Session, w, h int, resume bool, dirty *atomic.Bool) error {
+	return s.Start(w, h, resume, dirty)
+}
+
+// startLikeSelected adds a new session with the selected session's agent and
+// folder right below it, selects it and starts it. The selected session is
+// left alone, so its conversation can still be resumed. A Claude agent gets
+// a fresh conversation, and a custom agent runs its normal command rather
+// than its resume one.
+func (m *model) startLikeSelected() tea.Cmd {
+	s := m.current()
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	agentName, dir := s.Agent, s.Dir
+	s.mu.Unlock()
+	agent, ok := agentByName(agentName)
+	if !ok {
+		m.setFlash(fmt.Sprintf("Couldn't start: unknown agent %q (was it removed from the config?)", agentName))
+		return nil
+	}
+	n := newSession(agent, dir, sessionName(dir))
+	w, h := m.termSize()
+	if err := startSession(n, w, h, false, m.dirty); err != nil {
+		m.setFlash("Couldn't start: " + err.Error())
+		return nil
+	}
+	m.sel++
+	m.sessions = slices.Insert(m.sessions, m.sel, n)
+	m.clearFilter() // so the new session shows
+	m.focus = focusTerminal
+	_ = saveSessions(m.sessions)
 	return nil
 }
 
