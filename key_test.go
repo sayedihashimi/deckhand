@@ -102,3 +102,21 @@ func TestLockOrModifierKey(t *testing.T) {
 		}
 	}
 }
+
+func TestWantKeyRecords(t *testing.T) {
+	cases := []struct {
+		env  map[string]string
+		want bool
+	}{
+		{map[string]string{}, false},
+		{map[string]string{"WT_SESSION": "abc"}, true},
+		// A deckhand inside a deckhand session runs under deckhand's emulator.
+		{map[string]string{"WT_SESSION": "abc", "DECKHAND_SESSION_ID": "s1"}, false},
+		{map[string]string{"DECKHAND_SESSION_ID": "s1"}, false},
+	}
+	for _, c := range cases {
+		if got := wantKeyRecords(func(k string) string { return c.env[k] }); got != c.want {
+			t.Errorf("%v: got %v, want %v", c.env, got, c.want)
+		}
+	}
+}

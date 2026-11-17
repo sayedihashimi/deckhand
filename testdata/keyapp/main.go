@@ -1,6 +1,7 @@
 // keyapp is a stand-in for Claude Code's keyboard handling in deckhand's e2e
 // tests: it asks for the kitty keyboard protocol and xterm modifyOtherKeys
-// the way Claude does at startup, then prints every input sequence it gets.
+// the way Claude does at startup, and bracketed paste, then prints every
+// input sequence it gets.
 package main
 
 import (
@@ -23,7 +24,7 @@ func main() {
 		_ = windows.SetConsoleMode(out, mode|windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING)
 	}
 
-	fmt.Print("\x1b[<u\x1b[>5u\x1b[>4;2m")
+	fmt.Print("\x1b[<u\x1b[>5u\x1b[>4;2m\x1b[?2004h")
 	fmt.Print("keyapp ready\r\n")
 	buf := make([]byte, 256)
 	for {
@@ -33,7 +34,7 @@ func main() {
 		}
 		s := string(buf[:n])
 		if s == "q" {
-			fmt.Print("\x1b[<u\x1b[>4m")
+			fmt.Print("\x1b[<u\x1b[>4m\x1b[?2004l")
 			return
 		}
 		fmt.Printf("got %q\r\n", s)

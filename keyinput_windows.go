@@ -10,20 +10,16 @@ import (
 // which carry the modifier state. In VT input mode (what Bubble Tea uses)
 // the console turns them back into plain VT, and shift+enter becomes "\r".
 // Asking the console for win32-input-mode (DECSET 9001) makes it pass the
-// records on, so deckhand sees shift+enter, ctrl+enter and so on.
-//
-// Only in Windows Terminal (WT_SESSION set): in this mode the console also
-// passes on raw VT key sequences from terminals that don't send records,
-// and Bubble Tea's reader garbles some of those (an arrow key arrives as
-// "up" plus stray characters).
+// records on, so deckhand sees shift+enter, ctrl+enter and so on. See
+// wantKeyRecords for when.
 func enableKeyRecords() {
-	if os.Getenv("WT_SESSION") != "" {
+	if wantKeyRecords(os.Getenv) {
 		writeConsoleVT("\x1b[?9001h")
 	}
 }
 
 func disableKeyRecords() {
-	if os.Getenv("WT_SESSION") != "" {
+	if wantKeyRecords(os.Getenv) {
 		writeConsoleVT("\x1b[?9001l")
 	}
 }

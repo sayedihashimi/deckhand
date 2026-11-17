@@ -134,8 +134,9 @@ func envWith(home, path string) []string {
 	var env []string
 	for _, kv := range os.Environ() {
 		k := strings.ToUpper(strings.SplitN(kv, "=", 2)[0])
-		// The harness isn't Windows Terminal (see enableKeyRecords).
-		if k == "DECKHAND_HOME" || k == "WT_SESSION" || (path != "" && k == "PATH") {
+		// The harness isn't Windows Terminal (see wantKeyRecords); tests
+		// that act like it set WT_SESSION themselves (wtEnv).
+		if k == "DECKHAND_HOME" || k == "WT_SESSION" || k == "DECKHAND_SESSION_ID" || (path != "" && k == "PATH") {
 			continue
 		}
 		env = append(env, kv)
@@ -709,7 +710,8 @@ func TestE2EOpenFolder(t *testing.T) {
 
 // shiftEnter is shift+enter as a CSI u sequence. Through the pseudo console
 // it reaches deckhand as shift+enter. (A win32-input-mode key event with the
-// shift state doesn't: the pseudo console drops the shift for enter.)
+// shift state doesn't, unless deckhand turned on win32-input-mode: see
+// TestE2EWTShiftEnterNewSession.)
 const shiftEnter = "[13;2u"
 
 // sessionOrder reads the saved session list: name and folder base, in order.
