@@ -13,8 +13,11 @@ import (
 
 // keepGlobals restores the settings a save applies.
 func keepGlobals(t *testing.T) {
-	agents, mode, open, list := allAgents, notifyMode, openSettings, listOpts
-	t.Cleanup(func() { allAgents, notifyMode, openSettings, listOpts = agents, mode, open, list })
+	agents, mode, open, list, hist := allAgents, notifyMode, openSettings, listOpts, historyOpts.Load()
+	t.Cleanup(func() {
+		allAgents, notifyMode, openSettings, listOpts = agents, mode, open, list
+		historyOpts.Store(hist)
+	})
 }
 
 func tempConfig(t *testing.T, text string) string {

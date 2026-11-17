@@ -251,6 +251,15 @@ const sampleConfig = `# deckhand agents: each [[agents]] entry shows up in the n
 # [list]
 # toggle_key  = "f3"          # the default; or "f2", 'ctrl+\', ...
 # status_line = true
+
+# Each session's output (scrollback and screen) is saved to
+# %LOCALAPPDATA%\deckhand\sessions\<id>\screen.ans, so an exited session
+# still shows it after deckhand restarts. It can include anything printed on
+# screen, secrets too. save = false stops saving it.
+#
+# [history]
+# save  = true
+# lines = 5000                # lines kept per session, at most 5000
 `
 
 // runConfig implements "deckhand config": print the config path, creating

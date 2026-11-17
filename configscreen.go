@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 )
 
-// The config screen ("c"): agents, notifications, [list] and [open], edited in the
+// The config screen ("c"): agents, notifications, [list], [history] and [open], edited in the
 // main area and saved to config.toml. It works on a copy; nothing changes
 // until ctrl+s, and esc leaves without saving.
 
@@ -25,6 +26,8 @@ const (
 	rowNotifyTest
 	rowListKey
 	rowListStatus
+	rowHistorySave
+	rowHistoryLines
 	rowEditor
 	rowEditorPreset
 	rowTerminal
@@ -82,6 +85,8 @@ type configScreen struct {
 	notifyWhen string
 	listKey    textinput.Model // [list] toggle_key
 	listStatus bool            // [list] status_line
+	histSave   bool            // [history] save
+	histLines  textinput.Model // [history] lines
 	editor     textinput.Model
 	terminal   textinput.Model
 
@@ -100,6 +105,7 @@ type configScreen struct {
 func newConfigScreen(width int) *configScreen {
 	c := &configScreen{path: configPath(), raw: map[string]any{}}
 	c.listKey = newCfgInput(`default: ` + keyLabel(defaultToggleKey))
+	c.histLines = newCfgInput(fmt.Sprintf("default: %d", maxHistoryLines))
 	c.editor = newCfgInput(`e.g. code "{dir}"`)
 	c.terminal = newCfgInput(`default: ` + defaultTerminal)
 	text := ""
@@ -129,6 +135,10 @@ func newConfigScreen(width int) *configScreen {
 	}
 	c.listKey.SetValue(cfg.List.ToggleKey)
 	c.listStatus = cfg.List.StatusLine == nil || *cfg.List.StatusLine
+	c.histSave = cfg.History.Save == nil || *cfg.History.Save
+	if cfg.History.Lines != 0 {
+		c.histLines.SetValue(strconv.Itoa(cfg.History.Lines))
+	}
 	c.editor.SetValue(cfg.Open.Editor)
 	c.terminal.SetValue(cfg.Open.Terminal)
 	c.saved, _ = c.encode()
@@ -149,6 +159,7 @@ func (c *configScreen) setWidth(w int) {
 	c.editor.SetWidth(iw)
 	c.terminal.SetWidth(iw)
 	c.listKey.SetWidth(min(iw, 24))
+	c.histLines.SetWidth(min(iw, 24))
 	if c.form != nil {
 		c.form.setWidth(iw)
 	}
@@ -165,15 +176,43 @@ func (c *configScreen) settings() configFile {
 	if k, err := checkToggleKey(listKey); err == nil {
 		listKey = k
 	}
+	save := c.histSave
 	return configFile{
 		Agents:        c.agents,
 		Notifications: notifyConfig{Enabled: &on, When: c.notifyWhen},
 		List:          listConfig{ToggleKey: listKey, StatusLine: &status},
+		History:       historyConfig{Save: &save, Lines: c.historyLines()},
 		Open: openConfig{
 			Editor:   strings.TrimSpace(c.editor.Value()),
 			Terminal: strings.TrimSpace(c.terminal.Value()),
 		},
 	}
+}
+
+// historyLines is the lines box as a number: 0 when it's empty (the
+// default), -1 when it isn't a number (validate says so).
+func (c *configScreen) historyLines() int {
+	v := strings.TrimSpace(c.histLines.Value())
+	if v == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return -1
+	}
+	return n
+}
+
+// historyLinesErr is what's wrong with the lines box, if anything.
+func (c *configScreen) historyLinesErr() error {
+	n := c.historyLines()
+	if n == 0 && strings.TrimSpace(c.histLines.Value()) != "" {
+		n = -1 // "0" isn't the default; empty is
+	}
+	if n < 0 {
+		return fmt.Errorf("must be a number between 1 and %d", maxHistoryLines)
+	}
+	return checkHistoryLines(n)
 }
 
 func (c *configScreen) encode() (string, error) { return encodeConfig(c.settings(), c.raw) }
@@ -190,7 +229,7 @@ func (c *configScreen) rows() []cfgRow {
 		rows = append(rows, cfgRow{rowAgent, i})
 	}
 	for _, k := range []cfgRowKind{rowAddAgent, rowNotifyEnabled, rowNotifyWhen, rowNotifyTest,
-		rowListKey, rowListStatus, rowEditor, rowEditorPreset, rowTerminal, rowTerminalPreset, rowTryOpen, rowSave} {
+		rowListKey, rowListStatus, rowHistorySave, rowHistoryLines, rowEditor, rowEditorPreset, rowTerminal, rowTerminalPreset, rowTryOpen, rowSave} {
 		rows = append(rows, cfgRow{kind: k})
 	}
 	return rows
@@ -208,9 +247,12 @@ func (c *configScreen) focusRow(i int) tea.Cmd {
 	c.editor.Blur()
 	c.terminal.Blur()
 	c.listKey.Blur()
+	c.histLines.Blur()
 	switch c.current().kind {
 	case rowListKey:
 		return c.listKey.Focus()
+	case rowHistoryLines:
+		return c.histLines.Focus()
 	case rowEditor:
 		return c.editor.Focus()
 	case rowTerminal:
@@ -243,6 +285,10 @@ func (c *configScreen) validate() error {
 	if _, err := checkToggleKey(c.listKey.Value()); err != nil {
 		c.row = c.rowOf(rowListKey)
 		return fmt.Errorf("toggle key %w", err)
+	}
+	if err := c.historyLinesErr(); err != nil {
+		c.row = c.rowOf(rowHistoryLines)
+		return fmt.Errorf("history lines %w", err)
 	}
 	for _, f := range []struct {
 		kind cfgRowKind
@@ -390,6 +436,17 @@ func (m *model) configKey(k tea.KeyPressMsg) tea.Cmd {
 		if isToggleKey(key) {
 			c.listStatus = !c.listStatus
 		}
+	case rowHistorySave:
+		if isToggleKey(key) {
+			c.histSave = !c.histSave
+		}
+	case rowHistoryLines:
+		if key == "enter" {
+			return c.move(1)
+		}
+		var cmd tea.Cmd
+		c.histLines, cmd = c.histLines.Update(k)
+		return cmd
 	case rowEditor, rowTerminal:
 		if key == "enter" {
 			return c.move(1)
@@ -868,6 +925,8 @@ func (c *configScreen) updateInputs(msg tea.Msg) tea.Cmd {
 		switch c.current().kind {
 		case rowListKey:
 			in = &c.listKey
+		case rowHistoryLines:
+			in = &c.histLines
 		case rowEditor:
 			in = &c.editor
 		case rowTerminal:

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -26,6 +27,9 @@ type helpEntry struct {
 	// out. short replaces it when the full footer doesn't fit; "-" leaves
 	// it out of the short footer.
 	footer, short string
+	// when names a condition the footer hint needs ("history"); the hint
+	// shows only when footerHints is given it.
+	when string
 }
 
 type helpGroup struct {
@@ -49,6 +53,8 @@ var helpGroups = []helpGroup{
 		{keys: "n", desc: "new session", match: []string{"n"}, footer: "n new"},
 		{keys: "1–9", desc: "jump into session N", match: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9"}},
 		{keys: "tab", desc: "next one that needs you", match: []string{"tab"}, footer: "tab next"},
+		{keys: "v", desc: "last output / conversation", match: []string{"v"}, footer: "v switch view", short: "v view", when: hintHistory},
+		{keys: "⇧PgUp/Dn", desc: "scroll an exited session", match: []string{"shift+pgup", "shift+pgdown"}},
 		{keys: "/", desc: "filter the list as you type", match: []string{"/"}, footer: "/ filter", short: "/@ filter"},
 		{keys: "@", desc: "only sessions that need you", match: []string{"@"}, footer: "@ needs you", short: "-"},
 		{keys: "esc", desc: "clear the filter", match: []string{"esc"}},
@@ -93,10 +99,18 @@ func helpGroupByTitle(title string) helpGroup {
 	return helpGroup{}
 }
 
+// hintHistory is the condition for the v hint: the selected session can
+// switch between its last output and the conversation.
+const hintHistory = "history"
+
 // footerHints joins a group's footer hints: " ↑↓ select · enter open · ...".
-func footerHints(title string, short bool) string {
+// Hints with a condition show only when it's in show.
+func footerHints(title string, short bool, show ...string) string {
 	var parts []string
 	for _, e := range helpGroupByTitle(title).entries {
+		if e.when != "" && !slices.Contains(show, e.when) {
+			continue
+		}
 		h := e.footer
 		if short && e.short != "" {
 			h = e.short

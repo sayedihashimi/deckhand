@@ -179,6 +179,20 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 		stMuted.Render(`  "n need you" in the header while the list is hidden`), true)
 
 	add("", false)
+	add(" "+stSection.Render("History")+stMuted.Render("  exited sessions show their last output after a restart"), false)
+	save := 1
+	if c.histSave {
+		save = 0
+	}
+	add(" "+cfgLabel(cur.kind == rowHistorySave, "Save", lw)+chips([]string{"on", "off"}, save, cur.kind == rowHistorySave)+
+		stMuted.Render(`  to sessions\<id>\screen.ans; it can include secrets printed on screen`), true)
+	linesLine := " " + cfgLabel(cur.kind == rowHistoryLines, "Lines", lw) + c.histLines.View()
+	if err := c.historyLinesErr(); err != nil {
+		linesLine += "  " + stErrText.Render("✗ "+err.Error())
+	}
+	add(linesLine, true)
+
+	add("", false)
 	add(" "+stSection.Render("Open")+stMuted.Render("  what o (editor) and t (terminal) run; {dir} is the session's folder"), false)
 	for _, f := range []struct {
 		row, preset cfgRowKind
@@ -235,8 +249,10 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 		hint = "enter send one now"
 	case rowListKey:
 		hint = `a key name, e.g. ctrl+\, f2 or f3; empty: ` + keyLabel(defaultToggleKey)
-	case rowListStatus:
+	case rowListStatus, rowHistorySave:
 		hint = "←/→ or enter change"
+	case rowHistoryLines:
+		hint = fmt.Sprintf("lines of output kept per session, 1 to %d; empty: %d", maxHistoryLines, maxHistoryLines)
 	case rowEditor:
 		hint = "empty: VS Code (code) if it's on PATH, else Explorer"
 	case rowTerminal:
