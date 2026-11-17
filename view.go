@@ -153,16 +153,16 @@ func (m *model) renderSidebar(w, h int) []string {
 		left := stMuted.Render(num) + " " + m.statusIcon(sn) + " " + nameStyle.Render(s.Name)
 		row1 := fit(left, w-len(age)-1) + stMuted.Render(age) + " "
 
-		detail := sn.detail
-		if detail == "" {
-			detail = sn.status.String()
-		}
+		detail, isReply := sessionDetail(sn)
 		if sn.status == StatusExited {
 			detail = exitedDetail(detail, w-6-ansi.StringWidth(s.Agent+" · "))
 		}
 		detailStyle := stMuted
-		if sn.status == StatusWaiting {
+		switch {
+		case sn.status == StatusWaiting:
 			detailStyle = stWaitText
+		case isReply && sn.unread:
+			detailStyle = stMuted.Bold(true)
 		}
 		row2 := fit("     "+stMuted.Render(s.Agent+" · ")+detailStyle.Render(detail), w)
 		row3 := fit("     "+infoLine(s, sn.info, w-6), w)
@@ -198,6 +198,28 @@ func exitedDetail(detail string, room int) string {
 		}
 	}
 	return detail
+}
+
+// sessionDetail is the text after "claude · " on a session's second
+// sidebar line. A finished turn shows the start of the reply instead of
+// "your turn" (the ✓ already says it's your turn), and a permission prompt
+// shows what the tool wants to do ("Bash: npm test"). isReply is true for
+// the reply, which is bold while unread.
+func sessionDetail(sn snapshot) (text string, isReply bool) {
+	const perm = "permission: "
+	switch {
+	case len(sn.reply) > 0:
+		return sn.reply[0], true
+	case sn.status == StatusWaiting && strings.HasPrefix(sn.detail, perm) && sn.summary != "":
+		tool := strings.TrimPrefix(sn.detail, perm)
+		if tool == "" {
+			tool = "permission"
+		}
+		return tool + ": " + sn.summary, false
+	case sn.detail != "":
+		return sn.detail, false
+	}
+	return sn.status.String(), false
 }
 
 // selBgSeq is the SGR sequence for the selected row's background (colSelBg).
@@ -310,6 +332,11 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 	}
 	if sn.info.model != "" {
 		header += stMuted.Render("  " + shortModel(sn.info.model) + " · " + shortTokens(sn.info.ctxTokens) + " context")
+	}
+	if len(sn.reply) > 0 {
+		// Before the folder: real paths are long and would push the reply
+		// out of view. Whatever doesn't fit is cut off.
+		header += stMuted.Render("  · " + strings.Join(sn.reply, " "))
 	}
 	header += stMuted.Render("  " + s.Dir)
 	if !sn.running && sn.exitInfo != "" {

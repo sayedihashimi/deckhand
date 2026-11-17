@@ -127,8 +127,8 @@ event PreToolUse Bash | go test ./...
 		time.Sleep(700 * time.Millisecond)
 		h.send("\x11")
 	}
-	h.waitFor("permission: Bash", 15*time.Second)
-	h.waitFor("claude · your turn", 15*time.Second)
+	h.waitFor("claude · Bash: npm test", 15*time.Second) // needs you: the command
+	h.waitFor("claude · Updated the", 15*time.Second)    // finished: the reply
 	h.waitFor("opus 5.5", 10*time.Second)
 	time.Sleep(3500 * time.Millisecond) // let every session's git details arrive
 
