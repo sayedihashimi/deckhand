@@ -91,6 +91,22 @@ func TestIdleTriggersPoll(t *testing.T) {
 	}
 }
 
+// The header shows the reply before the folder, so a long path can't hide it.
+func TestHeaderReplyBeforeFolder(t *testing.T) {
+	m := testModel("docs")
+	s := m.sessions[0]
+	s.Agent = "claude"
+	s.status, s.detail, s.since = StatusIdle, detailYourTurn, time.Now()
+	s.info.lastText = []string{"Updated the README."}
+	s.info.textAt = time.Now().Add(time.Second)
+	lines, _ := m.renderMain(200, 5)
+	header := lines[0]
+	r, d := strings.Index(header, "Updated the README."), strings.Index(header, s.Dir)
+	if r < 0 || d < 0 || r > d {
+		t.Errorf("want the reply before the folder; header: %q", header)
+	}
+}
+
 func TestSidebarShowsReply(t *testing.T) {
 	m := testModel("api", "docs")
 	s := m.sessions[1]

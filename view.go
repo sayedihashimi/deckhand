@@ -314,6 +314,11 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 	if sn.info.model != "" {
 		header += stMuted.Render("  " + shortModel(sn.info.model) + " · " + shortTokens(sn.info.ctxTokens) + " context")
 	}
+	if len(sn.reply) > 0 {
+		// Before the folder: real paths are long and would push the reply
+		// out of view. Whatever doesn't fit is cut off.
+		header += stMuted.Render("  · " + strings.Join(sn.reply, " "))
+	}
 	header += stMuted.Render("  " + s.Dir)
 	if !sn.running && sn.exitInfo != "" {
 		verb := "restart"
@@ -323,10 +328,6 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 		header += lipgloss.NewStyle().Foreground(colWorking).Render("  " + sn.exitInfo + " · press enter to " + verb)
 	} else if sn.title != "" {
 		header += stMuted.Render("  — " + sn.title)
-	}
-	if len(sn.reply) > 0 {
-		// As much of the reply as fits after the other details.
-		header += stMuted.Render("  · " + strings.Join(sn.reply, " "))
 	}
 	if off > 0 {
 		header = lipgloss.NewStyle().Foreground(colWorking).Bold(true).
