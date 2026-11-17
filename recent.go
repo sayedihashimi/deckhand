@@ -7,12 +7,32 @@ import (
 	"strings"
 )
 
-// prefs remembers recently used folders, the last agent chosen and whether
-// the session list is hidden.
+// prefs remembers recently used folders, the last agent chosen, the code
+// repo used with each start folder and whether the session list is hidden.
 type prefs struct {
 	RecentDirs []string `json:"recent_dirs"`
 	LastAgent  string   `json:"last_agent,omitempty"`
 	ListHidden bool     `json:"list_hidden,omitempty"`
+	// CodeRepos is the code repo last used with each start folder that
+	// isn't in git, keyed by dirKey.
+	CodeRepos map[string]string `json:"code_repos,omitempty"`
+}
+
+func dirKey(dir string) string { return strings.ToLower(filepath.Clean(dir)) }
+
+// codeRepoFor is the code repo last used with a start folder.
+func (p prefs) codeRepoFor(dir string) string { return p.CodeRepos[dirKey(dir)] }
+
+// setCodeRepo remembers the code repo used with a start folder; "" forgets it.
+func (p *prefs) setCodeRepo(dir, repo string) {
+	if repo == "" {
+		delete(p.CodeRepos, dirKey(dir))
+		return
+	}
+	if p.CodeRepos == nil {
+		p.CodeRepos = map[string]string{}
+	}
+	p.CodeRepos[dirKey(dir)] = repo
 }
 
 const maxRecentDirs = 20

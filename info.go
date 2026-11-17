@@ -61,7 +61,10 @@ func inGitRepo(dir string) bool {
 	}
 }
 
-func readGitInfo(dir string) gitInfo {
+// readGitInfo reads the branch and changes of dir's work tree. With a base
+// branch (worktree sessions), ahead/behind are counted against it
+// (origin/<base>, or the local branch without one) instead of the upstream.
+func readGitInfo(dir, base string) gitInfo {
 	if dir == "" || !inGitRepo(dir) {
 		return gitInfo{}
 	}
@@ -73,7 +76,25 @@ func readGitInfo(dir string) gitInfo {
 	if err != nil {
 		return gitInfo{}
 	}
-	return parseGitStatus(out)
+	g := parseGitStatus(out)
+	if base != "" {
+		g.ahead, g.behind = 0, 0
+		for _, ref := range []string{"origin/" + base, base} {
+			cmd := exec.CommandContext(ctx, "git", "--no-optional-locks", "-C", dir, "rev-list", "--left-right", "--count", ref+"...HEAD")
+			hideWindow(cmd)
+			if out, err := cmd.Output(); err == nil {
+				g.behind, g.ahead = parseLeftRight(out)
+				break
+			}
+		}
+	}
+	return g
+}
+
+// parseLeftRight reads `git rev-list --left-right --count A...B` ("3\t1").
+func parseLeftRight(out []byte) (left, right int) {
+	_, _ = fmt.Sscanf(strings.TrimSpace(string(out)), "%d %d", &left, &right)
+	return left, right
 }
 
 // parseGitStatus reads `git status --porcelain=v2 --branch` output.

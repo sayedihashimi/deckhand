@@ -73,7 +73,7 @@ func TestBuildLaunchPwshClaude(t *testing.T) {
 	}
 	a := Agent{Name: "smc", Pwsh: "smc", Resume: "smc -Resume {id}", Claude: true}
 
-	spec, err := buildLaunch(a, "s1", "c1", false)
+	spec, err := buildLaunch(a, "s1", "c1", false, launchExtras{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestBuildLaunchPwshClaude(t *testing.T) {
 		}
 	}
 
-	spec, _ = buildLaunch(a, "s1", "c1", true)
+	spec, _ = buildLaunch(a, "s1", "c1", true, launchExtras{})
 	if script := spec.args[len(spec.args)-1]; script != ". $env:DECKHAND_SHIM; smc -Resume c1; exit $LASTEXITCODE" {
 		t.Errorf("resume script = %q", script)
 	}
@@ -102,7 +102,7 @@ func TestBuildLaunchPlainPwsh(t *testing.T) {
 	if pwshPath() == "" {
 		t.Skip("PowerShell not found")
 	}
-	spec, err := buildLaunch(Agent{Name: "x", Pwsh: "Get-Date"}, "s1", "", false)
+	spec, err := buildLaunch(Agent{Name: "x", Pwsh: "Get-Date"}, "s1", "", false, launchExtras{})
 	if err != nil {
 		t.Fatal(err)
 	}

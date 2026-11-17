@@ -260,6 +260,17 @@ const sampleConfig = `# deckhand agents: each [[agents]] entry shows up in the n
 # [history]
 # save  = true
 # lines = 5000                # lines kept per session, at most 5000
+
+# Worktree sessions (the worktree line in the new-session dialog, or W in
+# the list): each gets its own git worktree and branch. root is where the
+# worktrees go; {repo} is the repo's main checkout, and a relative root is
+# next to the repo. base is the branch to start from (default: the repo's
+# default branch). setup runs in each new worktree before the agent starts.
+#
+# [worktree]
+# root  = "{repo}-wt"
+# base  = ""
+# setup = "npm ci"
 `
 
 // runConfig implements "deckhand config": print the config path, creating
@@ -282,11 +293,15 @@ func runConfig() int {
 // The claude shim -------------------------------------------------------------
 
 const claudeShim = `# Written by deckhand. For one session, a "claude" function wraps claude.exe
-# and adds deckhand's hook settings, so status works even when Claude is
-# started by your own PowerShell function or script.
+# and adds deckhand's hook settings (and a worktree session's folder and
+# instructions), so they apply even when Claude is started by your own
+# PowerShell function or script.
 function global:claude {
     $exe = Get-Command -Name claude -CommandType Application -ErrorAction Stop | Select-Object -First 1
     $extra = @()
+    # --add-dir takes several folders, so a flag with a value must follow it.
+    if ($env:DECKHAND_CLAUDE_ADD_DIR) { $extra += '--add-dir', $env:DECKHAND_CLAUDE_ADD_DIR }
+    if ($env:DECKHAND_CLAUDE_PROMPT) { $extra += '--append-system-prompt', $env:DECKHAND_CLAUDE_PROMPT }
     if ($env:DECKHAND_CLAUDE_SETTINGS) { $extra += '--settings', $env:DECKHAND_CLAUDE_SETTINGS }
     $resuming = $false
     foreach ($a in $args) { if ($a -in '--resume', '-r', '--continue', '-c') { $resuming = $true } }
@@ -312,10 +327,19 @@ type launchSpec struct {
 	env  []string
 }
 
+// launchExtras is what a session adds to its agent's command line: for a
+// worktree outside the start folder, the folder Claude may use and the
+// instructions about it, and the environment for every agent.
+type launchExtras struct {
+	addDir string   // claude --add-dir
+	prompt string   // claude --append-system-prompt
+	env    []string // DECKHAND_WORKTREE=..., DECKHAND_BRANCH=...
+}
+
 // buildLaunch works out the command line for an agent. claudeID is the
 // Claude session ID to create (or resume, when resume is true).
-func buildLaunch(a Agent, sessionID, claudeID string, resume bool) (launchSpec, error) {
-	var spec launchSpec
+func buildLaunch(a Agent, sessionID, claudeID string, resume bool, extra launchExtras) (launchSpec, error) {
+	spec := launchSpec{env: append([]string{}, extra.env...)}
 	var settings string
 	if a.Claude {
 		var err error
@@ -339,6 +363,12 @@ func buildLaunch(a Agent, sessionID, claudeID string, resume bool) (launchSpec, 
 				return spec, fmt.Errorf("write claude shim: %w", err)
 			}
 			spec.env = append(spec.env, "DECKHAND_SHIM="+shim, "DECKHAND_CLAUDE_SETTINGS="+settings)
+			if extra.addDir != "" {
+				spec.env = append(spec.env, "DECKHAND_CLAUDE_ADD_DIR="+extra.addDir)
+			}
+			if extra.prompt != "" {
+				spec.env = append(spec.env, "DECKHAND_CLAUDE_PROMPT="+extra.prompt)
+			}
 			if !resume {
 				spec.env = append(spec.env, "DECKHAND_CLAUDE_SESSION_ID="+claudeID)
 			}
@@ -355,6 +385,13 @@ func buildLaunch(a Agent, sessionID, claudeID string, resume bool) (launchSpec, 
 	}
 	args := append([]string{}, a.Args...)
 	if a.Claude {
+		// --add-dir takes several folders, so a flag with a value follows it.
+		if extra.addDir != "" {
+			args = append(args, "--add-dir", extra.addDir)
+		}
+		if extra.prompt != "" {
+			args = append(args, "--append-system-prompt", extra.prompt)
+		}
 		if resume {
 			args = append(args, "--resume", claudeID)
 		} else {

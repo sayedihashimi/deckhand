@@ -30,6 +30,18 @@ type Session struct {
 	Started         bool      `json:"started,omitempty"` // has run at least once, so it can be resumed
 	TranscriptPath  string    `json:"transcript_path,omitempty"`
 
+	// Git (see worktree.go). CodeRepo is the repo folder picked for the
+	// session: a code repo beside a start folder that isn't in git, or the
+	// folder a worktree was made from. RepoRoot is that repo's main
+	// checkout. A worktree session also has its worktree folder, branch,
+	// and the branch and commit it started from.
+	CodeRepo   string `json:"code_repo,omitempty"`
+	RepoRoot   string `json:"repo_root,omitempty"`
+	Worktree   string `json:"worktree,omitempty"`
+	Branch     string `json:"branch,omitempty"`
+	BaseBranch string `json:"base_branch,omitempty"`
+	BaseCommit string `json:"base_commit,omitempty"`
+
 	info     sessionInfo // git and transcript details, filled in the background
 	summary  string      // latest hook's tool summary
 	notice   *notice     // a status change to notify about, taken by the model
@@ -71,6 +83,12 @@ type Session struct {
 	histLoading atomic.Bool
 	wantConv    bool // v: show the conversation instead of the output
 	viewRows    int  // terminal rows, for scrolling the saved screen
+
+	// Making its worktree (see worktreeui.go).
+	creating  atomic.Bool // the worktree doesn't exist yet, so it isn't saved
+	preparing atomic.Bool // creating the worktree or running the setup
+	prepLog   []string    // what creating the worktree and the setup printed
+	closing   atomic.Bool // x is checking or removing its worktree
 }
 
 func newSession(agent Agent, dir, name string) *Session {
@@ -103,7 +121,10 @@ func (s *Session) Start(width, height int, resume bool, dirty *atomic.Bool) erro
 			s.ClaudeSessionID = uuid.NewString()
 		}
 	}
-	spec, err := buildLaunch(agent, s.ID, s.ClaudeSessionID, resume)
+	s.mu.Lock()
+	extra := s.launchExtrasLocked()
+	s.mu.Unlock()
+	spec, err := buildLaunch(agent, s.ID, s.ClaudeSessionID, resume, extra)
 	if err != nil {
 		return err
 	}
@@ -163,6 +184,7 @@ func (s *Session) Start(width, height int, resume bool, dirty *atomic.Bool) erro
 	s.savedAt = time.Now()
 	s.hist = nil // reload after this run: the transcript and screen change
 	s.wantConv = false
+	s.prepLog = nil
 	s.setStatusLocked(StatusStarting, "")
 	s.mu.Unlock()
 
@@ -321,12 +343,17 @@ type snapshot struct {
 	info     sessionInfo
 	summary  string   // latest hook's tool summary, e.g. the Bash command
 	reply    []string // the reply that ended the turn, once it's been read
+	worktree bool     // it has its own git worktree
+	repoName string   // the code repo's name, when it isn't the start folder's
 }
 
 func (s *Session) Snapshot() snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	sn := snapshot{s.status, s.detail, s.since, s.unread, s.running, s.title, s.exitInfo, s.info, s.summary, nil}
+	sn := snapshot{s.status, s.detail, s.since, s.unread, s.running, s.title, s.exitInfo, s.info, s.summary, nil, s.Worktree != "", ""}
+	if s.separateRepoLocked() {
+		sn.repoName = s.repoNameLocked()
+	}
 	// Only a transcript read after the turn ended has that turn's reply;
 	// an earlier read could still hold the previous one.
 	if s.status == StatusIdle && s.detail == detailYourTurn && !s.info.textAt.Before(s.since) {
@@ -383,14 +410,14 @@ func (s *Session) MaybePoll(now time.Time, active bool) {
 	if due {
 		s.lastPoll = now
 	}
-	dir, tr, stamp := s.Dir, s.transcriptPathLocked(), s.trStamp
+	dir, base, tr, stamp := s.gitDirLocked(), s.BaseBranch, s.transcriptPathLocked(), s.trStamp
 	s.mu.Unlock()
 	if !due || !s.polling.CompareAndSwap(false, true) {
 		return
 	}
 	go func() {
 		defer s.polling.Store(false)
-		g := readGitInfo(dir)
+		g := readGitInfo(dir, base)
 		var model, text string
 		var tokens int
 		var readErr error
