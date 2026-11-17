@@ -20,7 +20,7 @@ import (
 // folder; two with a pull request, from a fake gh), plus an exited shell)
 // and saves deckhand's
 // screen as a PNG, with the exited shell's restored output, the config
-// screen ("c"), the help opened from it (F1) and the api session's diff
+// screen ("c", testing an agent with t), the help opened from it (F1) and the api session's diff
 // preview ("d") below it. The PR
 // workflow posts it on each pull request.
 //
@@ -224,14 +224,20 @@ editor = 'code "{dir}"'
 	h.send("\x1b[A\x1b[A\x1b[A\x1b[A")
 	h.waitGone("last output", 3*time.Second)
 
-	// The config screen, with the second agent selected.
+	// The config screen, with the second agent selected and being tested
+	// (t): it runs hookapp in the api session's folder.
 	h.send("c")
 	h.waitFor("+ Add agent", 5*time.Second)
 	h.send("\x1b[B")
 	h.waitFor("› claude-opus", 3*time.Second)
+	h.send("t")
+	h.waitFor("test · claude-opus", 5*time.Second)
+	h.waitFor("✓ hooks work (SessionStart received)", 15*time.Second)
 	time.Sleep(300 * time.Millisecond)
 	config := screenFromEmulator(h.emu)
 	t.Logf("config screen:\n%s", h.screen())
+	h.send("\x14x") // ctrl+t, then discard it
+	h.waitFor("Discarded the test session", 5*time.Second)
 
 	// F1 there: the help, with the config screen's keys first.
 	h.send("\x1bOP")

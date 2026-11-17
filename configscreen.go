@@ -98,8 +98,9 @@ type configScreen struct {
 	statusErr bool
 	width     int
 
-	form   *agentForm
-	picker *profilePicker
+	form    *agentForm
+	picker  *profilePicker
+	testAsk *testAsk // keep or discard the test session? (agenttest.go)
 }
 
 func newConfigScreen(width int) *configScreen {
@@ -349,6 +350,29 @@ func (m *model) closeConfigScreen() {
 
 func (m *model) configKey(k tea.KeyPressMsg) tea.Cmd {
 	c := m.cfg
+	if c.testAsk != nil {
+		// Keep or discard the test session; esc decides later.
+		ask := c.testAsk
+		switch k.String() {
+		case "k", "x":
+			c.testAsk = nil
+			if k.String() == "k" {
+				m.keepTest()
+			} else {
+				m.discardTest()
+			}
+			if ask.then != nil {
+				return ask.then(m)
+			}
+		case "esc":
+			c.testAsk = nil
+		}
+		return nil
+	}
+	if k.String() == "ctrl+t" && m.test != nil && !m.test.stopping {
+		m.askTest(nil)
+		return nil
+	}
 	if c.picker != nil {
 		return m.pickerKey(k)
 	}
@@ -358,15 +382,12 @@ func (m *model) configKey(k tea.KeyPressMsg) tea.Cmd {
 	key := k.String()
 	switch key {
 	case "esc":
-		if c.dirty() {
-			m.confirm = &confirmPrompt{text: "Leave the config screen and discard your changes? y/n", action: func(m *model) tea.Cmd {
-				m.closeConfigScreen()
-				return nil
-			}}
+		if m.test != nil && !m.test.stopping {
+			// Keep or discard the test first, then leave.
+			m.askTest(func(m *model) tea.Cmd { return m.leaveConfigScreen() })
 			return nil
 		}
-		m.closeConfigScreen()
-		return nil
+		return m.leaveConfigScreen()
 	case "ctrl+s":
 		return m.saveConfigScreen()
 	case "up", "shift+tab":
@@ -384,6 +405,8 @@ func (m *model) configKey(k tea.KeyPressMsg) tea.Cmd {
 			return c.openForm(i)
 		case "a":
 			return c.openForm(-1)
+		case "t":
+			return m.startTest(c.agents[i])
 		case "d", "delete":
 			name := c.agents[i].Name
 			c.agents = append(c.agents[:i:i], c.agents[i+1:]...)
@@ -488,6 +511,20 @@ func (m *model) configKey(k tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
+// leaveConfigScreen closes the config screen, asking first when there are
+// unsaved changes.
+func (m *model) leaveConfigScreen() tea.Cmd {
+	if m.cfg.dirty() {
+		m.confirm = &confirmPrompt{text: "Leave the config screen and discard your changes? y/n", action: func(m *model) tea.Cmd {
+			m.closeConfigScreen()
+			return nil
+		}}
+		return nil
+	}
+	m.closeConfigScreen()
+	return nil
+}
+
 func isToggleKey(key string) bool {
 	switch key {
 	case "enter", "space", "left", "right", "h", "l":
@@ -589,6 +626,7 @@ const (
 	ffArgs
 	ffType
 	ffResume
+	ffTest
 )
 
 type agentForm struct {
@@ -629,9 +667,9 @@ func (f *agentForm) setWidth(w int) {
 // fields are the form's rows for its current kind.
 func (f *agentForm) fields() []int {
 	if f.pwsh {
-		return []int{ffName, ffKind, ffPick, ffCommand, ffType, ffResume}
+		return []int{ffName, ffKind, ffPick, ffCommand, ffType, ffResume, ffTest}
 	}
-	return []int{ffName, ffKind, ffCommand, ffArgs, ffType}
+	return []int{ffName, ffKind, ffCommand, ffArgs, ffType, ffTest}
 }
 
 func (f *agentForm) input(field int) *textinput.Model {
@@ -781,6 +819,9 @@ func (m *model) formKey(k tea.KeyPressMsg) tea.Cmd {
 		if !ok {
 			return f.focus(f.errField)
 		}
+		if f.field == ffTest {
+			return m.startTest(a) // as edited; the form stays open
+		}
 		if f.index < 0 {
 			c.agents = append(c.agents, a)
 			c.row = len(c.agents) - 1
@@ -808,7 +849,7 @@ func (m *model) formKey(k tea.KeyPressMsg) tea.Cmd {
 			f.err, f.errField = "", -1
 		}
 		return nil
-	case ffPick:
+	case ffPick, ffTest:
 		return nil
 	}
 	in := f.input(f.field)

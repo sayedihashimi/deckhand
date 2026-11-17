@@ -55,6 +55,7 @@ const (
 const (
 	hintForm   = "form"
 	hintPicker = "picker"
+	hintTest   = "test" // the keep-or-discard question for a test session
 )
 
 var helpGroups = []helpGroup{
@@ -115,6 +116,7 @@ var helpGroups = []helpGroup{
 		{keys: "a", desc: "add an agent", match: []string{"a"}},
 		{keys: "d del", desc: "delete the agent", match: []string{"d", "delete"}},
 		{keys: "shift+↑↓", desc: "move the agent (also K J)", match: []string{"shift+up", "shift+down", "K", "J"}},
+		{keys: "t ctrl+t", desc: "test it; ctrl+t: keep, discard", match: []string{"t", "ctrl+t"}},
 		{keys: "ctrl+s", desc: "save and apply", match: []string{"ctrl+s"}, footer: "ctrl+s save"},
 		{keys: "esc", desc: "leave without saving", match: []string{"esc"}, footer: "esc leave without saving"},
 		{keys: "F1", desc: "this help", match: []string{"f1"}, footer: "F1 help"},
@@ -124,6 +126,7 @@ var helpGroups = []helpGroup{
 		{keys: "type", desc: "picker: filter the list", footer: "type to filter", when: hintPicker},
 		{keys: "↑↓ enter", desc: "picker: choose, pick", match: []string{"up", "down", "tab", "shift+tab", "enter"}, footer: "↑↓ choose · enter pick", when: hintPicker},
 		{keys: "esc", desc: "picker: back to the form", match: []string{"esc"}, footer: "esc back", when: hintPicker},
+		{keys: "k x esc", desc: "test: keep, discard, not now", match: []string{"k", "x", "esc"}, footer: "k keep it as a session · x discard it · esc not now", when: hintTest},
 	}},
 }
 

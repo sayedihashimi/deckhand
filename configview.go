@@ -79,6 +79,7 @@ func (m *model) renderConfig(w, h int) []string {
 		body, focusLine, hint = m.renderConfigMain(w)
 	}
 
+	heading := append([]string{fit(head, w)}, m.testLines(w)...)
 	foot := []string{""}
 	if c.status != "" {
 		st := stOKText
@@ -90,13 +91,13 @@ func (m *model) renderConfig(w, h int) []string {
 	foot = append(foot, fit(stMuted.Render("  "+hint), w))
 
 	// Scroll the body so the focused row stays in view.
-	room := max(h-1-len(foot), 1)
+	room := max(h-len(heading)-len(foot), 1)
 	top := 0
 	if len(body) > room {
 		top = min(max(focusLine-room/2, 0), len(body)-room)
 		body = body[top : top+room]
 	}
-	lines := append([]string{fit(head, w)}, body...)
+	lines := append(heading, body...)
 	for len(lines) < h-len(foot) {
 		lines = append(lines, "")
 	}
@@ -240,7 +241,7 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 
 	switch cur.kind {
 	case rowAgent:
-		hint = "enter edit · a add · d delete · shift+↑/↓ move up or down"
+		hint = "enter edit · a add · d delete · t test it · shift+↑/↓ move up or down"
 	case rowAddAgent:
 		hint = "enter add an agent: a PowerShell command from your profile, or a program"
 	case rowNotifyEnabled, rowNotifyWhen:
@@ -334,6 +335,12 @@ func (c *configScreen) renderForm(w int) (lines []string, focusLine int, hint st
 			line = cfgLabel(focused, "Type", lw) + chips([]string{"Claude Code", "other"}, sel, focused)
 		case ffResume:
 			line = cfgLabel(focused, "Resume", lw) + f.resume.View()
+		case ffTest:
+			lines = append(lines, "")
+			if focused {
+				focusLine = len(lines)
+			}
+			line = cfgLabel(focused, "", lw) + button("Test", focused)
 		}
 		lines = append(lines, fit(" "+line, w))
 		errLine(field)
@@ -357,6 +364,8 @@ func (c *configScreen) renderForm(w int) (lines []string, focusLine int, hint st
 		hint = "←/→ change · Claude Code: status comes from Claude's hooks, and sessions can be resumed"
 	case ffResume:
 		hint = "the command that resumes a Claude session; {id} is the session ID. Empty: can't resume"
+	case ffTest:
+		hint = "enter start it as edited (unsaved) in a test session, in the selected session's folder"
 	}
 	return lines, focusLine, hint
 }
