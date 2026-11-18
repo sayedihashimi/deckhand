@@ -108,7 +108,7 @@ func (h *harness) click(x, y int) {
 	h.send(fmt.Sprintf("\x1b[<0;%d;%dM\x1b[<0;%d;%dm", x+1, y+1, x+1, y+1))
 }
 
-// Scrolling, clicks, arrow keys and ctrl+q work with win32-input-mode on.
+// Scrolling, clicks, arrow keys, F5 and ctrl+q work with win32-input-mode on.
 func TestE2EWTScroll(t *testing.T) {
 	exe := buildDeckhand(t)
 	pwsh, err := exec.LookPath("pwsh")
@@ -182,8 +182,16 @@ func TestE2EWTScroll(t *testing.T) {
 	h.click(5, 2)
 	h.waitFor("n new", 3*time.Second)
 	h.click(80, 20)
-	h.waitFor("ctrl+q back to the list", 3*time.Second)
+	h.waitFor("F5 list", 3*time.Second)
 
+	// F5 goes back to the list, as Windows Terminal sends it.
+	const vkF5 = 0x74
+	h.wtKey(vkF5, 0, 0)
+	h.waitFor("n new", 3*time.Second)
+
+	// ... and so does ctrl+q.
+	h.click(80, 20)
+	h.waitFor("F5 list", 3*time.Second)
 	h.wtCtrlQ()
 	h.waitFor("n new", 3*time.Second)
 	h.wtType("q")
