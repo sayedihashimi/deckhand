@@ -78,14 +78,15 @@ var helpGroups = []helpGroup{
 		{keys: "c", desc: "settings (config screen)", match: []string{"c"}, footer: "c config"},
 		{keys: "K", desc: "end it (it stays in the list)", match: []string{"K"}},
 		{keys: "x del", desc: "end and remove from the list", match: []string{"x", "delete"}},
-		// The toggle key is configurable ([list] toggle_key); withToggleKey
-		// shows the configured one in place of F3.
-		{keys: "F3", desc: "hide / show this list", match: []string{defaultToggleKey, "ctrl+q", "ctrl+]"}, footer: "F3 list"},
+		// The toggle and back keys are configurable ([list] toggle_key and
+		// back_key); withListKeys shows the configured ones in place of F3
+		// and F5.
+		{keys: "F3", desc: "hide / show this list", match: []string{defaultToggleKey, defaultBackKey, "ctrl+q", "ctrl+]"}, footer: "F3 list"},
 		{keys: "? F1", desc: "this help", match: []string{"?", "f1"}, footer: "? help"},
 		{keys: "q", desc: "quit; Claude sessions resume", match: []string{"q", "ctrl+c"}, footer: "q quit"},
 	}},
 	{helpTerminal, []helpEntry{
-		{keys: "ctrl+q ctrl+]", desc: "back to the list", match: []string{"ctrl+q", "ctrl+]"}, footer: "ctrl+q back to the list"},
+		{keys: "F5 ctrl+q ctrl+]", desc: "back to the list", match: []string{defaultBackKey, "ctrl+q", "ctrl+]"}, footer: "F5 list"},
 		{keys: "shift+PgUp/Dn", desc: "scroll back a page", match: []string{"shift+pgup", "shift+pgdown"}},
 		{keys: "F3", desc: "hide / show the list", match: []string{defaultToggleKey}, footer: "F3 hide list"},
 		{keys: "F1", desc: "this help", match: []string{"f1"}, footer: "F1 help"},
@@ -168,16 +169,20 @@ func joinHints(title string, short bool, keep func(helpEntry) bool) string {
 			h = e.short
 		}
 		if h != "" && h != "-" {
-			parts = append(parts, withToggleKey(h))
+			parts = append(parts, withListKeys(h))
 		}
 	}
 	return " " + strings.Join(parts, " · ")
 }
 
-// withToggleKey puts the configured toggle key in place of the default
-// (F3) in a help text.
-func withToggleKey(s string) string {
-	return strings.ReplaceAll(s, keyLabel(defaultToggleKey), keyLabel(listOpts.toggleKey))
+// withListKeys puts the configured toggle and back keys in place of the
+// defaults (F3 and F5) in a help text. It's one pass, so swapped keys stay
+// swapped.
+func withListKeys(s string) string {
+	return strings.NewReplacer(
+		keyLabel(defaultToggleKey), keyLabel(listOpts.toggleKey),
+		keyLabel(defaultBackKey), keyLabel(listOpts.back()),
+	).Replace(s)
 }
 
 // helpOverlay is the open help panel.
@@ -291,7 +296,7 @@ func helpColumnEnds(groups []helpGroup, width int) ([]string, []int) {
 			for j, l := range strings.Split(ansi.Wrap(e.desc, descW, ""), "\n") {
 				k := ""
 				if j == 0 {
-					k = withToggleKey(e.keys)
+					k = withListKeys(e.keys)
 				}
 				out = append(out, fit(stHelpKey.Render(fit(k, keyW))+l, width))
 			}

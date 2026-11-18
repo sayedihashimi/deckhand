@@ -88,7 +88,7 @@ func encodeConfig(cfg configFile, raw map[string]any) (string, error) {
 	if cfg.Open != (openConfig{}) {
 		out["open"] = cfg.Open
 	}
-	if cfg.List.ToggleKey != "" || cfg.List.StatusLine != nil {
+	if cfg.List.ToggleKey != "" || cfg.List.BackKey != "" || cfg.List.StatusLine != nil {
 		out["list"] = cfg.List
 	}
 	if cfg.History.Save != nil || cfg.History.Lines != 0 {

@@ -414,8 +414,9 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	switch m.focus {
 	case focusTerminal:
-		if key == "ctrl+q" || key == "ctrl+]" {
-			// Back to the list, showing it again if it's hidden.
+		if key == listOpts.back() || key == "ctrl+q" || key == "ctrl+]" {
+			// Back to the list (F5, or the fallbacks), showing it again if
+			// it's hidden.
 			m.setListHidden(false)
 			m.focus = focusSidebar
 			return m, nil
@@ -462,7 +463,7 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	// Sidebar.
 	switch key {
-	case "ctrl+q", "ctrl+]":
+	case listOpts.back(), "ctrl+q", "ctrl+]":
 		m.setListHidden(false)
 	case "up", "k":
 		m.moveSel(-1)

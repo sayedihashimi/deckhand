@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"os"
@@ -25,6 +26,7 @@ const (
 	rowNotifyWhen
 	rowNotifyTest
 	rowListKey
+	rowListBackKey
 	rowListStatus
 	rowHistorySave
 	rowHistoryLines
@@ -84,6 +86,7 @@ type configScreen struct {
 	notifyOn   bool
 	notifyWhen string
 	listKey    textinput.Model // [list] toggle_key
+	backKey    textinput.Model // [list] back_key
 	listStatus bool            // [list] status_line
 	histSave   bool            // [history] save
 	histLines  textinput.Model // [history] lines
@@ -106,6 +109,7 @@ type configScreen struct {
 func newConfigScreen(width int) *configScreen {
 	c := &configScreen{path: configPath(), raw: map[string]any{}}
 	c.listKey = newCfgInput(`default: ` + keyLabel(defaultToggleKey))
+	c.backKey = newCfgInput(`default: ` + keyLabel(defaultBackKey))
 	c.histLines = newCfgInput(fmt.Sprintf("default: %d", maxHistoryLines))
 	c.editor = newCfgInput(`e.g. code "{dir}"`)
 	c.terminal = newCfgInput(`default: ` + defaultTerminal)
@@ -135,6 +139,7 @@ func newConfigScreen(width int) *configScreen {
 		c.notifyWhen = notifyUnfocused
 	}
 	c.listKey.SetValue(cfg.List.ToggleKey)
+	c.backKey.SetValue(cfg.List.BackKey)
 	c.listStatus = cfg.List.StatusLine == nil || *cfg.List.StatusLine
 	c.histSave = cfg.History.Save == nil || *cfg.History.Save
 	if cfg.History.Lines != 0 {
@@ -160,6 +165,7 @@ func (c *configScreen) setWidth(w int) {
 	c.editor.SetWidth(iw)
 	c.terminal.SetWidth(iw)
 	c.listKey.SetWidth(min(iw, 24))
+	c.backKey.SetWidth(min(iw, 24))
 	c.histLines.SetWidth(min(iw, 24))
 	if c.form != nil {
 		c.form.setWidth(iw)
@@ -177,17 +183,38 @@ func (c *configScreen) settings() configFile {
 	if k, err := checkToggleKey(listKey); err == nil {
 		listKey = k
 	}
+	backKey := strings.TrimSpace(c.backKey.Value())
+	if k, err := checkBackKey(backKey); err == nil {
+		backKey = k
+	}
 	save := c.histSave
 	return configFile{
 		Agents:        c.agents,
 		Notifications: notifyConfig{Enabled: &on, When: c.notifyWhen},
-		List:          listConfig{ToggleKey: listKey, StatusLine: &status},
+		List:          listConfig{ToggleKey: listKey, BackKey: backKey, StatusLine: &status},
 		History:       historyConfig{Save: &save, Lines: c.historyLines()},
 		Open: openConfig{
 			Editor:   strings.TrimSpace(c.editor.Value()),
 			Terminal: strings.TrimSpace(c.terminal.Value()),
 		},
 	}
+}
+
+// backKeyErr is what's wrong with the back key box, if anything: a key it
+// can't be, or the same key as the toggle key.
+func (c *configScreen) backKeyErr() error {
+	back, err := checkBackKey(c.backKey.Value())
+	if err != nil {
+		return err
+	}
+	toggle, err := checkToggleKey(c.listKey.Value())
+	if err != nil {
+		return nil // the toggle key's own error says so
+	}
+	if checkListKeys(toggle, back) != nil {
+		return fmt.Errorf("can't be %s, the hide key", keyLabel(cmp.Or(back, defaultBackKey)))
+	}
+	return nil
 }
 
 // historyLines is the lines box as a number: 0 when it's empty (the
@@ -230,7 +257,7 @@ func (c *configScreen) rows() []cfgRow {
 		rows = append(rows, cfgRow{rowAgent, i})
 	}
 	for _, k := range []cfgRowKind{rowAddAgent, rowNotifyEnabled, rowNotifyWhen, rowNotifyTest,
-		rowListKey, rowListStatus, rowHistorySave, rowHistoryLines, rowEditor, rowEditorPreset, rowTerminal, rowTerminalPreset, rowTryOpen, rowSave} {
+		rowListKey, rowListBackKey, rowListStatus, rowHistorySave, rowHistoryLines, rowEditor, rowEditorPreset, rowTerminal, rowTerminalPreset, rowTryOpen, rowSave} {
 		rows = append(rows, cfgRow{kind: k})
 	}
 	return rows
@@ -248,10 +275,13 @@ func (c *configScreen) focusRow(i int) tea.Cmd {
 	c.editor.Blur()
 	c.terminal.Blur()
 	c.listKey.Blur()
+	c.backKey.Blur()
 	c.histLines.Blur()
 	switch c.current().kind {
 	case rowListKey:
 		return c.listKey.Focus()
+	case rowListBackKey:
+		return c.backKey.Focus()
 	case rowHistoryLines:
 		return c.histLines.Focus()
 	case rowEditor:
@@ -286,6 +316,10 @@ func (c *configScreen) validate() error {
 	if _, err := checkToggleKey(c.listKey.Value()); err != nil {
 		c.row = c.rowOf(rowListKey)
 		return fmt.Errorf("toggle key %w", err)
+	}
+	if err := c.backKeyErr(); err != nil {
+		c.row = c.rowOf(rowListBackKey)
+		return fmt.Errorf("back key %w", err)
 	}
 	if err := c.historyLinesErr(); err != nil {
 		c.row = c.rowOf(rowHistoryLines)
@@ -448,12 +482,16 @@ func (m *model) configKey(k tea.KeyPressMsg) tea.Cmd {
 				return configStatusMsg{"Sent a test notification. If it didn't appear, check Windows' notification settings and Do Not Disturb.", false}
 			}
 		}
-	case rowListKey:
+	case rowListKey, rowListBackKey:
 		if key == "enter" {
 			return c.move(1)
 		}
+		in := &c.listKey
+		if row.kind == rowListBackKey {
+			in = &c.backKey
+		}
 		var cmd tea.Cmd
-		c.listKey, cmd = c.listKey.Update(k)
+		*in, cmd = in.Update(k)
 		return cmd
 	case rowListStatus:
 		if isToggleKey(key) {
@@ -966,6 +1004,8 @@ func (c *configScreen) updateInputs(msg tea.Msg) tea.Cmd {
 		switch c.current().kind {
 		case rowListKey:
 			in = &c.listKey
+		case rowListBackKey:
+			in = &c.backKey
 		case rowHistoryLines:
 			in = &c.histLines
 		case rowEditor:

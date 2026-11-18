@@ -200,7 +200,7 @@ editor = 'code "{dir}"'
 	for _, k := range []string{"4", "3", "2", "1"} {
 		h.send(k)
 		time.Sleep(700 * time.Millisecond)
-		h.send("\x11")
+		h.send(keyF5)
 	}
 	h.waitFor("claude · Bash: npm test", 15*time.Second) // needs you: the command
 	h.waitFor("claude · Updated the", 15*time.Second)    // finished: the reply

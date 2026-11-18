@@ -175,7 +175,7 @@ func TestE2EShell(t *testing.T) {
 	h.waitFor("PS ", 15*time.Second)
 
 	// Rename it.
-	h.send("\x11") // ctrl+q
+	h.send(keyF5)
 	h.send("r")
 	h.waitFor("Rename:", 5*time.Second)
 	h.send("\x15shell-one\r") // ctrl+u clears, then the new name
@@ -188,7 +188,7 @@ func TestE2EShell(t *testing.T) {
 		t.Fatalf("sidebar should list the session; screen:\n%s", h.screen())
 	}
 
-	h.send("\x11") // ctrl+q back to the list
+	h.send(keyF5) // back to the list
 	h.waitFor("n new", 5*time.Second)
 
 	// Status settles to idle once the shell is quiet.
@@ -251,7 +251,7 @@ func TestE2EFolderPicker(t *testing.T) {
 	if !strings.Contains(string(data), "zeta") || !strings.Contains(string(data), `"last_agent": "pwsh"`) {
 		t.Fatalf("prefs.json: %s", data)
 	}
-	h.send("\x11q")
+	h.send(keyF5 + "q")
 	h.send("y")
 	h.waitExit(10 * time.Second)
 }
@@ -318,7 +318,7 @@ func TestE2EScroll(t *testing.T) {
 		t.Fatalf("sidebar wheel shouldn't scroll the terminal; screen:\n%s", h.screen())
 	}
 
-	h.send("\x11q")
+	h.send(keyF5 + "q")
 	h.send("y")
 	h.waitExit(10 * time.Second)
 }
@@ -349,7 +349,7 @@ func TestE2EMouseForwarding(t *testing.T) {
 		t.Fatalf("deckhand shouldn't scroll when the app handles the mouse; screen:\n%s", h.screen())
 	}
 
-	h.send("\x11q")
+	h.send(keyF5 + "q")
 	h.send("y")
 	h.waitExit(10 * time.Second)
 }
@@ -393,7 +393,7 @@ func TestE2EShiftEnter(t *testing.T) {
 		t.Fatalf("want exactly shift+enter, ctrl+enter and two enters; screen:\n%s", s)
 	}
 
-	h.send("\x11q")
+	h.send(keyF5 + "q")
 	h.send("y")
 	h.waitExit(10 * time.Second)
 }
@@ -449,7 +449,7 @@ resume = "claude --resume {id}"
 	t.Logf("first start:\n%s", s)
 
 	// End it, then resume: the shim must not add --session-id.
-	h.send("\x11")
+	h.send(keyF5)
 	h.send("K")
 	h.waitFor("End ", 3*time.Second)
 	h.send("y")
@@ -460,7 +460,7 @@ resume = "claude --resume {id}"
 		t.Fatalf("resume shouldn't pass --session-id; screen:\n%s", h.screen())
 	}
 
-	h.send("\x11q")
+	h.send(keyF5 + "q")
 	h.send("y")
 	h.waitExit(10 * time.Second)
 }
@@ -500,7 +500,7 @@ func TestE2ECustomClaudeAgent(t *testing.T) {
 		data, _ := os.ReadFile(logs[0])
 		t.Logf("hook events:\n%s", data)
 	}
-	h.send("\x11q")
+	h.send(keyF5 + "q")
 	h.send("y")
 	h.waitExit(15 * time.Second)
 }
@@ -544,7 +544,7 @@ func TestE2EClaude(t *testing.T) {
 		t.Logf("hook events:\n%s", data)
 	}
 
-	h.send("\x11")
+	h.send(keyF5)
 	h.send("q")
 	h.waitFor("Quit and end 1 running", 5*time.Second)
 	h.send("y")
@@ -601,7 +601,7 @@ func TestE2ENotifyInfoFilter(t *testing.T) {
 	h.send(repo)
 	h.send("\r")
 	h.waitFor("hookapp done", 20*time.Second)
-	h.send("\x11") // back to the list
+	h.send(keyF5) // back to the list
 
 	// Branch, model and context.
 	h.waitFor("e2e-branch*", 10*time.Second)    // header
@@ -774,7 +774,7 @@ func TestE2EShiftEnterNewSession(t *testing.T) {
 	if len(got) != 3 || got[0] != want[0] || got[1] != want[1] || !strings.HasPrefix(got[2], want[2]) {
 		t.Fatalf("after shift+enter on an exited session: %q", got)
 	}
-	h.send("\x11") // back to the list
+	h.send(keyF5) // back to the list
 	h.waitFor("n new", 5*time.Second)
 	s := h.screen()
 	if got := sidebarNames(s); strings.Join(got, ",") != "orig,proj-a,last" {
@@ -792,7 +792,7 @@ func TestE2EShiftEnterNewSession(t *testing.T) {
 	if len(got) != 4 || got[0] != want[0] || got[1] != want[1] || got[2] != want[1] || !strings.HasPrefix(got[3], want[2]) {
 		t.Fatalf("after shift+enter on a running session: %q", got)
 	}
-	h.send("\x11")
+	h.send(keyF5)
 	h.waitFor("n new", 5*time.Second)
 	if got := sidebarNames(h.screen()); strings.Join(got, ",") != "orig,proj-a,proj-a,last" {
 		t.Fatalf("sidebar order %q; screen:\n%s", got, h.screen())
@@ -844,7 +844,7 @@ func TestE2EShiftEnterClaude(t *testing.T) {
 	if len(got) != 2 || !strings.HasPrefix(got[0], "orig|") || !strings.HasSuffix(got[0], "|claude|"+oldID) || strings.HasSuffix(got[1], oldID) {
 		t.Fatalf("sessions: %q", got)
 	}
-	h.send("\x11q")
+	h.send(keyF5 + "q")
 	h.send("y")
 	h.waitExit(10 * time.Second)
 }
@@ -895,7 +895,7 @@ func TestE2EHelp(t *testing.T) {
 	h.send(`echo ("af" + "ter")` + "\r")
 	h.waitFor("after", 10*time.Second)
 
-	h.send("\x11q")
+	h.send(keyF5 + "q")
 	h.send("y")
 	h.waitExit(10 * time.Second)
 }
@@ -912,9 +912,13 @@ func (h *harness) waitGone(text string, timeout time.Duration) {
 	h.t.Fatalf("timed out waiting for %q to go; screen:\n%s", text, h.screen())
 }
 
+// keyF5 is F5 as a terminal sends it: back to the list (the default
+// back_key). ctrl+q does the same; TestE2EToggleList keeps a case for it.
+const keyF5 = "\x1b[15~"
+
 // TestE2EToggleList hides and shows the session list with F3 (the default
-// toggle key), from inside a session and from the list, and checks that
-// ctrl+q shows a hidden list.
+// toggle key), from inside a session and from the list, and checks that F5
+// and its fallbacks, ctrl+q and ctrl+], go back to the list and show it.
 func TestE2EToggleList(t *testing.T) {
 	exe := buildDeckhand(t)
 	pwsh, err := exec.LookPath("pwsh")
@@ -984,24 +988,38 @@ func TestE2EToggleList(t *testing.T) {
 	waitTop(true, "deckhand")
 	h.waitFor(`F3 hide list`, 3*time.Second)
 
-	// From the list: F3 hides it, ctrl+q shows it again.
+	// From the list: F3 hides it, ctrl+q (the fallback) shows it again.
 	h.send("\x11")
 	h.waitFor("n new", 5*time.Second)
 	h.send(toggle)
 	waitTop(false, "deckhand")
 	h.send("\x11")
 	waitTop(true, "deckhand")
+	// ... and so does F5.
+	h.send(toggle)
+	waitTop(false, "deckhand")
+	h.send(keyF5)
+	waitTop(true, "deckhand")
 	if hidden() {
 		t.Error("prefs.json should remember the shown list")
 	}
 
-	// ctrl+q inside a session while hidden: back to a visible list.
+	// F5 inside a session while hidden: back to a visible list. The
+	// footer shows F5, not ctrl+q.
 	h.send(toggle)
 	waitTop(false, "deckhand")
 	h.send("\r")
-	h.waitFor("ctrl+q back to the list", 5*time.Second)
-	h.send("\x11")
+	h.waitFor("F5 list", 5*time.Second)
+	if strings.Contains(h.screen(), "ctrl+q") {
+		t.Errorf("the footer should show F5, not ctrl+q; screen:\n%s", h.screen())
+	}
+	h.send(keyF5)
 	waitTop(true, "deckhand")
+	h.waitFor("n new", 5*time.Second)
+	// ctrl+] does the same from inside a session.
+	h.send("\r")
+	h.waitFor("F5 list", 5*time.Second)
+	h.send("\x1d")
 	h.waitFor("n new", 5*time.Second)
 	t.Logf("screen:\n%s", h.screen())
 

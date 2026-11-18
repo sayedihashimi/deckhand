@@ -96,6 +96,7 @@ Press `?` in the session list, or `F1` anywhere (also inside a session, the new-
 | K | End the session's process (it stays in the list) |
 | x (or delete) | End and remove the session. For a worktree session, its worktree and branch are removed too if the work is merged; otherwise you choose (see [Worktree sessions](#worktree-sessions)) |
 | F3 | Hide or show the session list (see [Hiding the session list](#hiding-the-session-list)) |
+| F5 (or ctrl+q, ctrl+]) | Show the session list if it's hidden |
 | ? or F1 | Show the keys |
 | q | Quit (Claude sessions can be resumed next time) |
 
@@ -103,7 +104,7 @@ Press `?` in the session list, or `F1` anywhere (also inside a session, the new-
 
 | Key | Action |
 |---|---|
-| ctrl+q (or ctrl+]) | Back to the session list, showing it again if it's hidden. Every other key except F3 and F1 goes to the agent. |
+| F5 (or ctrl+q, ctrl+]) | Back to the session list, showing it again if it's hidden. Every other key except F3, F5 and F1 goes to the agent. |
 | F3 | Hide or show the session list, so the session gets the full width |
 | shift+PgUp / shift+PgDn | Scroll back through the output a page at a time |
 | F1 | Show the keys. deckhand keeps F1, so it doesn't reach the agent. `?` is typed text and goes to the agent. |
@@ -145,7 +146,7 @@ Press `c` in the session list to set deckhand up without editing `config.toml`. 
 - **Testing an agent:** `t` on an agent, or the form's `[Test]` button, starts the agent as it's edited (saved or not) in a temporary session, `test · <name>`, in the selected session's folder (or the current folder when none is selected). The session appears in the list and is selected, and the config screen stays open with a status line at the top: `starting…` then `running` for a program or shell. For a Claude agent it shows `waiting for Claude's SessionStart hook…`, then `✓ hooks work (SessionStart received)`. If no hook arrives within about 30 s it shows `✗ no hook events yet`, with a hint: a PowerShell agent must call `claude`, not `claude.exe`, so the shim applies, and a program agent must pass deckhand's arguments on. If the agent exits, it shows the exit code and the last lines of output. A test is a real start (for Claude, a real, empty conversation), but nothing is sent to it. When you're done, `ctrl+t` (or `t` on an agent) asks whether to keep it as a normal session, named after its folder (`k`), or discard it (`x`). `esc` leaves the test running. Leaving the config screen during a test asks the same question. A Claude test isn't ended while Claude is still starting: a discard waits until Claude is ready, or until the 30 s timeout, and shows "stopping when Claude is ready…" until then.
 - **Pick from your PowerShell profile:** for a PowerShell agent, "Pick from your PowerShell profile…" (or `ctrl+p`) lists the functions and aliases your profile defines, leaving out PowerShell's own. Type to filter, `enter` to pick. If the function has a `-Resume` parameter, deckhand assumes it starts Claude and suggests `<name> -Resume {id}` as the resume command. Listing them runs PowerShell once with your profile, in the background (at most 10 s).
 - **Notifications:** on or off, when (only while deckhand isn't focused, or always), and a button that sends a test notification.
-- **Session list:** the key that hides and shows the list (empty means `F3`), and whether the status line shows while it's hidden. See [Hiding the session list](#hiding-the-session-list).
+- **Session list:** the key that hides and shows the list (empty means `F3`), the key that goes back to the list from a session (empty means `F5`), and whether the status line shows while it's hidden. See [Hiding the session list](#hiding-the-session-list).
 - **History:** whether each session's output is saved for after a restart, and how many lines are kept (empty means 5000). See [Output after a restart](#output-after-a-restart).
 - **Open:** the editor and terminal commands, with presets (VS Code, Rider, IntelliJ IDEA, VS Code Insiders; Windows Terminal in a new tab or a new window). "Try it" runs the command as typed on the selected session's folder.
 
@@ -273,20 +274,27 @@ Press `m` in the session list to merge the selected session's branch, then close
 Press `F3` to hide the session list and give the selected session the full window width. Press it again to show the list. It works the same in the list and inside a session, where `F3` no longer reaches the agent. Claude Code binds no function keys by default, Codex uses `F2` and Gemini CLI uses `F4`, `F6`–`F9` and `F12`, so `F3` is free in all three, and neither Windows Terminal nor WezTerm binds it. The first default, `ctrl+\`, is 1Password's global shortcut on Windows, so it never reached deckhand on machines running 1Password. You can choose another key in the config (below).
 
 - Every session is resized to the new width, as when the window is resized.
-- `ctrl+q` (or `ctrl+]`) still goes back to the list, and shows it again if it's hidden. `/` shows it too, since the filter is typed at the top of the list.
+- `F5` still goes back to the list, and shows it again if it's hidden. `/` shows it too, since the filter is typed at the top of the list.
 - The wheel and clicks all go to the terminal while the list is hidden.
 - The end of the session header shows which sessions need you, by the same rules as the list's badge and `@`: `1 need you · 1 finished · F3 list`. The window title still says "(n need you)".
 - deckhand remembers whether the list is hidden (in `%LOCALAPPDATA%\deckhand\prefs.json`) and starts the same way next time.
 
-Change the key, or turn off the status line, on the [config screen](#the-config-screen) or in the config file:
+### Going back to the list
+
+Inside a session, `F5` goes back to the session list, and shows it again if it's hidden. In the list, it shows a hidden list. It's free in the same agents and terminals as `F3`: Claude Code binds no function keys, Codex uses `F2`, Gemini CLI uses `F4`, `F6`–`F9` and `F12`, Windows Terminal binds `F11` (fullscreen) and WezTerm binds none. That left `F5` and `F10`, and `F10` means "menu" in other apps.
+
+`ctrl+q` and `ctrl+]` do the same as `F5`, for keyboards where the F keys need `Fn`, terminals that take them, and muscle memory. They can't be changed, and only the help (`F1`) shows them.
+
+Change the keys, or turn off the status line, on the [config screen](#the-config-screen) or in the config file:
 
 ```toml
 [list]
 toggle_key  = "f3"     # the default; or "f2", 'ctrl+\' (single quotes keep the \), ...
+back_key    = "f5"     # the default; or "f10", ...
 status_line = true     # false: no "n need you" in the header while the list is hidden
 ```
 
-The key can't be a plain character, or a key deckhand or the agents need (`enter`, `esc`, `tab`, the arrows, `ctrl+q`, `ctrl+]`, `ctrl+c`, `F1`).
+Neither key can be a plain character, or a key deckhand or the agents need (`enter`, `esc`, `tab`, the arrows, `ctrl+q`, `ctrl+]`, `ctrl+c`, `F1`), and the two can't be the same key.
 
 ## Opening a session's folder
 
