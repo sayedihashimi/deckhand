@@ -50,6 +50,7 @@ Don't commit to `main` directly. For each change:
 
 `hookapp.txt` commands:
 - `say <text>`: print a line. `\e` is ESC, for colours.
+- `print <text>`: print without a newline. `\e` is ESC and `\a` is BEL, for escape sequences such as a window title.
 - `reply <tokens> <text>`: add a transcript reply. This sets the model and context shown in the sidebar.
 - `event <HookName> [Tool] [| input]`: send a hook event, such as `event PermissionRequest Bash | npm test`.
 - `sleep <ms>`
