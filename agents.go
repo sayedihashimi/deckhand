@@ -245,11 +245,14 @@ const sampleConfig = `# deckhand agents: each [[agents]] entry shows up in the n
 # terminal = 'wt.exe -w 0 nt -d "{dir}"'
 
 # The session list. toggle_key hides and shows it from anywhere (inside a
-# session too, so that key no longer reaches the agent). While it's hidden,
-# status_line shows how many sessions need you at the end of the header row.
+# session too, so that key no longer reaches the agent). back_key goes back
+# to the list from inside a session; ctrl+q and ctrl+] always do too. While
+# it's hidden, status_line shows how many sessions need you at the end of
+# the header row.
 #
 # [list]
 # toggle_key  = "f3"          # the default; or "f2", 'ctrl+\', ...
+# back_key    = "f5"          # the default; or "f10", ...
 # status_line = true
 
 # Each session's output (scrollback and screen) is saved to

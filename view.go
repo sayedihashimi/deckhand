@@ -366,7 +366,7 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 			"",
 			"  n        start a session (claude, codex, gemini or a shell)",
 			"  ↑/↓      pick a session; its terminal shows here",
-			"  enter    type into it; ctrl+q comes back to the list",
+			"  enter    type into it; " + keyLabel(listOpts.back()) + " comes back to the list",
 			"  tab      jump to the next session that needs you",
 			"  / and @  filter the list; @ shows only sessions that need you",
 			"  ? or F1  all the keys",

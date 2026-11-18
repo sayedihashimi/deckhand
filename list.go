@@ -24,20 +24,41 @@ import (
 
 const defaultToggleKey = "f3"
 
+// Going back to the list from inside a session: F5 by default, shown in
+// footers and hints. ctrl+q and ctrl+] do the same and can't be changed;
+// they're for keyboards where F keys need Fn, terminals that take F keys,
+// and muscle memory. Only the help shows them.
+//
+// Why F5: by the same check as F3, Claude Code binds no function keys,
+// Codex uses F2 and Gemini CLI uses F4, F6-F9 and F12. Windows Terminal
+// binds F11 (fullscreen) and WezTerm binds none. That left F5 and F10; F5
+// is next to F1 and F3, and F10 means "menu" in other apps.
+const defaultBackKey = "f5"
+
 // listSettings come from [list] in the config file.
 type listSettings struct {
 	toggleKey  string // as Bubble Tea names it, e.g. "f3" or "ctrl+\\"
+	backKey    string // back to the list from a session; empty means F5
 	statusLine bool   // show the status line while the list is hidden
 }
 
 var listOpts = defaultListSettings()
 
 func defaultListSettings() listSettings {
-	return listSettings{toggleKey: defaultToggleKey, statusLine: true}
+	return listSettings{toggleKey: defaultToggleKey, backKey: defaultBackKey, statusLine: true}
+}
+
+// back is the key that goes back to the list ([list] back_key).
+func (o listSettings) back() string {
+	if o.backKey == "" {
+		return defaultBackKey
+	}
+	return o.backKey
 }
 
 type listConfig struct {
 	ToggleKey  string `toml:"toggle_key,omitempty"`
+	BackKey    string `toml:"back_key,omitempty"`
 	StatusLine *bool  `toml:"status_line,omitempty"`
 }
 
@@ -53,8 +74,9 @@ func loadListConfig() (listSettings, error) {
 	return parseListConfig(string(data))
 }
 
-// reservedToggleKeys can't hide the list: deckhand or the agents need them.
-var reservedToggleKeys = map[string]bool{
+// reservedListKeys can't be the toggle key or the back key: deckhand or the
+// agents need them. Each also can't be the other one (checkListKeys).
+var reservedListKeys = map[string]bool{
 	"ctrl+q": true, "ctrl+]": true, "ctrl+c": true, "enter": true, "esc": true,
 	"tab": true, "shift+tab": true, "space": true, "backspace": true,
 	"up": true, "down": true, "left": true, "right": true,
@@ -76,8 +98,18 @@ func parseListConfig(text string) (listSettings, error) {
 	if err != nil {
 		return out, fmt.Errorf("%s: list.toggle_key %w", configPath(), err)
 	}
+	back, err := checkBackKey(cfg.List.BackKey)
+	if err != nil {
+		return out, fmt.Errorf("%s: list.back_key %w", configPath(), err)
+	}
+	if err := checkListKeys(key, back); err != nil {
+		return out, fmt.Errorf("%s: list.toggle_key and back_key %w", configPath(), err)
+	}
 	if key != "" {
 		out.toggleKey = key
+	}
+	if back != "" {
+		out.backKey = back
 	}
 	return out, nil
 }
@@ -85,12 +117,37 @@ func parseListConfig(text string) (listSettings, error) {
 // checkToggleKey normalizes a toggle_key value ("F2" becomes "f2"; empty
 // stays empty, meaning the default) and refuses keys it can't be.
 func checkToggleKey(s string) (string, error) {
+	return checkListKey(s, `f3, f2 or ctrl+\`)
+}
+
+// checkBackKey is checkToggleKey for back_key.
+func checkBackKey(s string) (string, error) {
+	return checkListKey(s, "f5 or f10")
+}
+
+func checkListKey(s, try string) (string, error) {
 	key := strings.ToLower(strings.TrimSpace(s))
-	if key != "" && (utf8.RuneCountInString(key) == 1 || reservedToggleKeys[key]) {
+	if key != "" && (utf8.RuneCountInString(key) == 1 || reservedListKeys[key]) {
 		// A plain character would stop you typing it into a session.
-		return "", fmt.Errorf("can't be %q (it's needed for typing or by deckhand); try f3, f2 or ctrl+\\", s)
+		return "", fmt.Errorf("can't be %q (it's needed for typing or by deckhand); try %s", s, try)
 	}
 	return key, nil
+}
+
+// checkListKeys refuses a toggle key and back key that are the same key,
+// once empty values become the defaults. Both are already normalized. The
+// error reads after "toggle_key and back_key".
+func checkListKeys(toggle, back string) error {
+	if toggle == "" {
+		toggle = defaultToggleKey
+	}
+	if back == "" {
+		back = defaultBackKey
+	}
+	if toggle == back {
+		return fmt.Errorf("are both %s; they must be different keys", keyLabel(back))
+	}
+	return nil
 }
 
 // keyLabel is how a key is shown in hints: "f2" becomes "F2".

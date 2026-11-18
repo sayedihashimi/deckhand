@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -171,6 +172,23 @@ func TestHelpCoversHandledKeys(t *testing.T) {
 		if !found {
 			t.Errorf("key %q not found in model.go or configscreen.go; the parser missed it", k)
 		}
+	}
+}
+
+// The back key (F5) is compared with listOpts, not a literal, so
+// handledKeys can't see it; check its help entries directly.
+func TestHelpCoversBackKey(t *testing.T) {
+	for _, title := range []string{helpList, helpTerminal} {
+		found := false
+		for _, e := range helpGroupByTitle(title).entries {
+			found = found || slices.Contains(e.match, defaultBackKey)
+		}
+		if !found {
+			t.Errorf("%s: F5 isn't in the help table", title)
+		}
+	}
+	if f := footerHints(helpTerminal, false); !strings.Contains(f, "F5 list") || strings.Contains(f, "ctrl+q") {
+		t.Errorf("session footer should show F5, not ctrl+q: %q", f)
 	}
 }
 

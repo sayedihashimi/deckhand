@@ -64,6 +64,80 @@ func TestToggleListTermSize(t *testing.T) {
 	}
 }
 
+// F5 (the back key) and its fallbacks, ctrl+q and ctrl+], go back to the
+// list from a session, showing it if it's hidden, and show a hidden list
+// from the list itself.
+func TestBackKey(t *testing.T) {
+	withListOpts(t, defaultListSettings())
+	f5 := tea.KeyPressMsg{Code: tea.KeyF5, Mod: uv.ModNumLock}
+	if f5.String() != defaultBackKey {
+		t.Fatalf("F5 is %q", f5.String())
+	}
+	for _, k := range []tea.KeyPressMsg{f5, {Code: 'q', Mod: uv.ModCtrl}, {Code: ']', Mod: uv.ModCtrl}} {
+		m := testModel("api")
+		m.width, m.height = 120, 32
+		m.sessions[0].running = true // else any key leaves an exited session
+
+		// Inside a session, list shown: back to the list.
+		m.focus = focusTerminal
+		m.handleKey(k)
+		if m.listHidden || m.focus != focusSidebar {
+			t.Errorf("%s in a session: hidden=%v focus=%v", k, m.listHidden, m.focus)
+		}
+		// In the list, list shown: nothing.
+		m.handleKey(k)
+		if m.listHidden || m.focus != focusSidebar {
+			t.Errorf("%s in the list: hidden=%v focus=%v", k, m.listHidden, m.focus)
+		}
+		// In the list, list hidden: shows it.
+		m.setListHidden(true)
+		m.handleKey(k)
+		if m.listHidden || m.focus != focusSidebar {
+			t.Errorf("%s in the hidden list: hidden=%v focus=%v", k, m.listHidden, m.focus)
+		}
+		// Inside a session, list hidden: back to a shown list.
+		m.setListHidden(true)
+		m.focus = focusTerminal
+		m.handleKey(k)
+		if m.listHidden || m.focus != focusSidebar {
+			t.Errorf("%s in a session, list hidden: hidden=%v focus=%v", k, m.listHidden, m.focus)
+		}
+	}
+}
+
+// A configured back key replaces F5, in the keys and in the hints; ctrl+q
+// still works.
+func TestBackKeyFromConfig(t *testing.T) {
+	withListOpts(t, listSettings{toggleKey: defaultToggleKey, backKey: "f10", statusLine: true})
+	m := testModel("api")
+	m.width, m.height = 120, 32
+	m.sessions[0].running = true
+	m.focus = focusTerminal
+	m.handleKey(tea.KeyPressMsg{Code: tea.KeyF5})
+	if m.focus != focusTerminal {
+		t.Fatal("the default F5 shouldn't go back when another key is configured")
+	}
+	m.handleKey(tea.KeyPressMsg{Code: tea.KeyF10})
+	if m.focus != focusSidebar {
+		t.Fatal("F10 should go back to the list")
+	}
+	m.focus = focusTerminal
+	if f := ansi.Strip(m.renderFooter(120)); !strings.Contains(f, "F10 list") || strings.Contains(f, "F5") {
+		t.Errorf("terminal footer with f10: %q", f)
+	}
+	m.handleKey(tea.KeyPressMsg{Code: 'q', Mod: uv.ModCtrl})
+	if m.focus != focusSidebar {
+		t.Fatal("ctrl+q should still go back to the list")
+	}
+
+	// Swapped keys stay swapped in the hints.
+	listOpts.toggleKey, listOpts.backKey = "f5", "f3"
+	m.focus = focusTerminal
+	if f := ansi.Strip(m.renderFooter(120)); !strings.Contains(f, "F3 list") || !strings.Contains(f, "F5 hide list") {
+		t.Errorf("terminal footer with swapped keys: %q", f)
+	}
+}
+
 func TestToggleKeyFromConfig(t *testing.T) {
 	withListOpts(t, listSettings{toggleKey: "f2", statusLine: true})
 	m := testModel("api")
@@ -182,6 +256,31 @@ func TestParseListConfig(t *testing.T) {
 			t.Errorf("%q: want an error and the default key, got %+v, %v", bad, got, err)
 		}
 	}
+	got, err = parseListConfig("[list]\nback_key = \"F10\"\n")
+	if err != nil || got.backKey != "f10" || got.toggleKey != defaultToggleKey {
+		t.Errorf("back_key f10: %+v, %v", got, err)
+	}
+	got, err = parseListConfig("[list]\ntoggle_key = \"f5\"\nback_key = \"f3\"\n")
+	if err != nil || got.backKey != "f3" || got.toggleKey != "f5" {
+		t.Errorf("swapped: %+v, %v", got, err)
+	}
+	for _, bad := range []string{"x", "ctrl+q", "ctrl+]", "enter", "f1"} {
+		got, err := parseListConfig("[list]\nback_key = \"" + bad + "\"\n")
+		if err == nil || got.backKey != defaultBackKey {
+			t.Errorf("back_key %q: want an error and the default key, got %+v, %v", bad, got, err)
+		}
+	}
+	// The two keys can't be the same, counting the defaults.
+	for _, bad := range []string{
+		"toggle_key = \"f5\"",
+		"back_key = \"f3\"",
+		"toggle_key = \"f2\"\nback_key = \"F2\"",
+	} {
+		got, err := parseListConfig("[list]\n" + bad + "\n")
+		if err == nil || !strings.Contains(err.Error(), "toggle_key and back_key are both") || got != defaultListSettings() {
+			t.Errorf("%s: want a clash error and the defaults, got %+v, %v", bad, got, err)
+		}
+	}
 	if _, err := parseListConfig("[list]\nstatus_line = \"yes\"\n"); err == nil {
 		t.Error("status_line must be a boolean")
 	}
@@ -250,7 +349,7 @@ func TestKeyLabel(t *testing.T) {
 // out when it isn't set.
 func TestConfigListRoundTrip(t *testing.T) {
 	tempConfig(t, "")
-	text := "[list]\ntoggle_key = \"f2\"\nstatus_line = false\n"
+	text := "[list]\ntoggle_key = \"f2\"\nback_key = \"f10\"\nstatus_line = false\n"
 	cfg, raw, err := decodeConfig(text)
 	if err != nil {
 		t.Fatal(err)
@@ -263,7 +362,7 @@ func TestConfigListRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := parseListConfig(out)
-	if err != nil || got.toggleKey != "f2" || got.statusLine {
+	if err != nil || got.toggleKey != "f2" || got.backKey != "f10" || got.statusLine {
 		t.Errorf("after round trip: %+v, %v\n%s", got, err, out)
 	}
 
@@ -273,6 +372,13 @@ func TestConfigListRoundTrip(t *testing.T) {
 	}
 	if err := checkConfigText("[list]\ntoggle_key = \"enter\"\n"); err == nil {
 		t.Error("checkConfigText should refuse toggle_key = \"enter\"")
+	}
+	if err := checkConfigText("[list]\nback_key = \"f3\"\n"); err == nil {
+		t.Error("checkConfigText should refuse back_key = toggle_key")
+	}
+	cfg, raw, _ = decodeConfig("[list]\nback_key = \"f10\"\n")
+	if out, _ := encodeConfig(cfg, raw); !strings.Contains(out, `back_key = "f10"`) {
+		t.Errorf("back_key alone lost:\n%s", out)
 	}
 }
 
@@ -291,7 +397,7 @@ func TestConfigScreenListSettings(t *testing.T) {
 	// The whole screen, the new section and Save included, fits at 120×32.
 	w, _ := m.termSize()
 	screen := ansi.Strip(strings.Join(m.renderConfig(w, m.height-1), "\n"))
-	for _, want := range []string{"Session list", "Hide key", "Status", "Save"} {
+	for _, want := range []string{"Session list", "Hide key", "Back key", "Status", "Save"} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("config screen at 120×32 lacks %q:\n%s", want, screen)
 		}
@@ -310,6 +416,21 @@ func TestConfigScreenListSettings(t *testing.T) {
 
 	m.cfg.listKey.SetValue("")
 	typeText(m, "F3")
+	m.handleKey(key("enter")) // to the back key row
+	if m.cfg.current().kind != rowListBackKey {
+		t.Fatalf("enter should move to the back key row, at %v", m.cfg.current())
+	}
+	// The back key can't be the hide key.
+	typeText(m, "f3")
+	m.handleKey(key("ctrl+s"))
+	if !m.cfg.statusErr || m.cfg.current().kind != rowListBackKey || !strings.Contains(m.cfg.status, "hide key") {
+		t.Fatalf("back key = hide key: status %q, row %v", m.cfg.status, m.cfg.current())
+	}
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		t.Fatal("nothing should be written for a clashing back key")
+	}
+	m.cfg.backKey.SetValue("")
+	typeText(m, "F10")
 	m.handleKey(key("enter")) // to the status line row
 	if m.cfg.current().kind != rowListStatus {
 		t.Fatalf("enter should move to the status row, at %v", m.cfg.current())
@@ -320,16 +441,16 @@ func TestConfigScreenListSettings(t *testing.T) {
 		t.Fatalf("save: %q", m.cfg.status)
 	}
 	data, _ := os.ReadFile(p)
-	if !strings.Contains(string(data), `toggle_key = "f3"`) || !strings.Contains(string(data), "status_line = false") {
+	if !strings.Contains(string(data), `toggle_key = "f3"`) || !strings.Contains(string(data), `back_key = "f10"`) || !strings.Contains(string(data), "status_line = false") {
 		t.Errorf("config.toml:\n%s", data)
 	}
-	if listOpts.toggleKey != "f3" || listOpts.statusLine {
+	if listOpts.toggleKey != "f3" || listOpts.backKey != "f10" || listOpts.statusLine {
 		t.Errorf("listOpts not reloaded: %+v", listOpts)
 	}
 	// Opening the screen again shows what was saved.
 	m.handleKey(key("esc"))
 	m.handleKey(key("c"))
-	if m.cfg.listKey.Value() != "f3" || m.cfg.listStatus || m.cfg.dirty() {
+	if m.cfg.listKey.Value() != "f3" || m.cfg.backKey.Value() != "f10" || m.cfg.listStatus || m.cfg.dirty() {
 		t.Errorf("reopened: key %q status %v dirty %v", m.cfg.listKey.Value(), m.cfg.listStatus, m.cfg.dirty())
 	}
 }

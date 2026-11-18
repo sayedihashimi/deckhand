@@ -128,9 +128,9 @@ func TestE2EConfigHelp(t *testing.T) {
 	h.waitFor("press c to set up deckhand", 10*time.Second)
 	h.send("c")
 	h.waitFor("+ Add agent", 5*time.Second)
-	// Down to the editor command (+ Add agent, 3 notification rows, 2 list
+	// Down to the editor command (+ Add agent, 3 notification rows, 3 list
 	// rows, 2 history rows) and type into it.
-	h.send(strings.Repeat("\x1b[B", 8))
+	h.send(strings.Repeat("\x1b[B", 9))
 	h.send("e2e-editor {dir}")
 	h.waitFor("e2e-editor {dir}", 3*time.Second)
 	h.waitFor("unsaved changes", 3*time.Second)

@@ -172,6 +172,11 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 		keyLine += "  " + stErrText.Render("✗ "+err.Error())
 	}
 	add(keyLine, true)
+	backLine := " " + cfgLabel(cur.kind == rowListBackKey, "Back key", lw) + c.backKey.View()
+	if err := c.backKeyErr(); err != nil {
+		backLine += "  " + stErrText.Render("✗ "+err.Error())
+	}
+	add(backLine, true)
 	status := 1
 	if c.listStatus {
 		status = 0
@@ -250,6 +255,8 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 		hint = "enter send one now"
 	case rowListKey:
 		hint = `a key name, e.g. ctrl+\, f2 or f3; empty: ` + keyLabel(defaultToggleKey)
+	case rowListBackKey:
+		hint = `back to the list from a session (ctrl+q and ctrl+] always work too), e.g. f5 or f10; empty: ` + keyLabel(defaultBackKey)
 	case rowListStatus, rowHistorySave:
 		hint = "←/→ or enter change"
 	case rowHistoryLines:
