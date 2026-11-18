@@ -217,3 +217,22 @@ func TestMoveTestSessionStaysUnsaved(t *testing.T) {
 		t.Errorf("saved %d sessions; the test session should stay unsaved", len(loaded))
 	}
 }
+
+// x asks before removing; the session it removes is the one it asked
+// about, even if the list changes before the answer.
+func TestRemoveConfirmUsesTheSessionAskedAbout(t *testing.T) {
+	t.Setenv("DECKHAND_HOME", t.TempDir())
+	m := testModel("one", "two", "three")
+	m.sel = 2
+	press(m, tea.KeyPressMsg{Code: 'x', Text: "x"})
+	if m.confirm == nil {
+		t.Fatal("x should ask first")
+	}
+	// Something else changes the selection while it asks (a discarded
+	// agent test finishing, say, puts back the selection it had).
+	m.sel = 0
+	press(m, tea.KeyPressMsg{Code: 'y', Text: "y"})
+	if got := order(m); got != "one two" {
+		t.Errorf("after y: %q, want %q", got, "one two")
+	}
+}

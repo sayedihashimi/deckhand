@@ -570,7 +570,7 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				text = fmt.Sprintf("End %q and remove it? y/n", name)
 			}
 			m.confirm = &confirmPrompt{text: text, action: func(m *model) tea.Cmd {
-				m.removeSelected()
+				m.removeSession(s) // by pointer: the list can change while it asks
 				return nil
 			}}
 		}
@@ -828,12 +828,6 @@ func (m *model) openFolder(target openTarget) {
 	if fallback && !m.editorHinted {
 		m.editorHinted = true
 		m.setFlash("Opened in Explorer: no editor set and VS Code isn't on PATH. Set [open] editor in the config (deckhand config).")
-	}
-}
-
-func (m *model) removeSelected() {
-	if s := m.current(); s != nil {
-		m.removeSession(s)
 	}
 }
 
