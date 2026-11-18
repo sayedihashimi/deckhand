@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -99,6 +100,59 @@ func (m *model) selectVisible(p int) bool {
 	}
 	m.sel = vis[p]
 	return true
+}
+
+// moveSession moves the selected session one place up (delta < 0) or down
+// in the visible list: past the next visible session in that direction,
+// landing just before or after it. Hidden sessions in between are skipped,
+// so with a filter on it never moves past one you can't see. The selection
+// follows the session. It reports whether anything moved (nothing does at
+// either end).
+func (m *model) moveSession(delta int) bool {
+	vis := m.visible()
+	p := visiblePos(vis, m.sel)
+	if p < 0 || delta == 0 {
+		return false
+	}
+	q := p + 1
+	if delta < 0 {
+		q = p - 1
+	}
+	if q < 0 || q >= len(vis) {
+		return false
+	}
+	m.moveSelectedTo(vis[q])
+	return true
+}
+
+// moveSessionToEnd moves the selected session to just before the first
+// visible session (top) or just after the last one. Hidden sessions keep
+// their places relative to each other.
+func (m *model) moveSessionToEnd(top bool) bool {
+	vis := m.visible()
+	if visiblePos(vis, m.sel) < 0 {
+		return false
+	}
+	target := vis[len(vis)-1]
+	if top {
+		target = vis[0]
+	}
+	if target == m.sel {
+		return false
+	}
+	m.moveSelectedTo(target)
+	return true
+}
+
+// moveSelectedTo moves the selected session next to the session at index
+// target: before it when it's above the selection, after it when it's
+// below. Either way the session ends up at index target, which becomes the
+// selection.
+func (m *model) moveSelectedTo(target int) {
+	s := m.sessions[m.sel]
+	m.sessions = slices.Delete(m.sessions, m.sel, m.sel+1)
+	m.sessions = slices.Insert(m.sessions, target, s)
+	m.sel = target
 }
 
 // keepSelectionVisible moves the selection to the first visible session if
