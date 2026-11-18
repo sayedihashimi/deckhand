@@ -7,6 +7,7 @@
 // one command per line:
 //
 //	say <text>                     print a line (\e is ESC, for colours)
+//	print <text>                   print without a newline (\e is ESC, \a is BEL)
 //	reply <tokens> <text>          add an assistant reply to the transcript
 //	event <Name> [Tool] [| input]  send a hook event; input becomes the
 //	                               tool's command (or file_path for Edit/Write/Read)
@@ -78,6 +79,8 @@ func runScript(script string) {
 		switch verb {
 		case "say":
 			fmt.Println(strings.ReplaceAll(rest, `\e`, "\x1b"))
+		case "print":
+			fmt.Print(strings.NewReplacer(`\e`, "\x1b", `\a`, "\a").Replace(rest))
 		case "reply":
 			n, text, _ := strings.Cut(rest, " ")
 			tokens, _ := strconv.Atoi(n)

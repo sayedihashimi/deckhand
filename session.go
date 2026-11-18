@@ -179,7 +179,7 @@ func (s *Session) Start(width, height int, resume bool, dirty *atomic.Bool) erro
 		},
 		Title: func(t string) {
 			s.mu.Lock()
-			s.title = t
+			s.title = strings.TrimSpace(t) // "✳ name" arrives as " name" (see oscfilter.go)
 			s.mu.Unlock()
 		},
 		EnableMode:  func(m ansi.Mode) { s.setMode(m, true) },
@@ -246,10 +246,13 @@ func sessionEnv(env []string) []string {
 
 func (s *Session) readLoop(pty xpty.Pty, emu *vt.SafeEmulator) {
 	buf := make([]byte, 64*1024)
+	out := make([]byte, 0, len(buf))
+	var filter stringFilter // see oscfilter.go; one per run, its state spans reads
 	for {
 		n, err := pty.Read(buf)
 		if n > 0 {
-			_, _ = emu.Write(buf[:n])
+			out = filter.Filter(out[:0], buf[:n])
+			_, _ = emu.Write(out)
 			s.mu.Lock()
 			s.lastOutput = time.Now()
 			s.mu.Unlock()
