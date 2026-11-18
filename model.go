@@ -472,6 +472,20 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.selectVisible(0)
 	case "end", "G":
 		m.selectVisible(-1)
+	case "shift+up", "shift+down", "shift+home", "shift+end":
+		// Move the selected session; the order is saved right away.
+		moved := false
+		switch key {
+		case "shift+up":
+			moved = m.moveSession(-1)
+		case "shift+down":
+			moved = m.moveSession(1)
+		default:
+			moved = m.moveSessionToEnd(key == "shift+home")
+		}
+		if moved {
+			_ = saveSessions(m.sessions)
+		}
 	case "/":
 		m.setListHidden(false) // the filter is typed in the list's header
 		ti := textinput.New()
