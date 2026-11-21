@@ -231,7 +231,8 @@ editor = 'code "{dir}"'
 	h.send("f")
 	h.waitFor("Updated the README with the new install steps.", 15*time.Second)
 	h.send(keyF5)
-	h.send("1") // api again
+	h.send("1") // api again, then back to the list
+	h.send(keyF5)
 	h.waitFor("claude · ⑂ docs", 10*time.Second)
 	h.waitFor(" $7.14  1 need you", 10*time.Second) // today's total; the sidebar is too narrow for "today"
 	h.waitFor("76% · $3.10", 10*time.Second)        // context: yellow from 60%
