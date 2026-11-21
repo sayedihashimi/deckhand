@@ -37,20 +37,21 @@ func frameTick() tea.Cmd {
 }
 
 type model struct {
-	sessions []*Session
-	sel      int
-	scroll   int
-	focus    focusArea
-	width    int
-	height   int
-	frame    int
-	dirty    *atomic.Bool
-	agents   []Agent
-	dialog   *newDialog
-	confirm  *confirmPrompt
-	closing  *closePrompt // x's warning for a worktree session that isn't merged
-	rename   *textinput.Model
-	flash    string
+	sessions    []*Session
+	costSavedAt time.Time // when sessions.json was last saved for a cost change
+	sel         int
+	scroll      int
+	focus       focusArea
+	width       int
+	height      int
+	frame       int
+	dirty       *atomic.Bool
+	agents      []Agent
+	dialog      *newDialog
+	confirm     *confirmPrompt
+	closing     *closePrompt // x's warning for a worktree session that isn't merged
+	rename      *textinput.Model
+	flash       string
 
 	// Filtering the list ("/" and "@").
 	filter        string
@@ -234,6 +235,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				s.MaybeSaveScreen(now)
 			}
 			m.tickTest(now)
+			m.maybeSaveCosts(now)
 		}
 		if s := m.current(); s != nil {
 			s.MarkSeen()
@@ -1287,4 +1289,25 @@ func (d *newDialog) update(msg tea.Msg) tea.Cmd {
 		d.refresh()
 	}
 	return cmd
+}
+
+// costSaveEvery is how often sessions.json is saved while costs change.
+const costSaveEvery = 15 * time.Second
+
+// maybeSaveCosts saves sessions.json when a session's cost has changed,
+// at most every costSaveEvery, so the last cost survives a crash.
+func (m *model) maybeSaveCosts(now time.Time) {
+	if now.Sub(m.costSavedAt) < costSaveEvery {
+		return
+	}
+	changed := false
+	for _, s := range m.sessions {
+		if s.costChanged.Swap(false) {
+			changed = true
+		}
+	}
+	if changed {
+		m.costSavedAt = now
+		_ = saveSessions(m.sessions)
+	}
 }

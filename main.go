@@ -18,6 +18,8 @@ func main() {
 		switch os.Args[1] {
 		case "hook":
 			os.Exit(runHook(os.Args[2:]))
+		case "statusline":
+			os.Exit(runStatusLine(os.Args[2:]))
 		case "config":
 			os.Exit(runConfig())
 		case "notify-test":
@@ -40,6 +42,8 @@ Usage:
   deckhand notify-test  show a test desktop notification
   deckhand version    print the version
   deckhand hook       (internal) receives Claude Code hook events
+  deckhand statusline (internal) records Claude Code's status line JSON,
+                      then runs your own statusLine command
 
 State is kept in %LOCALAPPDATA%\deckhand (override with DECKHAND_HOME).`)
 			return

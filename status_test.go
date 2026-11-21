@@ -86,7 +86,8 @@ func TestSessionEnv(t *testing.T) {
 
 func TestClaudeSettingsFile(t *testing.T) {
 	t.Setenv("DECKHAND_HOME", t.TempDir())
-	path, err := writeClaudeSettings("s1")
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir()) // not the user's own settings
+	path, err := writeClaudeSettings("s1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
