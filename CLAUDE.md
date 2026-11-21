@@ -16,6 +16,7 @@ Don't commit to `main` directly. For each change:
    - README.md, if keys, config, status icons or behaviour change.
    - The sample config in `agents.go` (`sampleConfig`), if the config file changes.
    - **The screenshot scene** in `screenshot_e2e_test.go`, if the change adds something visible that the scene doesn't show yet. The scene is what reviewers see in the PR, so it should show the new feature.
+   - **The README's screenshots** in `docs/img`, if the change alters what a README scene shows (see below). Regenerate them in the same PR, open each changed PNG, and commit them.
 3. **Check locally**, all of which CI also runs:
    ```powershell
    gofmt -l .                      # must print nothing
@@ -23,8 +24,9 @@ Don't commit to `main` directly. For each change:
    go test ./...
    go test -tags e2e -v -timeout 20m  # real ConPTY; ~4 min on CI, can pass 10 min locally
    $env:DECKHAND_SCREENSHOT="$env:TEMP\deckhand.png"; go test -tags e2e -run TestE2EScreenshot -v
+   $env:DECKHAND_SCREENSHOTS="docs/img"; go test -tags e2e -run TestE2EReadmeShots -v -timeout 20m  # if a README shot changes
    ```
-   Open the PNG and look at it before you push.
+   Open the PNGs and look at them before you push.
 4. **Commit**. The first line is a short imperative summary ("Add desktop notifications"), then a blank line, then a body that says what changed and why. Put separate concerns in separate commits.
 5. **Push and open the PR**:
    ```powershell
@@ -56,6 +58,20 @@ Don't commit to `main` directly. For each change:
 - `sleep <ms>`
 
 Keep the scene realistic but generic: no real names, paths or other products' branding.
+
+## How the README screenshots work
+
+`readme_shots_e2e_test.go` (`TestE2EReadmeShots`) plays one scripted scene at 140×36 and writes a PNG per shot to `docs/img`: `main`, `hidden`, `help`, `diff`, `restored`, `new-session`, `pr`, `merge`, `config`, `fork`, `filter` and `groups`. Regenerate them all with:
+
+```powershell
+$env:DECKHAND_SCREENSHOTS="docs/img"; go test -tags e2e -run TestE2EReadmeShots -v -timeout 20m
+```
+
+- A rerun only changes an image when the UI changes. The scene's folders are on a drive letter mapped with `subst` (such as `S:\src\api`), so no temporary path or user name shows. Commits have fixed dates, the ages in the list are pinned (`readmeAges`), and spinners and the blinking ● are drawn in one frame (`steady`).
+- If a PR changes what one of these shots shows (a key, a label, the layout, a new row), regenerate them, check `git status` for which PNGs changed, open those and commit them with the change. If a new feature belongs in the README with a picture, add a shot to the test and the image to the README.
+- termshot writes them as palette PNGs (`Options.Palette`), 20–90 KB each. Keep each under about 200 KB.
+- The scene uses the same `hookapp.txt` commands as the PR scene, and the same rule: fake, generic data only.
+- A desktop notification can't be rendered this way, so the README has no notification shot.
 
 ## Build and install
 
