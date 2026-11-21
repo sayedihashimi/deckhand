@@ -64,7 +64,7 @@ say hookapp done
 	h.waitFor("statusline: from-user-line", 5*time.Second)
 	h.send(keyF5)
 	h.waitFor("$1.84 today", 10*time.Second) // the header
-	h.waitFor("50k · $1.84", 5*time.Second)  // the third line
+	h.waitFor("25% · $1.84", 5*time.Second)  // the third line
 	if strings.Contains(h.screen(), "~$1.84") {
 		t.Errorf("Claude's own number isn't an estimate:\n%s", h.screen())
 	}
