@@ -518,6 +518,8 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.startLikeSelected()
 	case "W":
 		return m, m.worktreeLikeSelected()
+	case "f":
+		return m, m.forkSelected()
 	case "tab":
 		m.jumpToAttention()
 	case "v":
