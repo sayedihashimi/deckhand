@@ -96,7 +96,7 @@ Press `?` in the session list, or `F1` anywhere (also inside a session, the new-
 | r | Rename the session |
 | c | Config screen: agents, notifications, the session list, history and open commands (see [The config screen](#the-config-screen)) |
 | K | End the session's process (it stays in the list) |
-| x (or delete) | End and remove the session. For a worktree session, its worktree and branch are removed too if the work is merged; otherwise you choose (see [Worktree sessions](#worktree-sessions)) |
+| x (or delete) | End and remove the session, after asking (`Y/n`: `enter` answers yes, `n` or `esc` cancels). For a worktree session, its worktree and branch are removed too if the work is merged; otherwise you choose (see [Worktree sessions](#worktree-sessions)) |
 | F3 | Hide or show the session list (see [Hiding the session list](#hiding-the-session-list)) |
 | F5 (or ctrl+q, ctrl+]) | Show the session list if it's hidden |
 | ? or F1 | Show the keys |
@@ -225,7 +225,7 @@ You can run Claude from a folder that isn't a git repo, such as your notes, whil
 
 **Closing (`x`)**
 
-After you confirm (a running agent is stopped first), deckhand fetches and checks whether the work is merged: the branch tip is in `origin/<default>` (or the local default branch, after `m`'s local merge), or GitHub (`gh pr view`) has a merged pull request whose head is the branch tip. The second check catches squash merges, which git can't see.
+After you confirm (`y` or `enter`; a running agent is stopped first), deckhand fetches and checks whether the work is merged: the branch tip is in `origin/<default>` (or the local default branch, after `m`'s local merge), or GitHub (`gh pr view`) has a merged pull request whose head is the branch tip. The second check catches squash merges, which git can't see.
 
 - **Merged, and nothing uncommitted:** `git worktree remove`, then the local branch and the branch on `origin` are deleted. When the work is only in the local default branch (after `m`'s local merge, not pushed yet), the branch on `origin` is kept, since it's the only copy off your machine, and the message says so.
 - **Otherwise** (including merged with uncommitted files): a warning lists the uncommitted files, the commits that aren't on the default branch and the PR state. Press `k` to keep the worktree and branch and remove only the session, `D` to delete anyway (the worktree with its uncommitted files, and the local branch; the branch on origin is kept), or `esc` to cancel. The `D` line says how many commits aren't on the default branch and whether they'll be lost: they are when the branch isn't on origin, or origin's copy is at another commit.
