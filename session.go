@@ -369,27 +369,31 @@ func (s *Session) Refresh(now time.Time) {
 
 // snapshot is a consistent copy of what the sidebar needs.
 type snapshot struct {
-	status   Status
-	detail   string
-	since    time.Time
-	unread   bool
-	running  bool
-	title    string
-	exitInfo string
-	info     sessionInfo
-	summary  string   // latest hook's tool summary, e.g. the Bash command
-	reply    []string // the reply that ended the turn, once it's been read
-	worktree bool     // it has its own git worktree
-	repoName string   // the code repo's name, when it isn't the start folder's
-	pr       *prInfo  // the branch's pull request, when it has one
-	cost     string   // the cost as [cost] show has it: "$1.84", "~$0.40", "1.2M tok" or ""
+	status    Status
+	detail    string
+	since     time.Time
+	unread    bool
+	running   bool
+	title     string
+	exitInfo  string
+	info      sessionInfo
+	summary   string   // latest hook's tool summary, e.g. the Bash command
+	reply     []string // the reply that ended the turn, once it's been read
+	worktree  bool     // it has its own git worktree
+	repoName  string   // the code repo's name, when it isn't the start folder's
+	pr        *prInfo  // the branch's pull request, when it has one
+	cost      string   // the cost as [cost] show has it: "$1.84", "~$0.40", "1.2M tok" or ""
+	ctxWindow int      // the context window's size, or 0 when it isn't known (context.go)
 }
 
 func (s *Session) Snapshot() snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	sn := snapshot{s.status, s.detail, s.since, s.unread, s.running, s.title, s.exitInfo, s.info, s.summary, nil, s.Worktree != "", "", nil, ""}
+	sn := snapshot{s.status, s.detail, s.since, s.unread, s.running, s.title, s.exitInfo, s.info, s.summary, nil, s.Worktree != "", "", nil, "", 0}
 	sn.cost = costLabel(s.Cost, costConfigNow().show)
+	if a, ok := s.agent(); ok && a.Claude {
+		sn.ctxWindow = contextWindow(infoOpts, s.info.model, s.info.status.Model, s.info.status.CtxWindow)
+	}
 	if s.prs.pr != nil && s.prs.branch == s.prBranchLocked() {
 		pr := *s.prs.pr
 		sn.pr = &pr
@@ -462,8 +466,7 @@ func (s *Session) MaybePoll(now time.Time, active bool) {
 	go func() {
 		defer s.polling.Store(false)
 		g := readGitInfo(dir, base)
-		var model, text string
-		var tokens int
+		var tail transcriptEnd
 		var readErr error
 		checked := false
 		newStamp := stamp
@@ -472,7 +475,7 @@ func (s *Session) MaybePoll(now time.Time, active bool) {
 				checked = true
 				newStamp = fmt.Sprintf("%d/%d", fi.Size(), fi.ModTime().UnixNano())
 				if newStamp != stamp {
-					model, tokens, text, readErr = readTranscriptInfo(tr)
+					tail, readErr = readTranscriptTail(tr)
 				}
 			}
 		}
@@ -480,10 +483,19 @@ func (s *Session) MaybePoll(now time.Time, active bool) {
 		s.info.git = g
 		if newStamp != stamp && readErr == nil {
 			s.trStamp = newStamp
-			if model != "" {
-				s.info.model, s.info.ctxTokens = model, tokens
+			if tail.model != "" {
+				prev := s.info.ctxTokens
+				s.info.model, s.info.ctxTokens = tail.model, tail.ctxTokens
+				// Compacted: until the next reply, which changes the size.
+				switch {
+				case compactDrop(prev, tail.ctxTokens):
+					s.info.compactAt = tail.ctxTokens
+				case tail.ctxTokens != s.info.compactAt:
+					s.info.compactAt = 0
+				}
 			}
-			s.info.lastText = replyLines(text)
+			s.info.compacted = tail.compacted || s.info.compactAt > 0
+			s.info.lastText = replyLines(tail.lastText)
 		}
 		if checked && readErr == nil {
 			s.info.textAt = now

@@ -187,6 +187,9 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 	costSel := map[string]int{costDollars: 0, costTokens: 1, costOff: 2}[c.costShow]
 	add(" "+cfgLabel(cur.kind == rowListCost, "Cost", lw)+chips([]string{"dollars", "tokens", "off"}, costSel, cur.kind == rowListCost)+
 		stMuted.Render("  each Claude session's cost, and today's total in the header"), true)
+	ctxSel := map[string]int{ctxShowMeter: 0, ctxShowPercent: 1, ctxShowTokens: 2}[c.ctxShow]
+	add(" "+cfgLabel(cur.kind == rowListContext, "Context", lw)+chips([]string{"meter", "percent", "tokens"}, ctxSel, cur.kind == rowListContext)+
+		stMuted.Render("  how full each Claude session's context window is"), true)
 
 	add("", false)
 	add(" "+stSection.Render("History")+stMuted.Render("  exited sessions show their last output after a restart"), false)
@@ -265,6 +268,8 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 		hint = "←/→ or enter change"
 	case rowListCost:
 		hint = "←/→ or enter change · dollars at API prices (notional on a Pro or Max plan), tokens, or off"
+	case rowListContext:
+		hint = "←/→ or enter change · ▰▰▰▱▱ 57%, 57%, or 114k/200k; the meter and window size go first when there's no room"
 	case rowHistoryLines:
 		hint = fmt.Sprintf("lines of output kept per session, 1 to %d; empty: %d", maxHistoryLines, maxHistoryLines)
 	case rowEditor:
