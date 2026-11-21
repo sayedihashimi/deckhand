@@ -278,3 +278,30 @@ func TestForkSidebarHint(t *testing.T) {
 		t.Error("the hint should go when the fork starts working")
 	}
 }
+
+// A fork of a session in a group lands right below it, in the same group,
+// so the list keeps its group-by-group order.
+func TestForkKeepsGroup(t *testing.T) {
+	started := forkStart(t)
+	m := claudeModel()
+	m.groups = []*group{{Name: "app"}}
+	for i, s := range m.sessions {
+		if i < 2 {
+			s.Group = "app"
+		}
+	}
+	m.sel = 1
+	m.handleKey(forkKey())
+	if len(*started) != 1 {
+		t.Fatalf("started %d", len(*started))
+	}
+	n := m.sessions[2]
+	if n.Group != "app" || m.sel != 2 {
+		t.Fatalf("fork group %q, sel %d: %v", n.Group, m.sel, names(m))
+	}
+	before := names(m)
+	m.normalize()
+	if got := names(m); strings.Join(got, ",") != strings.Join(before, ",") {
+		t.Errorf("normalize moved sessions: %v -> %v", before, got)
+	}
+}
