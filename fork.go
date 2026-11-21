@@ -83,6 +83,7 @@ func (m *model) forkSelected() tea.Cmd {
 	m.sel = m.indexOf(s) + 1
 	m.sessions = slices.Insert(m.sessions, m.sel, n)
 	m.clearFilter() // so the fork shows
+	m.showSelected()
 	m.focus = focusTerminal
 	_ = saveSessions(m.sessions)
 	return nil
@@ -104,6 +105,7 @@ func (m *model) newFork(a Agent, s *Session) *Session {
 	n.forkOf = s.ClaudeSessionID
 	n.forkHint = s.Name
 	n.override = s.override // a kept test of an agent that may not be saved
+	n.Group = s.Group       // right below it, in its group
 	// The fork shares the original's folder. A worktree session's worktree
 	// becomes the fork's code repo, so the fork shows its branch but doesn't
 	// own it: x on the fork doesn't offer to remove the worktree.
