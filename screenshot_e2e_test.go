@@ -21,7 +21,8 @@ import (
 // and saves deckhand's
 // screen as a PNG, with the exited shell's restored output, the config
 // screen ("c", testing an agent with t), the help opened from it (F1) and the api session's diff
-// preview ("d") below it, then a session being dragged in the list. The PR
+// preview ("d") below it, then a session being dragged into a group (the
+// sessions are in two groups). The PR
 // workflow posts it on each pull request.
 //
 //	$env:DECKHAND_SCREENSHOT="shot.png"; go test -tags e2e -run TestE2EScreenshot -v
@@ -131,20 +132,26 @@ event PreToolUse Bash | go test ./...
 		Worktree   string `json:"worktree,omitempty"`
 		Branch     string `json:"branch,omitempty"`
 		BaseBranch string `json:"base_branch,omitempty"`
+
+		Group string `json:"group,omitempty"`
 	}
 	now := time.Now()
 	list := []saved{
-		{ID: "shot-api", Name: "api", Agent: "claude", Dir: api, Created: now, Claude: "11111111-1111-1111-1111-111111111111", Started: true},
-		{ID: "shot-docs", Name: "docs", Agent: "claude", Dir: docs, Created: now, Claude: "22222222-2222-2222-2222-222222222222", Started: true},
-		{ID: "shot-web", Name: "web", Agent: "claude", Dir: web, Created: now, Claude: "33333333-3333-3333-3333-333333333333", Started: true},
+		{ID: "shot-api", Name: "api", Agent: "claude", Dir: api, Created: now, Claude: "11111111-1111-1111-1111-111111111111", Started: true, Group: "app"},
+		{ID: "shot-docs", Name: "docs", Agent: "claude", Dir: docs, Created: now, Claude: "22222222-2222-2222-2222-222222222222", Started: true, Group: "app"},
+		{ID: "shot-web", Name: "web", Agent: "claude", Dir: web, Created: now, Claude: "33333333-3333-3333-3333-333333333333", Started: true, Group: "app"},
 		// A worktree session run from a notes folder that isn't git, on
 		// the cli repo: the sidebar shows the marker and the repo's name.
 		{ID: "shot-worktree", Name: "quiet-otter", Agent: "claude", Dir: plans, Created: now, Claude: "44444444-4444-4444-4444-444444444444", Started: true,
-			CodeRepo: cli, RepoRoot: cli, Worktree: wt, Branch: "quiet-otter", BaseBranch: "main"},
+			CodeRepo: cli, RepoRoot: cli, Worktree: wt, Branch: "quiet-otter", BaseBranch: "main", Group: "cli"},
 		{ID: "shot-notes", Name: "notes", Agent: "pwsh", Dir: notes, Created: now, Started: true},
 	}
 	data, _ := json.Marshal(list)
 	if err := os.WriteFile(filepath.Join(home, "sessions.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Two groups; the shell is in none.
+	if err := os.WriteFile(filepath.Join(home, "groups.json"), []byte(`{"groups":[{"name":"app"},{"name":"cli"}]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -214,14 +221,15 @@ editor = 'code "{dir}"'
 	sceneText := h.screen()
 
 	// The exited shell selected: its saved output, restored after the
-	// restart.
-	h.send("\x1b[B\x1b[B\x1b[B\x1b[B")
+	// restart. It's six rows down: past docs, web, the cli header,
+	// quiet-otter and the (no group) header.
+	h.send("\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B")
 	h.waitFor("last output · saved 2h ago", 5*time.Second)
 	h.waitFor("planning-review.md", 3*time.Second)
 	time.Sleep(300 * time.Millisecond)
 	restored := screenFromEmulator(h.emu)
 	t.Logf("restored output:\n%s", h.screen())
-	h.send("\x1b[A\x1b[A\x1b[A\x1b[A")
+	h.send("\x1b[A\x1b[A\x1b[A\x1b[A\x1b[A\x1b[A")
 	h.waitGone("last output", 3*time.Second)
 
 	// The config screen, with the second agent selected and being tested
@@ -259,17 +267,22 @@ editor = 'code "{dir}"'
 	h.send("\x1b")
 	h.waitGone("files changed", 3*time.Second)
 
-	// Dragging the first session with the mouse: the drop line shows it
-	// would land between the second and third. esc cancels the drag.
-	h.send("\x1b[<0;6;3M")  // press on its first line
-	h.send("\x1b[<32;6;6M") // the second session's first line
-	h.send("\x1b[<32;6;8M") // its last line: below it
+	// The cli group collapsed (space on its header, three rows down), its
+	// header showing quiet-otter's ✓; then the notes shell dragged into the
+	// app group with the mouse: the drop line, indented under app, shows
+	// it would land after docs. esc cancels the drag.
+	h.send("\x1b[B\x1b[B\x1b[B ")
+	h.waitFor("▸ cli", 3*time.Second)
+	// 2 app, 3-5 api, 6-8 docs, 9-11 web, 13 cli, 15 (no group), 16-18 notes
+	h.send("\x1b[<0;6;17M")  // press on notes
+	h.send("\x1b[<32;6;12M") // over web
+	h.send("\x1b[<32;6;9M")  // docs's last line: below it
 	h.waitFor("━━━━━━", 3*time.Second)
 	time.Sleep(300 * time.Millisecond)
 	dragShot := screenFromEmulator(h.emu)
 	t.Logf("dragging:\n%s", h.screen())
 	h.send("\x1b")
-	h.send("\x1b[<0;6;8m") // the release after esc changes nothing
+	h.send("\x1b[<0;6;9m") // the release after esc changes nothing
 	h.waitGone("━━━━━━", 3*time.Second)
 
 	// One image: the scene, the restored output, the config screen, the
