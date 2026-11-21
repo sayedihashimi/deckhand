@@ -37,18 +37,47 @@ The second line under each session is the agent and what it's doing. For Claude 
 - **Finished:** the start of Claude's reply, in place of "your turn" (the ✓ already says it's your turn). It's the first line of the reply with Markdown removed, cut to fit, and bold until you look at the session. It shows once the turn has ended, never while Claude is still working, so an old reply isn't mistaken for a new one. The session header shows as much of the reply as fits, before the folder.
 - **Needs you:** what the tool wants to do, such as `Bash: npm test`.
 
-The third line under each session shows the git branch, then for Claude the model and how much context the conversation uses:
+The third line under each session shows the git branch, then for Claude the model, how much context the conversation uses and what the session has cost:
 
 ```
+ deckhand          $12.40 today
+───────────────────────────────
 ▌2 ✓ api-refactor           1m
 ▌    claude · Fixed the redire…
-▌    feature/login*↑2 · opus 5.5 · 84k
+▌    main* · opus 5.5 · 84k · $1.84
 ```
 
 - **Branch:** `*` means uncommitted changes (untracked files count), `↑2↓1` is commits ahead of and behind the upstream (for a worktree session, the branch it started from). `⎇` marks a worktree session. Outside a git repo the line shows the folder.
-- **Pull request:** after the branch, its GitHub PR's number and state: `#12✓` (checks passing), `#12✗` (failing), `#12…` (running), `#12` (no checks), `#12 draft`, `#12 merged` or `#12 closed`. When the line is short of room, the model goes first, then the context. See [Pull requests](#pull-requests).
+- **Pull request:** after the branch, its GitHub PR's number and state: `#12✓` (checks passing), `#12✗` (failing), `#12…` (running), `#12` (no checks), `#12 draft`, `#12 merged` or `#12 closed`. When the line is short of room, the model goes first, then the cost, then the context. See [Pull requests](#pull-requests).
 - **Model and context:** read from the end of the Claude transcript. The number is the input tokens of the latest reply, including cached ones, which is how much context the next turn starts with. deckhand can't tell the model's context window from the transcript, so it shows tokens rather than a percentage.
+- **Cost:** what the session has cost so far, over all its conversations: `$0.04`, `$1.84`, `$12`. The list header shows what all sessions spent today (since local midnight): `$12.40 today`. When the header is short of room, it drops "today" (`$12.40`), then "n need you" takes its place. The session header shows the cost too. It's kept in `sessions.json`, so an exited session still shows it after a restart. See [Cost](#cost).
 - Details refresh every 3 s for running and selected sessions and every 30 s for the rest, in the background. The session header shows them in full.
+
+## Cost
+
+deckhand shows what each Claude session has cost (see [Session details](#session-details)). The number comes from one of two places:
+
+- **Claude's own number.** Claude Code passes its status line command session JSON that includes `cost.total_cost_usd`. deckhand sets a status line command, `deckhand statusline`, in the per-session `--settings` file it already passes for the hooks, so `~/.claude/settings.json` is never edited. It saves the numbers to the session's folder (`statusline.json`), then runs your own status line (below). Claude runs it after each reply, a few hundred milliseconds after things settle.
+- **An estimate from the transcript,** shown with `~` (`~$1.84`): the usage of each of Claude's replies (input, cache writes, cache reads and output), priced by model from a table built into deckhand. Sub-agents' replies aren't counted. It's used before the first status line arrives, for sessions from before this version, and whenever Claude's number is missing or well below the estimate (Claude can start its count again when a conversation is resumed).
+
+**Your own status line still works.** A `statusLine` in `--settings` replaces the one in your settings files (command-line settings come before user and project settings), so deckhand passes yours through: `deckhand statusline` reads your `statusLine` from the session folder's `.claude/settings.local.json`, then `.claude/settings.json`, then `~/.claude/settings.json` (or `CLAUDE_CONFIG_DIR`), the order Claude Code uses, and only reads them. It runs that command the way Claude does (in Git Bash when it's installed, else PowerShell), with the same JSON on stdin and the same environment (`COLUMNS`, `LINES`), and prints what it prints. Its `padding` and `refreshInterval` are copied to deckhand's. Changes to your command apply on the next run; a new `padding` or `refreshInterval` applies to sessions started after it. If you don't have a status line, deckhand's prints nothing. Claude Code still treats that as a custom status line, so it may stop showing the `? for shortcuts` hint. A status line from your organization's managed settings takes precedence over deckhand's; then only the estimate is shown.
+
+**Dollars, tokens or off.** The dollar amount is at API prices. On a Pro or Max plan it's notional: it says what the same use would cost on the API, not what you pay. The config screen (`c`, Session list) can show tokens instead (`1.2M tok`: input, cache writes and output, without cache reads) or hide cost entirely. In `config.toml`:
+
+```toml
+[cost]
+show       = "dollars"   # or "tokens", or "off"
+statusline = true        # false: don't add deckhand's status line; only the estimate is shown
+
+# Prices in dollars per million tokens, for a model the built-in table
+# doesn't know or whose price changed. A model ID matches the longest
+# entry it starts with. cache_write (5-minute), cache_write_1h and
+# cache_read default to 1.25x, 2x and 0.1x the input price.
+[cost.prices]
+"claude-opus-5-5" = { input = 4, output = 20, cache_read = 0.2 }
+```
+
+**Today** counts what each session spent since local midnight: deckhand keeps each session's total at the start of the day. For a conversation it sees for the first time, spending before midnight is left out using the transcript's timestamps.
 
 ## Notifications
 
@@ -148,7 +177,7 @@ Press `c` in the session list to set deckhand up without editing `config.toml`. 
 - **Testing an agent:** `t` on an agent, or the form's `[Test]` button, starts the agent as it's edited (saved or not) in a temporary session, `test · <name>`, in the selected session's folder (or the current folder when none is selected). The session appears in the list and is selected, and the config screen stays open with a status line at the top: `starting…` then `running` for a program or shell. For a Claude agent it shows `waiting for Claude's SessionStart hook…`, then `✓ hooks work (SessionStart received)`. If no hook arrives within about 30 s it shows `✗ no hook events yet`, with a hint: a PowerShell agent must call `claude`, not `claude.exe`, so the shim applies, and a program agent must pass deckhand's arguments on. If the agent exits, it shows the exit code and the last lines of output. A test is a real start (for Claude, a real, empty conversation), but nothing is sent to it. When you're done, `ctrl+t` (or `t` on an agent) asks whether to keep it as a normal session, named after its folder (`k`), or discard it (`x`). `esc` leaves the test running. Leaving the config screen during a test asks the same question. A Claude test isn't ended while Claude is still starting: a discard waits until Claude is ready, or until the 30 s timeout, and shows "stopping when Claude is ready…" until then.
 - **Pick from your PowerShell profile:** for a PowerShell agent, "Pick from your PowerShell profile…" (or `ctrl+p`) lists the functions and aliases your profile defines, leaving out PowerShell's own. Type to filter, `enter` to pick. If the function has a `-Resume` parameter, deckhand assumes it starts Claude and suggests `<name> -Resume {id}` as the resume command. Listing them runs PowerShell once with your profile, in the background (at most 10 s).
 - **Notifications:** on or off, when (only while deckhand isn't focused, or always), and a button that sends a test notification.
-- **Session list:** the key that hides and shows the list (empty means `F3`), the key that goes back to the list from a session (empty means `F5`), and whether the status line shows while it's hidden. See [Hiding the session list](#hiding-the-session-list).
+- **Session list:** the key that hides and shows the list (empty means `F3`), the key that goes back to the list from a session (empty means `F5`), whether the status line shows while it's hidden, and whether cost shows as dollars, tokens or not at all. See [Hiding the session list](#hiding-the-session-list) and [Cost](#cost).
 - **History:** whether each session's output is saved for after a restart, and how many lines are kept (empty means 5000). See [Output after a restart](#output-after-a-restart).
 - **Open:** the editor and terminal commands, with presets (VS Code, Rider, IntelliJ IDEA, VS Code Insiders; Windows Terminal in a new tab or a new window). "Try it" runs the command as typed on the selected session's folder.
 
