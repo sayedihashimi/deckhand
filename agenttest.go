@@ -151,6 +151,7 @@ func (m *model) startTest(cfg agentConfig) tea.Cmd {
 	m.clearFilter() // so the test session shows
 	m.sessions = append(m.sessions, s)
 	m.sel = len(m.sessions) - 1
+	m.showSelected() // in "(no group)", at the end
 	c.setStatus(fmt.Sprintf("Testing %q in %s. Nothing is sent to it.", a.Name, shortDir(dir, 50)), false)
 	return nil
 }
@@ -203,7 +204,7 @@ func (m *model) finishDiscard() {
 	m.test = nil
 	m.removeSession(t.s)
 	if i := m.indexOf(t.prevSel); i >= 0 {
-		m.sel = i
+		m.selectSession(i)
 	}
 	if m.cfg != nil {
 		m.cfg.setStatus("Discarded the test session.", false)

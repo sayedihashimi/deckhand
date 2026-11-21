@@ -107,41 +107,59 @@ func (m *model) renderSidebar(w, h int) []string {
 	}
 	lines = append(lines, fit(head, w), stBorder.Render(strings.Repeat("─", w)))
 
-	vis := m.visible()
+	rows := m.rows()
 	switch {
+	case len(rows) > 0:
 	case len(m.sessions) == 0:
 		lines = append(lines, strings.Repeat(" ", w), fit(stMuted.Render(" No sessions yet."), w), fit(stMuted.Render(" Press n to start one."), w))
-	case len(vis) == 0:
+	default:
 		lines = append(lines, strings.Repeat(" ", w), fit(stMuted.Render(" No sessions match."), w), fit(stMuted.Render(" esc clears the filter."), w))
 	}
 
-	// Three lines per session; keep the selection in view.
-	visible := (h - len(lines)) / rowsPerSession
-	if visible < 1 {
-		visible = 1
-	}
-	if p := visiblePos(vis, m.sel); p >= 0 && !m.dragging() {
-		// While dragging, the list scrolls with the pointer instead.
-		if p < m.scroll {
-			m.scroll = p
+	// Three lines per session and one per group header (two with the
+	// blank line above it); keep the selection in view, unless dragging:
+	// then the list scrolls with the pointer instead.
+	avail := h - len(lines)
+	if r := m.selRow(rows); r >= 0 && !m.dragging() {
+		if r < m.scroll {
+			m.scroll = r
 		}
-		if p >= m.scroll+visible {
-			m.scroll = p - visible + 1
+		for m.scroll < r && shownEnd(rows, m.scroll, avail) <= r {
+			m.scroll++
 		}
 	}
-	if m.scroll > len(vis)-1 {
-		m.scroll = max(0, len(vis)-1)
+	if m.scroll > len(rows)-1 {
+		m.scroll = max(0, len(rows)-1)
+	}
+	end := shownEnd(rows, m.scroll, avail)
+	// Session numbers (1-9) count the session rows from the top.
+	num := 0
+	for r := 0; r < m.scroll; r++ {
+		if rows[r].kind == rowSession {
+			num++
+		}
 	}
 	now := time.Now()
-	gap := m.dropGap()
-	for p := m.scroll; p < len(vis) && p < m.scroll+visible; p++ {
-		if p == gap {
-			lines = append(lines, dropLine(w))
+	gap, indent := m.dropLineAt()
+	hot, haveHot := m.hotHeader()
+	for r := m.scroll; r < end; r++ {
+		if r == gap {
+			lines = append(lines, dropLine(w, indent))
 		}
-		i := vis[p]
+		row := rows[r]
+		if row.kind == rowHeader {
+			if r > 0 {
+				lines = append(lines, strings.Repeat(" ", w))
+			}
+			selected := m.onHeader && !row.temp && row.group == m.selHeader
+			lines = append(lines, m.renderHeader(row, w, selected, haveHot && hot == row.group))
+			continue
+		}
+		num++
+		i := row.idx
 		s := m.sessions[i]
 		sn := s.Snapshot()
-		selected := i == m.sel
+		selected := !m.onHeader && i == m.sel
 
 		age := ""
 		if !sn.since.IsZero() {
@@ -151,11 +169,11 @@ func (m *model) renderSidebar(w, h int) []string {
 		if sn.unread || sn.status == StatusWaiting {
 			nameStyle = nameStyle.Bold(true)
 		}
-		num := " "
-		if p < 9 {
-			num = fmt.Sprintf("%d", p+1)
+		numText := " "
+		if num <= 9 {
+			numText = fmt.Sprintf("%d", num)
 		}
-		left := stMuted.Render(num) + " " + m.statusIcon(sn) + " " + nameStyle.Render(s.Name)
+		left := stMuted.Render(numText) + " " + m.statusIcon(sn) + " " + nameStyle.Render(s.Name)
 		row1 := fit(left, w-len(age)-1) + stMuted.Render(age) + " "
 
 		detail, isReply := sessionDetail(sn)
@@ -183,8 +201,8 @@ func (m *model) renderSidebar(w, h int) []string {
 		}
 		lines = append(lines, row1, row2, row3)
 	}
-	if gap >= 0 && gap == min(len(vis), m.scroll+visible) {
-		lines = append(lines, dropLine(w)) // below the last row shown
+	if gap >= 0 && gap == end {
+		lines = append(lines, dropLine(w, indent)) // below the last row shown
 	}
 	for len(lines) < h {
 		lines = append(lines, strings.Repeat(" ", w))
@@ -359,6 +377,9 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 	}
 
 	s := m.current()
+	if s == nil && m.onHeader {
+		return m.renderGroupPane(w, h), nil
+	}
 	if s == nil && len(m.sessions) > 0 {
 		lines = append(lines, "", "", fit(stMuted.Render("  No session selected. esc clears the filter."), w))
 		for len(lines) < h {
@@ -589,6 +610,29 @@ func (m *model) renderDialog(w int) []string {
 		out = append(out, "", fit(" "+label(fieldWorktree, "Worktree")+" "+on+what, w))
 	}
 
+	if len(d.groupNames) > 0 {
+		var parts []string
+		for i, g := range d.groupNames {
+			name := g
+			if g == "" {
+				name = noGroupName
+			}
+			switch {
+			case i == d.groupIdx && d.field == fieldGroup:
+				parts = append(parts, lipgloss.NewStyle().Reverse(true).Foreground(colAccent).Render(" "+name+" "))
+			case i == d.groupIdx:
+				parts = append(parts, lipgloss.NewStyle().Reverse(true).Render(" "+name+" "))
+			default:
+				parts = append(parts, stMuted.Render(" "+name+" "))
+			}
+		}
+		hint := ""
+		if d.field == fieldGroup {
+			hint = stMuted.Render("  ←/→ change")
+		}
+		out = append(out, "", fit(" "+label(fieldGroup, "Group ")+"  "+strings.Join(parts, " ")+hint, w))
+	}
+
 	// Exactly where the session will start.
 	target := d.target()
 	mark := lipgloss.NewStyle().Foreground(colIdle).Render("✓")
@@ -662,6 +706,9 @@ func (m *model) renderFooter(w int) string {
 	if m.rename != nil {
 		return fit(m.rename.View()+stMuted.Render("   enter save · esc cancel"), w)
 	}
+	if m.assign != nil {
+		return fit(stMuted.Render(" type to filter or name a new group · ↑↓ choose · enter move · esc cancel"), w)
+	}
 	if m.help != nil {
 		return fit(stMuted.Render(m.helpFooter()), w)
 	}
@@ -705,6 +752,12 @@ func (m *model) renderFooter(w int) string {
 		if ansi.StringWidth(help) > w {
 			help = footerHints(helpList, true)
 		}
+		if m.onHeader {
+			help = " ↑↓ select · space/enter fold · ⇧↑↓ move the group · r rename · x delete the group · ? help"
+			if m.selHeader == "" {
+				help = " ↑↓ select · space/enter fold · a on a session: move it to a group · ? help"
+			}
+		}
 		if m.filterInput != nil {
 			help = " type to filter · enter keep · esc clear"
 		}
@@ -734,6 +787,9 @@ func (m *model) View() tea.View {
 		// The status line goes at the end of the session header row.
 		st := m.statusLine()
 		main[0] = fit(main[0], mw-ansi.StringWidth(st)-2) + "\x1b[0m  " + st
+	}
+	if m.assign != nil {
+		main, cur = m.overlayAssign(main, mw), nil
 	}
 	if m.help != nil {
 		main, cur = m.overlayHelp(main, mw, bodyH), nil
