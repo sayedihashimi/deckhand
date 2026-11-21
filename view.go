@@ -173,6 +173,9 @@ func (m *model) renderSidebar(w, h int) []string {
 		row1 := fit(left, w-len(age)-1) + stMuted.Render(age) + " "
 
 		detail, isReply := sessionDetail(sn)
+		if sn.info.compacted {
+			detail = compactedMark + " · " + detail
+		}
 		if sn.status == StatusExited {
 			detail = exitedDetail(detail, w-6-ansi.StringWidth(s.Agent+" · "))
 		}
@@ -280,39 +283,65 @@ func branchLabel(sn snapshot) (mark, repo, branch string) {
 }
 
 // infoLine is a session's third sidebar line: the git branch and its PR,
-// then the Claude model, context size and cost ("main* · opus 5.5 · 84k ·
-// $1.84", "⎇ quiet-otter↑1 #12✓ · 64k"). When it's short of room the model
-// goes first, then the cost, then the context, so the branch keeps at least
-// 8 cells (all of it with a PR badge, which comes right after it); after
-// that the branch is shortened. Outside git and Claude it's the folder.
+// then the Claude model, how full the context is and the cost ("main* ·
+// opus 5.5 · ▰▰▱▱▱ 42% · $1.84", "⎇ quiet-otter↑1 #12✓ · 6%"; see
+// context.go). When it's short of room the model
+// goes first, then the context's meter, then the cost, then the context,
+// so the branch keeps at least 8 cells (all of it with a PR badge, which
+// comes right after it); after that the branch is shortened. Outside git and Claude it's the folder.
 func infoLine(s *Session, sn snapshot, w int) string {
 	in := sn.info
-	var model, ctx string
+	var model string
 	if in.model != "" {
 		model = shortModel(in.model)
 	}
-	if in.ctxTokens > 0 {
-		ctx = shortTokens(in.ctxTokens)
+	ctxs := contextVariants(infoOpts.context, in.ctxTokens, sn.ctxWindow)
+	ctxStyle := contextStyle(contextPct(in.ctxTokens, sn.ctxWindow))
+	ctx := func() string {
+		if len(ctxs) == 0 {
+			return ""
+		}
+		return ctxs[0]
 	}
 	cost := sn.cost
-	tail := func() string {
+	// tail is the details as plain text, for measuring; styledTail is how
+	// they're drawn, with the context coloured by how full it is.
+	pieces := func() []string {
 		var parts []string
-		for _, p := range []string{model, ctx, cost} {
+		for _, p := range []string{model, ctx(), cost} {
 			if p != "" {
 				parts = append(parts, p)
 			}
 		}
-		return strings.Join(parts, " · ")
+		return parts
 	}
-	// drop removes the next piece of the tail; false when it's empty.
+	tail := func() string { return strings.Join(pieces(), " · ") }
+	styledTail := func() string {
+		var parts []string
+		if model != "" {
+			parts = append(parts, stMuted.Render(model))
+		}
+		if c := ctx(); c != "" {
+			parts = append(parts, ctxStyle.Render(c))
+		}
+		if cost != "" {
+			parts = append(parts, stMuted.Render(cost))
+		}
+		return strings.Join(parts, stMuted.Render(" · "))
+	}
+	// drop shortens the tail by one step: the model goes, then the
+	// context's meter (or window size), then the cost, then the context;
+	// false when it's empty.
 	drop := func() bool {
 		switch {
 		case model != "":
 			model = ""
+		case len(ctxs) > 1:
+			ctxs = ctxs[1:]
 		case cost != "":
 			cost = ""
-		case ctx != "":
-			ctx = ""
+		case len(ctxs) > 0:
+			ctxs = ctxs[1:]
 		default:
 			return false
 		}
@@ -322,8 +351,8 @@ func infoLine(s *Session, sn snapshot, w int) string {
 	if branch == "" {
 		for ansi.StringWidth(tail()) > w && drop() {
 		}
-		if t := tail(); t != "" {
-			return stMuted.Render(t)
+		if tail() != "" {
+			return styledTail()
 		}
 		return stMuted.Render(shortDir(s.Dir, w))
 	}
@@ -363,10 +392,22 @@ func infoLine(s *Session, sn snapshot, w int) string {
 		head = ansi.StringWidth(mark + repo)
 	}
 	line := stBranch.Render(mark) + stMuted.Render(repo) + stBranch.Render(clip(branch, max(room()-head, 2))) + badge
-	if t := tail(); t != "" {
-		return line + stMuted.Render(" · "+t)
+	if tail() != "" {
+		return line + stMuted.Render(" · ") + styledTail()
 	}
 	return line
+}
+
+// headerContext is the context for the session header: "142k context",
+// or with the window size "142k/200k context · 71%", coloured by how full
+// it is.
+func headerContext(sn snapshot) string {
+	tokens := shortTokens(sn.info.ctxTokens)
+	if sn.ctxWindow <= 0 {
+		return stMuted.Render(tokens + " context")
+	}
+	pct := contextPct(sn.info.ctxTokens, sn.ctxWindow)
+	return contextStyle(pct).Render(fmt.Sprintf("%s/%s context · %.0f%%", tokens, shortTokens(sn.ctxWindow), pct))
 }
 
 // shortDir shows a folder in w cells, keeping its end ("…\src\api").
@@ -461,7 +502,7 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 		}
 	}
 	if sn.info.model != "" {
-		header += stMuted.Render("  " + shortModel(sn.info.model) + " · " + shortTokens(sn.info.ctxTokens) + " context")
+		header += stMuted.Render("  "+shortModel(sn.info.model)+" · ") + headerContext(sn)
 	}
 	if sn.cost != "" {
 		header += stMuted.Render(" · " + sn.cost)
