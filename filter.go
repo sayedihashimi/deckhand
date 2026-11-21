@@ -41,7 +41,7 @@ func filterFields(s *Session) []string {
 func (m *model) visible() []int {
 	out := make([]int, 0, len(m.sessions))
 	for i, s := range m.sessions {
-		if m.attentionOnly && i != m.sel {
+		if m.attentionOnly && i != m.selectedIdx() {
 			sn := s.Snapshot()
 			if !(sn.status == StatusWaiting || sn.unread) {
 				continue
@@ -67,38 +67,54 @@ func visiblePos(vis []int, sel int) int {
 	return -1
 }
 
-// moveSel moves the selection by delta within the visible list.
+// moveSel moves the selection by delta rows: sessions, and group headers
+// when there are groups.
 func (m *model) moveSel(delta int) {
-	vis := m.visible()
-	if len(vis) == 0 {
+	rows := m.rows()
+	if len(rows) == 0 {
 		return
 	}
-	p := visiblePos(vis, m.sel)
+	r := m.selRow(rows)
 	switch {
-	case p < 0:
-		p = 0
+	case r < 0:
+		r = 0
 	default:
-		p += delta
+		r += delta
 	}
-	if p < 0 {
-		p = 0
-	}
-	if p >= len(vis) {
-		p = len(vis) - 1
-	}
-	m.sel = vis[p]
+	r = min(max(r, 0), len(rows)-1)
+	m.selectRow(rows[r])
 }
 
-// selectVisible selects the p'th visible session (negative counts from the end).
-func (m *model) selectVisible(p int) bool {
-	vis := m.visible()
-	if p < 0 {
-		p += len(vis)
+// selectRowAt selects the r'th row (negative counts from the end).
+func (m *model) selectRowAt(r int) bool {
+	rows := m.rows()
+	if r < 0 {
+		r += len(rows)
 	}
-	if p < 0 || p >= len(vis) {
+	if r < 0 || r >= len(rows) || rows[r].temp {
 		return false
 	}
-	m.sel = vis[p]
+	m.selectRow(rows[r])
+	return true
+}
+
+// selectVisible selects the p'th session row shown (negative counts from
+// the end); headers and sessions in collapsed groups don't count. These
+// are the numbers 1-9 in the list.
+func (m *model) selectVisible(p int) bool {
+	var shown []int
+	for _, row := range m.rows() {
+		if row.kind == rowSession {
+			shown = append(shown, row.idx)
+		}
+	}
+	if p < 0 {
+		p += len(shown)
+	}
+	if p < 0 || p >= len(shown) {
+		return false
+	}
+	m.selectSession(shown[p])
 	return true
 }
 
@@ -107,8 +123,15 @@ func (m *model) selectVisible(p int) bool {
 // landing just before or after it. Hidden sessions in between are skipped,
 // so with a filter on it never moves past one you can't see. The selection
 // follows the session. It reports whether anything moved (nothing does at
-// either end).
+// either end). With groups, see moveSessionGrouped; on a header it moves
+// the group.
 func (m *model) moveSession(delta int) bool {
+	if m.onHeader {
+		return m.moveGroup(delta, false)
+	}
+	if m.grouped() {
+		return m.moveSessionGrouped(delta)
+	}
 	vis := m.visible()
 	p := visiblePos(vis, m.sel)
 	if p < 0 || delta == 0 {
@@ -129,6 +152,12 @@ func (m *model) moveSession(delta int) bool {
 // visible session (top) or just after the last one. Hidden sessions keep
 // their places relative to each other.
 func (m *model) moveSessionToEnd(top bool) bool {
+	if m.onHeader {
+		return m.moveGroup(map[bool]int{true: -1, false: 1}[top], true)
+	}
+	if m.grouped() {
+		return m.moveSessionInGroup(top)
+	}
 	vis := m.visible()
 	if visiblePos(vis, m.sel) < 0 {
 		return false
@@ -155,15 +184,29 @@ func (m *model) moveSelectedTo(target int) {
 	m.sel = target
 }
 
-// keepSelectionVisible moves the selection to the first visible session if
-// the filter hid it.
+// keepSelectionVisible moves the selection to the first session shown if
+// the filter hid it, or to its group's header if its group is collapsed.
 func (m *model) keepSelectionVisible() {
-	vis := m.visible()
-	if visiblePos(vis, m.sel) >= 0 {
+	rows := m.rows()
+	if m.selRow(rows) >= 0 {
 		return
 	}
-	if len(vis) > 0 {
-		m.sel = vis[0]
+	if !m.onHeader && m.sel >= 0 && m.sel < len(m.sessions) && m.grouped() {
+		if g := m.sessions[m.sel].group(); headerIndex(rows, g) >= 0 && m.collapsed(g) && !m.filtering() {
+			m.onHeader, m.selHeader = true, g
+			return
+		}
+	}
+	for _, row := range rows {
+		if row.kind == rowSession {
+			m.selectSession(row.idx)
+			return
+		}
+	}
+	if len(rows) > 0 && !rows[0].temp {
+		m.selectRow(rows[0])
+	} else {
+		m.onHeader = false
 	}
 }
 

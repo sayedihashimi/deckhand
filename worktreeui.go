@@ -125,13 +125,14 @@ type worktreeSetupMsg struct {
 // in the background (showing each step in the main pane), runs the setup
 // command, then starts the agent. codeRepo is the repo when the start
 // folder isn't in git.
-func (m *model) startWorktreeSession(agent Agent, startDir, codeRepo string, at int) tea.Cmd {
+func (m *model) startWorktreeSession(agent Agent, startDir, codeRepo string, at int, group string) tea.Cmd {
 	repoDir, separate := startDir, codeRepo != ""
 	if separate {
 		repoDir = codeRepo
 	}
 	s := newSession(agent, startDir, sessionName(repoDir))
 	s.CodeRepo = repoDir
+	s.Group = group
 	s.dirty = m.dirty
 	s.creating.Store(true)
 	s.preparing.Store(true)
@@ -139,7 +140,9 @@ func (m *model) startWorktreeSession(agent Agent, startDir, codeRepo string, at 
 	at = min(max(at, 0), len(m.sessions))
 	m.sessions = slices.Insert(m.sessions, at, s)
 	m.sel = at
+	m.normalize()   // with at = the end, to the end of its group
 	m.clearFilter() // so the new session shows
+	m.showSelected()
 	m.focus = focusSidebar
 	cfg := worktreeSettings
 	s.addPrepLog("Creating a worktree for " + repoDir)
@@ -256,7 +259,7 @@ func (m *model) worktreeLikeSelected() tea.Cmd {
 		m.setFlash(fmt.Sprintf("W needs a git repo, and %s isn't in one. Press n and pick a code repo.", check))
 		return nil
 	}
-	return m.startWorktreeSession(agent, startDir, repo, m.sel+1)
+	return m.startWorktreeSession(agent, startDir, repo, m.sel+1, s.group())
 }
 
 // removeSession ends a session and removes it from the list.

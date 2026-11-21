@@ -62,7 +62,9 @@ var helpGroups = []helpGroup{
 	{helpList, []helpEntry{
 		{keys: "↑↓ j k", desc: "select a session", match: []string{"up", "k", "down", "j"}, footer: "↑↓ select", short: "↑↓"},
 		{keys: "home end", desc: "first / last (also g, G)", match: []string{"home", "g", "end", "G"}},
-		{keys: "⇧↑↓ ⇧home/end", desc: "move the session", match: []string{"shift+up", "shift+down", "shift+home", "shift+end"}},
+		{keys: "⇧↑↓ ⇧home/end", desc: "move the session or group", match: []string{"shift+up", "shift+down", "shift+home", "shift+end"}},
+		{keys: "a", desc: "move the session to a group", match: []string{"a"}},
+		{keys: "space ←→", desc: "on a group: fold / unfold", match: []string{"space", "left"}},
 		{keys: "enter", desc: "open (starts or resumes it)", match: []string{"enter", "right", "l"}, footer: "enter open", short: "⏎ open"},
 		{keys: "shift+enter", desc: "new session, same folder", match: []string{"shift+enter", "alt+enter"}, footer: "⇧⏎ new here", short: "⇧⏎ here"},
 		{keys: "n W", desc: "new session; W: new worktree", match: []string{"n", "W"}, footer: "n new"},
@@ -76,10 +78,10 @@ var helpGroups = []helpGroup{
 		{keys: "@", desc: "only sessions that need you", match: []string{"@"}, footer: "@ needs you", short: "-"},
 		{keys: "esc", desc: "clear the filter", match: []string{"esc"}},
 		{keys: "o O t", desc: "editor / Explorer / terminal", match: []string{"o", "O", "t"}, footer: "o editor · O explorer · t terminal", short: "o/O/t open"},
-		{keys: "r", desc: "rename", match: []string{"r"}, footer: "r rename"},
+		{keys: "r", desc: "rename (a session or group)", match: []string{"r"}, footer: "r rename"},
 		{keys: "c", desc: "settings (config screen)", match: []string{"c"}, footer: "c config"},
 		{keys: "K", desc: "end it (it stays in the list)", match: []string{"K"}},
-		{keys: "x del", desc: "end and remove from the list", match: []string{"x", "delete"}},
+		{keys: "x del", desc: "end, remove; on a group: delete", match: []string{"x", "delete"}},
 		// The toggle and back keys are configurable ([list] toggle_key and
 		// back_key); withListKeys shows the configured ones in place of F3
 		// and F5.
@@ -100,6 +102,7 @@ var helpGroups = []helpGroup{
 	{helpMouse, []helpEntry{
 		{keys: "wheel", desc: "scroll output or list"},
 		{keys: "click", desc: "select, focus terminal"},
+		{keys: "drag", desc: "move a session or group"},
 		{keys: "shift+drag", desc: "select text"},
 	}},
 	{helpDialog, []helpEntry{

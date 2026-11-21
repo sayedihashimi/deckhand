@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -212,4 +213,66 @@ func TestE2ERemoveWithEnter(t *testing.T) {
 	h2 := startHarness(t, exe, envWith(home, path), t.TempDir())
 	h2.waitOrder("sess-alpha", "sess-charlie")
 	waitShown(h2, "sess-alpha sess-charlie")
+}
+
+// drag sends an SGR left-button press at screen cell (x, fromY), motion
+// with the button held through each line in via, and the release on the
+// last one; all 0-based.
+func (h *harness) drag(x, fromY int, via ...int) {
+	h.send(fmt.Sprintf("\x1b[<0;%d;%dM", x+1, fromY+1))
+	for _, y := range via {
+		h.send(fmt.Sprintf("\x1b[<32;%d;%dM", x+1, y+1))
+	}
+	h.send(fmt.Sprintf("\x1b[<0;%d;%dm", x+1, via[len(via)-1]+1))
+}
+
+// TestE2EDragSessions drags session 3 to the top with the mouse, checks the
+// drop line while it's held, then restarts deckhand and checks the order.
+func TestE2EDragSessions(t *testing.T) {
+	exe := buildDeckhand(t)
+	pwsh, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh not found")
+	}
+	path := filepath.Dir(pwsh) + ";" + os.Getenv("SystemRoot") + `\System32`
+	home := savedThree(t)
+	h := startHarness(t, exe, envWith(home, path), t.TempDir())
+	h.waitOrder("sess-alpha", "sess-bravo", "sess-charlie")
+
+	// Rows start on line 2, three lines each: charlie's first line is 8.
+	h.send("\x1b[<0;6;9M")  // press on charlie
+	h.send("\x1b[<32;6;6M") // over bravo
+	h.send("\x1b[<32;6;3M") // onto alpha's top line
+	h.waitFor("━━━━", 5*time.Second)
+	if got := strings.Split(h.screen(), "\n")[2]; !strings.Contains(got, "━━━━") {
+		t.Fatalf("the drop line should be above alpha (line 2): %q\n%s", got, h.screen())
+	}
+	h.send("\x1b[<0;6;3m") // release
+	h.waitOrder("sess-charlie", "sess-alpha", "sess-bravo")
+	h.waitGone("━━━━", 5*time.Second)
+	if got := savedOrder(t, home); got != "sess-charlie sess-alpha sess-bravo" {
+		t.Errorf("saved after the drag: %q", got)
+	}
+
+	// A drag released over the terminal pane changes nothing.
+	h.send("\x1b[<0;6;3M\x1b[<32;6;9M\x1b[<32;81;9M\x1b[<0;81;9m")
+	time.Sleep(300 * time.Millisecond)
+	h.waitOrder("sess-charlie", "sess-alpha", "sess-bravo")
+	if got := savedOrder(t, home); got != "sess-charlie sess-alpha sess-bravo" {
+		t.Errorf("saved after a cancelled drag: %q", got)
+	}
+
+	// Charlie onto bravo's last line goes below it.
+	h.drag(5, 2, 5, 10)
+	h.waitOrder("sess-alpha", "sess-bravo", "sess-charlie")
+	if got := savedOrder(t, home); got != "sess-alpha sess-bravo sess-charlie" {
+		t.Errorf("saved after dragging back: %q", got)
+	}
+	t.Logf("screen:\n%s", h.screen())
+
+	h.send("q")
+	h.waitExit(15 * time.Second)
+
+	h2 := startHarness(t, exe, envWith(home, path), t.TempDir())
+	h2.waitOrder("sess-alpha", "sess-bravo", "sess-charlie")
 }
