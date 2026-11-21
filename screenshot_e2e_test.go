@@ -348,11 +348,11 @@ editor = 'code "{dir}"'
 		h.send("\x1b")
 	}
 
-	// Optionally the scene with the list hidden (ctrl+\): the selected
+	// Optionally the scene with the list hidden (F3): the selected
 	// session gets the full width and the header ends with the status line.
 	if hidden := os.Getenv("DECKHAND_SCREENSHOT_HIDDEN"); hidden != "" {
-		h.send("\x1c") // ctrl+\
-		h.waitFor(`need you · 1 finished · ctrl+\ list`, 5*time.Second)
+		h.send("\x1bOR") // F3
+		h.waitFor(" · F3 list", 5*time.Second)
 		time.Sleep(500 * time.Millisecond)
 		hf, err := os.Create(hidden)
 		if err != nil {
@@ -363,7 +363,7 @@ editor = 'code "{dir}"'
 			t.Fatal(err)
 		}
 		t.Logf("wrote %s\n%s", hidden, h.screen())
-		h.send("\x1c") // show it again
+		h.send("\x1bOR") // show it again
 	}
 
 	h.send("q")
