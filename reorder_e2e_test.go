@@ -172,3 +172,44 @@ func TestE2EWTMoveSessions(t *testing.T) {
 		t.Errorf("saved: %q", got)
 	}
 }
+
+// TestE2ERemoveWithEnter answers x's prompt with enter, its default, and
+// checks the session is gone from the list and stays gone after a restart.
+func TestE2ERemoveWithEnter(t *testing.T) {
+	exe := buildDeckhand(t)
+	pwsh, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh not found")
+	}
+	path := filepath.Dir(pwsh) + ";" + os.Getenv("SystemRoot") + `\System32`
+	home := savedThree(t)
+	h := startHarness(t, exe, envWith(home, path), t.TempDir())
+	h.waitOrder("sess-alpha", "sess-bravo", "sess-charlie")
+
+	h.send("\x1b[B") // down: select bravo
+	h.send("x")
+	h.waitFor(`Remove "sess-bravo" from the list? Y/n`, 5*time.Second)
+	h.send("\r")
+	waitShown := func(h *harness, want string) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			if strings.Join(h.sidebarOrder("sess-alpha", "sess-bravo", "sess-charlie"), " ") == want {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		t.Fatalf("list %q, want %q; screen:\n%s", h.sidebarOrder("sess-alpha", "sess-bravo", "sess-charlie"), want, h.screen())
+	}
+	waitShown(h, "sess-alpha sess-charlie")
+	if got := savedOrder(t, home); got != "sess-alpha sess-charlie" {
+		t.Errorf("saved after x, enter: %q", got)
+	}
+
+	h.send("q") // nothing is running, so it quits without asking
+	h.waitExit(15 * time.Second)
+
+	h2 := startHarness(t, exe, envWith(home, path), t.TempDir())
+	h2.waitOrder("sess-alpha", "sess-charlie")
+	waitShown(h2, "sess-alpha sess-charlie")
+}
