@@ -99,6 +99,7 @@ var helpGroups = []helpGroup{
 	{helpMouse, []helpEntry{
 		{keys: "wheel", desc: "scroll output or list"},
 		{keys: "click", desc: "select, focus terminal"},
+		{keys: "drag", desc: "move a session; esc cancels"},
 		{keys: "shift+drag", desc: "select text"},
 	}},
 	{helpDialog, []helpEntry{

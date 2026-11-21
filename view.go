@@ -120,7 +120,8 @@ func (m *model) renderSidebar(w, h int) []string {
 	if visible < 1 {
 		visible = 1
 	}
-	if p := visiblePos(vis, m.sel); p >= 0 {
+	if p := visiblePos(vis, m.sel); p >= 0 && !m.dragging() {
+		// While dragging, the list scrolls with the pointer instead.
 		if p < m.scroll {
 			m.scroll = p
 		}
@@ -132,7 +133,11 @@ func (m *model) renderSidebar(w, h int) []string {
 		m.scroll = max(0, len(vis)-1)
 	}
 	now := time.Now()
+	gap := m.dropGap()
 	for p := m.scroll; p < len(vis) && p < m.scroll+visible; p++ {
+		if p == gap {
+			lines = append(lines, dropLine(w))
+		}
 		i := vis[p]
 		s := m.sessions[i]
 		sn := s.Snapshot()
@@ -177,6 +182,9 @@ func (m *model) renderSidebar(w, h int) []string {
 			row3 = marker + onBackground(fit("    "+infoLine(s, sn, w-6), w-1), selBgSeq)
 		}
 		lines = append(lines, row1, row2, row3)
+	}
+	if gap >= 0 && gap == min(len(vis), m.scroll+visible) {
+		lines = append(lines, dropLine(w)) // below the last row shown
 	}
 	for len(lines) < h {
 		lines = append(lines, strings.Repeat(" ", w))

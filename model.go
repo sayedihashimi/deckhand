@@ -57,6 +57,9 @@ type model struct {
 	attentionOnly bool
 	filterInput   *textinput.Model // open while typing a filter
 
+	// A press on a session that may become a drag (drag.go).
+	drag *dragState
+
 	help *helpOverlay // the key help (? or F1), when open
 	diff *diffView    // the diff preview (d), when open
 
@@ -235,6 +238,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.tickTest(now)
 		}
+		m.dragTick()
 		if s := m.current(); s != nil {
 			s.MarkSeen()
 		}
@@ -345,6 +349,14 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	if m.closing != nil {
 		return m, m.closeKey(key)
+	}
+
+	// Any key ends a drag; esc only cancels it.
+	if m.drag != nil {
+		m.cancelDrag()
+		if key == "esc" {
+			return m, nil
+		}
 	}
 
 	// F1 opens the help from anywhere, so it never reaches the agent.
@@ -639,6 +651,14 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		return nil
 	}
 	if m.focus == focusDialog || m.focus == focusConfig || m.rename != nil || m.confirm != nil || m.closing != nil || m.filterInput != nil {
+		m.cancelDrag()
+		return nil
+	}
+
+	// A press in the list, maybe dragging: the motion and the release are
+	// the list's wherever they happen, and never reach the agent.
+	if m.drag != nil {
+		m.dragMouse(msg)
 		return nil
 	}
 
@@ -654,8 +674,10 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 			}
 		case tea.MouseClickMsg:
 			if ms.Button == tea.MouseLeft && ms.Y >= 2 {
-				if m.selectVisible(m.scroll + (ms.Y-2)/rowsPerSession) {
+				p := m.scroll + (ms.Y-listTop)/rowsPerSession
+				if m.selectVisible(p) {
 					m.focus = focusSidebar
+					m.startDrag(p, ms.X, ms.Y) // a drag if it moves before the release
 				}
 			}
 		}
