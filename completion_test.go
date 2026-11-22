@@ -14,7 +14,7 @@ func (f fakeFS) list(dir string) []string { return f[strings.ToLower(filepath.Cl
 
 var testFS = fakeFS{
 	`c:\`:              {"data", "Users", "$Recycle.Bin", "Windows"},
-	`c:\data`:          {"mycode", "Dropbox", "tools"},
+	`c:\data`:          {"mycode", "Documents", "tools"},
 	`c:\data\mycode`:   {"deckhand", "dotnet-new-web", "eShop", "agent-deck", ".git"},
 	`c:\data\mycode\x`: {},
 }
@@ -47,7 +47,7 @@ func TestFolderSuggestions(t *testing.T) {
 		}},
 		{"plain word fuzzy", "dnw", []string{`C:\data\mycode\dotnet-new-web`}},
 		{"case-insensitive path prefix", `c:\data\MY`, []string{`c:\data\mycode`}},
-		{"trailing separator lists children", `C:\data\`, []string{`C:\data\tools (recent)`, `C:\data\Dropbox`, `C:\data\mycode`}},
+		{"trailing separator lists children", `C:\data\`, []string{`C:\data\tools (recent)`, `C:\data\Documents`, `C:\data\mycode`}},
 		{"drive root, hidden skipped", `C:`, []string{`C:\data`, `C:\Users`, `C:\Windows`}},
 		{"relative path", `..\to`, []string{`C:\data\tools (recent)`}},
 		{"hidden shown when typed", `.g`, []string{`C:\data\mycode\.git`}},
