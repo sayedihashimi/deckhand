@@ -28,6 +28,7 @@ const (
 	rowListKey
 	rowListBackKey
 	rowListStatus
+	rowListCost
 	rowHistorySave
 	rowHistoryLines
 	rowEditor
@@ -88,6 +89,7 @@ type configScreen struct {
 	listKey    textinput.Model // [list] toggle_key
 	backKey    textinput.Model // [list] back_key
 	listStatus bool            // [list] status_line
+	costShow   string          // [cost] show
 	histSave   bool            // [history] save
 	histLines  textinput.Model // [history] lines
 	editor     textinput.Model
@@ -141,6 +143,10 @@ func newConfigScreen(width int) *configScreen {
 	c.listKey.SetValue(cfg.List.ToggleKey)
 	c.backKey.SetValue(cfg.List.BackKey)
 	c.listStatus = cfg.List.StatusLine == nil || *cfg.List.StatusLine
+	c.costShow, _ = checkCostShow(cfg.Cost.Show)
+	if c.costShow == "" {
+		c.costShow = costDollars
+	}
 	c.histSave = cfg.History.Save == nil || *cfg.History.Save
 	if cfg.History.Lines != 0 {
 		c.histLines.SetValue(strconv.Itoa(cfg.History.Lines))
@@ -193,6 +199,7 @@ func (c *configScreen) settings() configFile {
 		Notifications: notifyConfig{Enabled: &on, When: c.notifyWhen},
 		List:          listConfig{ToggleKey: listKey, BackKey: backKey, StatusLine: &status},
 		History:       historyConfig{Save: &save, Lines: c.historyLines()},
+		Cost:          costConfig{Show: c.costShow},
 		Open: openConfig{
 			Editor:   strings.TrimSpace(c.editor.Value()),
 			Terminal: strings.TrimSpace(c.terminal.Value()),
@@ -257,7 +264,7 @@ func (c *configScreen) rows() []cfgRow {
 		rows = append(rows, cfgRow{rowAgent, i})
 	}
 	for _, k := range []cfgRowKind{rowAddAgent, rowNotifyEnabled, rowNotifyWhen, rowNotifyTest,
-		rowListKey, rowListBackKey, rowListStatus, rowHistorySave, rowHistoryLines, rowEditor, rowEditorPreset, rowTerminal, rowTerminalPreset, rowTryOpen, rowSave} {
+		rowListKey, rowListBackKey, rowListStatus, rowListCost, rowHistorySave, rowHistoryLines, rowEditor, rowEditorPreset, rowTerminal, rowTerminalPreset, rowTryOpen, rowSave} {
 		rows = append(rows, cfgRow{kind: k})
 	}
 	return rows
@@ -497,6 +504,20 @@ func (m *model) configKey(k tea.KeyPressMsg) tea.Cmd {
 		if isToggleKey(key) {
 			c.listStatus = !c.listStatus
 		}
+	case rowListCost:
+		opts := []string{costDollars, costTokens, costOff}
+		i := 0
+		for j, o := range opts {
+			if o == c.costShow {
+				i = j
+			}
+		}
+		switch key {
+		case "left", "h":
+			c.costShow = opts[(i+len(opts)-1)%len(opts)]
+		case "right", "l", "space":
+			c.costShow = opts[(i+1)%len(opts)]
+		}
 	case rowHistorySave:
 		if isToggleKey(key) {
 			c.histSave = !c.histSave
@@ -565,7 +586,7 @@ func (m *model) leaveConfigScreen() tea.Cmd {
 
 func isToggleKey(key string) bool {
 	switch key {
-	case "enter", "space", "left", "right", "h", "l":
+	case "space", "left", "right", "h", "l":
 		return true
 	}
 	return false

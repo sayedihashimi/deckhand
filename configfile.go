@@ -21,7 +21,7 @@ const configHeader = `# deckhand config. Written by deckhand's config screen (pr
 `
 
 // reloadConfig reads the config file and applies it: agents, notifications,
-// [open], [list], [history] and [worktree]. Settings that fail to load fall back to their defaults;
+// [open], [list], [history], [worktree] and [cost]. Settings that fail to load fall back to their defaults;
 // the first error is returned.
 func reloadConfig() error {
 	agents, err := loadAgents()
@@ -36,7 +36,9 @@ func reloadConfig() error {
 	setHistorySettings(histCfg)
 	wtCfg, wtErr := loadWorktreeConfig()
 	worktreeSettings = wtCfg
-	for _, e := range []error{err, notifyErr, openErr, listErr, histErr, wtErr} {
+	costCfg, costErr := loadCostConfig()
+	setCostSettings(costCfg)
+	for _, e := range []error{err, notifyErr, openErr, listErr, histErr, wtErr, costErr} {
 		if e != nil {
 			return e
 		}
@@ -51,6 +53,7 @@ type configFile struct {
 	Open          openConfig    `toml:"open"`
 	List          listConfig    `toml:"list"`
 	History       historyConfig `toml:"history"`
+	Cost          costConfig    `toml:"cost"`
 }
 
 // decodeConfig reads the edited settings and, separately, every table in
@@ -94,6 +97,24 @@ func encodeConfig(cfg configFile, raw map[string]any) (string, error) {
 	if cfg.History.Save != nil || cfg.History.Lines != 0 {
 		out["history"] = cfg.History
 	}
+	// [cost] keeps its other keys ([cost.prices], statusline): only show
+	// is edited here, and the default isn't written.
+	cost := map[string]any{}
+	if old, ok := raw["cost"].(map[string]any); ok {
+		for k, v := range old {
+			cost[k] = v
+		}
+	}
+	delete(cost, "show")
+	if cfg.Cost.Show != "" && cfg.Cost.Show != costDollars {
+		cost["show"] = cfg.Cost.Show
+	} else if old, ok := raw["cost"].(map[string]any); ok && old["show"] != nil && cfg.Cost.Show == costDollars {
+		cost["show"] = costDollars // it was set: keep it set
+	}
+	delete(out, "cost")
+	if len(cost) > 0 {
+		out["cost"] = cost
+	}
 	var b strings.Builder
 	b.WriteString(configHeader)
 	enc := toml.NewEncoder(&b)
@@ -121,7 +142,10 @@ func checkConfigText(text string) error {
 	if _, err := parseHistoryConfig(text); err != nil {
 		return err
 	}
-	_, err := parseWorktreeConfig(text)
+	if _, err := parseWorktreeConfig(text); err != nil {
+		return err
+	}
+	_, err := parseCostConfig(text)
 	return err
 }
 

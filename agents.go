@@ -264,6 +264,21 @@ const sampleConfig = `# deckhand agents: each [[agents]] entry shows up in the n
 # save  = true
 # lines = 5000                # lines kept per session, at most 5000
 
+# What each Claude session has cost, on its third line in the list, and
+# today's total in the list header. "dollars" (the default) is at API
+# prices; on a Pro or Max plan that's notional. "tokens" shows tokens
+# instead, "off" hides it. statusline = false stops deckhand adding its
+# status line recorder to Claude sessions (it runs your own status line
+# too); then only the transcript estimate (~$) is shown. [cost.prices]
+# overrides the built-in prices, in dollars per million tokens.
+#
+# [cost]
+# show       = "dollars"      # or "tokens", "off"
+# statusline = true
+#
+# [cost.prices]
+# "claude-opus-5-5" = { input = 4, output = 20, cache_read = 0.2 }
+
 # Worktree sessions (the worktree line in the new-session dialog, or W in
 # the list): each gets its own git worktree and branch. root is where the
 # worktrees go; {repo} is the repo's main checkout, and a relative root is
@@ -348,6 +363,7 @@ type launchExtras struct {
 	addDir string   // claude --add-dir
 	prompt string   // claude --append-system-prompt
 	env    []string // DECKHAND_WORKTREE=..., DECKHAND_BRANCH=...
+	dir    string   // the folder the agent starts in
 
 	// forkFrom is the Claude session ID a fork (f) copies its conversation
 	// from. The new conversation gets claudeID.
@@ -373,7 +389,7 @@ func buildLaunch(a Agent, sessionID, claudeID string, resume bool, extra launchE
 	var settings string
 	if a.Claude {
 		var err error
-		if settings, err = writeClaudeSettings(sessionID); err != nil {
+		if settings, err = writeClaudeSettings(sessionID, extra.dir); err != nil {
 			return spec, fmt.Errorf("write hook settings: %w", err)
 		}
 	}

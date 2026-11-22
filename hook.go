@@ -24,9 +24,11 @@ var claudeHookEvents = []string{
 var toolEvents = map[string]bool{"PreToolUse": true, "PostToolUse": true, "PermissionRequest": true}
 
 // writeClaudeSettings writes the per-session settings file passed to
-// `claude --settings`. It only adds hooks; the user's own settings (including
-// any proxy configuration) still load as normal.
-func writeClaudeSettings(sessionID string) (string, error) {
+// `claude --settings`. It adds hooks and, unless [cost] statusline = false,
+// deckhand's statusLine recorder (see statusline.go); the user's own
+// settings (including any proxy configuration) still load as normal. dir is
+// the session's folder, whose project settings can set a status line too.
+func writeClaudeSettings(sessionID, dir string) (string, error) {
 	type hookCmd struct {
 		Type    string `json:"type"`
 		Command string `json:"command"`
@@ -45,16 +47,34 @@ func writeClaudeSettings(sessionID string) (string, error) {
 		}
 		hooks[ev] = []matcher{m}
 	}
-	data, err := json.MarshalIndent(map[string]any{"hooks": hooks}, "", "  ")
+	settings := map[string]any{"hooks": hooks}
+	if costConfigNow().statusLine {
+		settings["statusLine"] = ownStatusLine(sessionID, dir)
+	}
+	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return "", err
 	}
-	dir := sessionDir(sessionID)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	sdir := sessionDir(sessionID)
+	if err := os.MkdirAll(sdir, 0o700); err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, "claude-settings.json")
+	path := filepath.Join(sdir, "claude-settings.json")
 	return path, os.WriteFile(path, data, 0o600)
+}
+
+// ownStatusLine is deckhand's statusLine setting. It keeps the padding and
+// refresh interval of the user's own status line, which it runs.
+func ownStatusLine(sessionID, dir string) statusLineSetting {
+	sl := statusLineSetting{Type: "command", Command: statusLineCommand(sessionID)}
+	var dirs []string
+	if dir != "" {
+		dirs = []string{dir}
+	}
+	if user, ok := userStatusLine(dirs); ok {
+		sl.Padding, sl.RefreshInterval = user.Padding, user.RefreshInterval
+	}
+	return sl
 }
 
 // runHook implements `deckhand hook --session <id>`: Claude Code pipes the

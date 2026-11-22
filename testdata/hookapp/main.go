@@ -11,6 +11,11 @@
 //	reply <tokens> <text>          add an assistant reply to the transcript
 //	event <Name> [Tool] [| input]  send a hook event; input becomes the
 //	                               tool's command (or file_path for Edit/Write/Read)
+//	statusline <usd> [<window> <tokens>]
+//	                               run the statusLine command with a payload of
+//	                               that cost (and context window size and tokens
+//	                               used), and print "statusline: <its output>"
+//	                               when it prints something
 //	sleep <ms>
 //
 // With --fork-session (deckhand's f), it acts as Claude does: the
@@ -34,7 +39,7 @@ import (
 )
 
 var (
-	command, sessionID, transcript string
+	command, statusCommand, sessionID, transcript string
 )
 
 func main() {
@@ -75,8 +80,12 @@ func main() {
 				Command string `json:"command"`
 			} `json:"hooks"`
 		} `json:"hooks"`
+		StatusLine struct {
+			Command string `json:"command"`
+		} `json:"statusLine"`
 	}
 	_ = json.Unmarshal(data, &cfg)
+	statusCommand = cfg.StatusLine.Command
 	command = cfg.Hooks["Stop"][0].Hooks[0].Command
 	transcript = filepath.Join(filepath.Dir(settings), "transcript.jsonl")
 	_ = os.WriteFile(transcript, []byte(`{"type":"user","message":{"content":"fix it"}}`+"\n"), 0o600)
@@ -109,6 +118,8 @@ func runScript(script string) {
 			n, text, _ := strings.Cut(rest, " ")
 			tokens, _ := strconv.Atoi(n)
 			reply(tokens, text)
+		case "statusline":
+			statusLine(strings.Fields(rest))
 		case "sleep":
 			ms, _ := strconv.Atoi(rest)
 			time.Sleep(time.Duration(ms) * time.Millisecond)
@@ -148,6 +159,49 @@ func reply(tokens int, text string) {
 	if err == nil {
 		_, _ = f.Write(append(line, '\n'))
 		_ = f.Close()
+	}
+}
+
+// statusLine runs the statusLine command as Claude Code would, with a
+// payload of the cost and context in args.
+func statusLine(args []string) {
+	if statusCommand == "" {
+		fmt.Println("statusline: none set")
+		return
+	}
+	num := func(i int) float64 {
+		if i >= len(args) {
+			return 0
+		}
+		v, _ := strconv.ParseFloat(args[i], 64)
+		return v
+	}
+	wd, _ := os.Getwd()
+	p := map[string]any{
+		"session_id": sessionID, "transcript_path": transcript, "cwd": wd,
+		"model":     map[string]any{"id": "claude-opus-5-5", "display_name": "Opus"},
+		"workspace": map[string]any{"current_dir": wd, "project_dir": wd},
+		"cost":      map[string]any{"total_cost_usd": num(0)},
+	}
+	if size := num(1); size > 0 {
+		used := num(2)
+		p["context_window"] = map[string]any{
+			"context_window_size": size, "total_input_tokens": used,
+			"used_percentage": used * 100 / size, "remaining_percentage": 100 - used*100/size,
+			"current_usage": map[string]any{"input_tokens": 2, "cache_creation_input_tokens": 0, "cache_read_input_tokens": used - 2},
+		}
+	}
+	body, _ := json.Marshal(p)
+	parts := strings.Fields(statusCommand)
+	cmd := exec.Command(strings.Trim(parts[0], `"`), parts[1:]...)
+	cmd.Stdin = strings.NewReader(string(body))
+	out, err := cmd.Output()
+	if err != nil {
+		fmt.Println("statusline: error:", err)
+		return
+	}
+	if line := strings.TrimSpace(string(out)); line != "" { // scripts with no status line of their own stay quiet
+		fmt.Println("statusline:", line)
 	}
 }
 

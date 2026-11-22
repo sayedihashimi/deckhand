@@ -38,6 +38,7 @@ type sessionInfo struct {
 	// the view can tell whether it's current for the turn that just ended.
 	lastText []string
 	textAt   time.Time
+	status   statusRecord // the latest status line record (statusline.go)
 }
 
 const (
