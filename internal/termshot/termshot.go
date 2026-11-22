@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"golang.org/x/image/font"
@@ -41,6 +42,11 @@ type Options struct {
 	Fg, Bg   color.Color // default colours; default a dark theme
 	Fonts    []string    // regular fonts in fallback order; default system fonts
 	Bold     []string    // bold fonts in fallback order
+	// Palette writes an 8-bit palette PNG (the 256 most used colours, other
+	// pixels mapped to the nearest of them) at the best compression, for
+	// screenshots kept in the repo. Text antialiasing is the only thing it
+	// changes, and hardly visibly.
+	Palette bool
 }
 
 var (
@@ -113,7 +119,55 @@ func Render(w io.Writer, scr Screen, opt Options) error {
 	if err != nil {
 		return err
 	}
+	if opt.Palette {
+		enc := png.Encoder{CompressionLevel: png.BestCompression}
+		return enc.Encode(w, paletted(img))
+	}
 	return png.Encode(w, img)
+}
+
+// paletted maps img to its 256 most used colours. Ties are broken by the
+// colour value, so the same image always gives the same palette.
+func paletted(img *image.RGBA) *image.Paletted {
+	counts := map[color.RGBA]int{}
+	b := img.Bounds()
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			counts[img.RGBAAt(x, y)]++
+		}
+	}
+	all := make([]color.RGBA, 0, len(counts))
+	for c := range counts {
+		all = append(all, c)
+	}
+	key := func(c color.RGBA) uint32 { return uint32(c.R)<<24 | uint32(c.G)<<16 | uint32(c.B)<<8 | uint32(c.A) }
+	sort.Slice(all, func(i, j int) bool {
+		if counts[all[i]] != counts[all[j]] {
+			return counts[all[i]] > counts[all[j]]
+		}
+		return key(all[i]) < key(all[j])
+	})
+	if len(all) > 256 {
+		all = all[:256]
+	}
+	pal := make(color.Palette, len(all))
+	for i, c := range all {
+		pal[i] = c
+	}
+	out := image.NewPaletted(b, pal)
+	index := map[color.RGBA]uint8{}
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			c := img.RGBAAt(x, y)
+			i, ok := index[c]
+			if !ok {
+				i = uint8(pal.Index(c))
+				index[c] = i
+			}
+			out.SetColorIndex(x, y, i)
+		}
+	}
+	return out
 }
 
 // RenderImage draws the screen.

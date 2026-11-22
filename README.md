@@ -1,19 +1,116 @@
 # deckhand
 
-A terminal UI for running several AI agent CLIs side by side on Windows. The left pane lists your sessions with a live status; the right pane is the selected session's real terminal.
+A terminal UI for running several AI agent CLIs side by side on Windows. The left pane lists your sessions, each with a live status, what it's doing, its branch and what it has cost; the right pane is the selected session's real terminal. Each session can work in its own git worktree, and from the list you can review its diff, open a pull request, merge it and clean up the worktree.
 
-```
- deckhand          1 need you │ ● api-refactor  claude  C:\src\api
-──────────────────────────────│
-▌1 ● api-refactor          12s│  Do you want to make this edit to Program.cs?
-▌    claude · Edit: C:\src\ap…│  ❯ 1. Yes
- 2 ⠹ docs                   3m│    2. Yes, and don't ask again
-     claude · Bash            │    3. No
- 3 ✓ tests                  1m│
-     claude · All 42 tests pa…│
-```
+![deckhand with five sessions in two groups. api needs you: its Claude session asks to run npm test, shown on the right. docs has finished, web is working, quiet-otter is a worktree session with pull request #12 passing its checks, and notes is an exited shell.](docs/img/main.png)
 
 It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) in a ConPTY pseudo console, so your own Claude settings, login and proxy configuration apply unchanged. No tmux or WSL is needed.
+
+## Features
+
+**Running agents**
+
+- Claude Code, Codex, Gemini CLI, PowerShell, cmd and your own scripts or profile functions, each in a real terminal ([Custom agents](#custom-agents-your-own-scripts-and-profile-functions)).
+- A new session with a folder box that completes as you type (`n`), or another one in the same folder with shift+enter ([New session dialog](#new-session-dialog)).
+- Claude sessions resume after a restart, and every session's last output is kept ([Resuming](#resuming), [Output after a restart](#output-after-a-restart)).
+- Fork a Claude conversation to try another approach (`f`) ([Forking](#forking)).
+- Hide the list to give the session the full width (`F3`), and go back to it from a session with `F5` ([Hiding the session list](#hiding-the-session-list)).
+- Open a session's folder in your editor, Explorer or a new terminal tab (`o`, `O`, `t`) ([Opening a session's folder](#opening-a-sessions-folder)).
+
+**Staying on top of them**
+
+- Status icons for working, needs you and finished, from Claude's hooks ([Status icons](#status-icons)).
+- Under each session, Claude's latest reply or the tool it wants to run, then its branch, pull request, model, context window and cost ([Session details](#session-details), [Cost](#cost)).
+- Desktop notifications when a session needs you or finishes ([Notifications](#notifications)).
+- Filter the list (`/`), show only the sessions that need you (`@`), and jump to the next one (`tab`) ([Finding sessions](#finding-sessions)).
+- Groups with headers you can fold, and reordering with shift+↑/↓ or by dragging with the mouse ([Groups](#groups), [Session list keys](#session-list)).
+
+**Git workflow**
+
+- A worktree and branch per session (`W`, or ctrl+t in the dialog), also for a notes folder that works on a separate code repo ([Worktree sessions](#worktree-sessions)).
+- A diff of the session's work against the default branch (`d`) ([Diff preview](#diff-preview)).
+- Push the branch and open a pull request (`p`), then see its checks in the list ([Pull requests](#pull-requests)).
+- Merge it on GitHub, or locally without GitHub (`m`) ([Merging](#merging)).
+- Close the session, removing the worktree and branch once the work is merged (`x`) ([Worktree sessions](#worktree-sessions)).
+
+**Setup**
+
+- A config screen (`c`) for agents, notifications, the list, history and open commands. Test an agent with `t`, or pick one from your PowerShell profile ([The config screen](#the-config-screen)).
+- Help for wherever you are, with `?` or `F1` ([Keys](#keys)).
+
+## Contents
+
+- [Getting started](#getting-started) · [A typical workflow](#a-typical-workflow)
+- [Status icons](#status-icons) · [Session details](#session-details) · [Cost](#cost) · [Notifications](#notifications) · [Finding sessions](#finding-sessions)
+- [Keys](#keys) · [The config screen](#the-config-screen) · [Custom agents](#custom-agents-your-own-scripts-and-profile-functions)
+- [Diff preview](#diff-preview) · [Worktree sessions](#worktree-sessions) · [Pull requests](#pull-requests) · [Merging](#merging)
+- [Groups](#groups) · [Hiding the session list](#hiding-the-session-list) · [Opening a session's folder](#opening-a-sessions-folder)
+- [Resuming](#resuming) · [Forking](#forking) · [Output after a restart](#output-after-a-restart)
+- [Build](#build) · [Debugging](#debugging)
+
+## Getting started
+
+You need Windows 10 (1809 or later) or Windows 11, [Go](https://go.dev/dl/) 1.27 or later to build it, and the agents you want to run on your `PATH`, such as Claude Code's `claude.exe`. Windows Terminal or WezTerm is recommended: in them, deckhand also gets shift+enter and other modified keys (see [Inside a session](#inside-a-session)).
+
+1. **Install it.** Either let Go install it in `%USERPROFILE%\go\bin`:
+
+   ```powershell
+   go install github.com/sayedihashimi/deckhand@latest
+   ```
+
+   or build it from a clone into a folder of your own:
+
+   ```powershell
+   git clone https://github.com/sayedihashimi/deckhand
+   cd deckhand
+   go build -o $HOME\.local\bin\deckhand.exe .
+   ```
+
+   Use a folder without spaces in its path, so Claude's hook commands work without quoting.
+
+2. **Put it on your PATH.** If that folder isn't on it yet, add it for your user and open a new terminal:
+
+   ```powershell
+   [Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ";$HOME\.local\bin", 'User')
+   ```
+
+   `deckhand version` should now print the version.
+
+3. **Run it.** In Windows Terminal, run:
+
+   ```powershell
+   deckhand
+   ```
+
+   It opens with an empty list the first time.
+
+4. **Start a session.** Press `n`, type or pick a folder (`tab` completes it), choose the agent with `shift+tab` and `←/→` if it isn't the one you want, and press `enter`. The agent starts on the right. Type into it, and press `F5` to go back to the list.
+
+5. **Find your way around.** `?` (or `F1`) shows the keys for wherever you are, `c` opens the config screen and `q` quits. Claude sessions can be resumed the next time you start deckhand.
+
+deckhand needs no setup. It works with your existing Claude Code settings and login, and passes its hooks to each Claude session itself, so it never edits your `~/.claude/settings.json`. Its own settings are in `~/.config/deckhand/config.toml` (`deckhand config` prints the path), and its state is in `%LOCALAPPDATA%\deckhand`. `deckhand help` lists the commands.
+
+## A typical workflow
+
+1. **Start a worktree session.** Press `n`, pick the folder and turn the worktree on with `ctrl+t`, or press `W` on a session in that repo. deckhand makes a branch and a folder for it with a name such as `quiet-otter`, and starts the agent there. From a folder that isn't a git repo, such as your notes, pick the code repo in the Repo row (see [Worktree sessions](#worktree-sessions)).
+
+   ![The new-session dialog for the plans notes folder, with the claude agent, the cli code repo filled in from last time, the worktree on and the cli group. It will start in S:\src\plans, with a new worktree of cli in S:\src\cli-wt.](docs/img/new-session.png)
+
+2. **Watch it in the list.** The icon says whether it's working (⠹), needs you (●) or has finished (✓), and the line below it says what it's doing. `tab` selects the next session that needs you. While deckhand isn't focused, you also get a notification.
+3. **Answer it.** Press `enter` (or the session's number) to type into it, answer the prompt, then press `F5` to go back to the list.
+4. **Review the work.** `d` shows the branch's changes against the default branch, committed or not.
+
+   ![The diff preview for api: two files changed, +10 −3 against main, with the hunks of src/auth/login.ts and the untracked test file.](docs/img/diff.png)
+
+5. **Open a pull request.** `p` asks, then pushes the branch and opens a PR. Its number and checks show in the list from then on, such as `#12✓`.
+
+   ![The question p asks for the web session: push fix/win-tests to origin and open a PR into main, titled after its first commit, with one uncommitted file not included.](docs/img/pr.png)
+
+6. **Merge it.** `m` squash-merges the PR on GitHub once its checks pass, after asking. Without GitHub, it merges the branch locally.
+
+   ![The question m asks for the quiet-otter worktree session: squash-merge PR #12, "Retry failed uploads", into main on GitHub and delete its branch.](docs/img/merge.png)
+
+7. **Clean up.** After the merge, deckhand offers to close the session. `y` (or `x` later) ends the agent and removes the worktree and the branch, since the work is merged.
 
 ## Status icons
 
@@ -104,11 +201,21 @@ when    = "unfocused"   # or "always"
 
 Run `deckhand notify-test` to check that notifications appear. If they don't, check Windows' notification settings and Do Not Disturb. Notifications come from Windows PowerShell, so that's the name they show.
 
+## Finding sessions
+
+- `/` filters the list as you type. It matches the name, agent, folder and branch, ignoring case, and letters in order match too. `enter` or `tab` keeps the filter, `esc` clears it.
+- `@` shows only the sessions that need you or finished since you looked. Press it again to show all.
+- `tab` selects the next session that needs you, then the next one that finished.
+
+![The list filtered with /doc: only docs and its fork, docs (fork), are left, in the app group.](docs/img/filter.png)
+
 ## Keys
 
 Press `?` in the session list, or `F1` anywhere (also inside a session, the new-session dialog and the config screen), for a summary of the keys, the status icons and where the config file is. The keys for where you pressed it come first, in full; the other groups follow in two columns as far as they fit, and `↑/↓` scrolls to the rest (the last line says how many more groups there are). `esc`, `?`, `F1` or `q` closes it and goes back to where you were, with nothing lost.
 
-**Session list**
+![The help opened with ? in the session list: the session list's keys in full on the left; the keys inside a session, in the diff preview, for the mouse and in the new-session dialog on the right.](docs/img/help.png)
+
+### Session list
 
 | Key | Action |
 |---|---|
@@ -118,7 +225,7 @@ Press `?` in the session list, or `F1` anywhere (also inside a session, the new-
 | shift+home/end | Move the selected session to the top or the bottom (with a filter on: just before the first, or after the last, session you can see). With groups, to the top or the bottom of its group |
 | a | Move the selected session to a group: type to filter the groups or to name a new one, ↑/↓ choose, enter moves it. `(no group)` takes it out of its group (see [Groups](#groups)) |
 | space, ←/→ | On a group header: fold or unfold the group (← folds, → unfolds; `enter` also switches). ← on a session in a group selects its header |
-| enter | Type into the session; starts or resumes it if it isn't running |
+| enter (or → or l) | Type into the session; starts or resumes it if it isn't running |
 | shift+enter | Start a new session with the same agent and folder, right below the selected one. The selected session is left as it is, so its conversation can still be resumed. Claude gets a fresh conversation; a custom agent runs its normal command, not its `resume` one. ESC enter (what a remapped shift+enter sends) does the same. Where a terminal sends plain enter for shift+enter, it acts like enter |
 | 1–9 | Jump straight into session N |
 | tab | Select the next session that needs you, then the next one that finished |
@@ -143,9 +250,9 @@ Press `?` in the session list, or `F1` anywhere (also inside a session, the new-
 | F3 | Hide or show the session list (see [Hiding the session list](#hiding-the-session-list)) |
 | F5 (or ctrl+q, ctrl+]) | Show the session list if it's hidden |
 | ? or F1 | Show the keys |
-| q | Quit (Claude sessions can be resumed next time) |
+| q (or ctrl+c) | Quit (Claude sessions can be resumed next time) |
 
-**Inside a session**
+### Inside a session
 
 | Key | Action |
 |---|---|
@@ -159,7 +266,7 @@ Modified keys that plain terminal input can't express, such as shift+enter (a ne
 - **Terminals with shift+enter remapped:** a common Claude Code setup makes shift+enter send ESC enter (for example a Windows Terminal `sendInput` action with `"\u001b\r"`). In the session list, ESC enter starts a new session just like shift+enter. Inside a session it reaches the agent unchanged, and Claude reads it as a new line.
 - **Forcing the mode:** set `DECKHAND_KEY_RECORDS=1` to turn win32-input-mode on in another terminal that sends win32-input-mode records, or `0` to turn it off. With it on in a terminal that doesn't send records, some keys arrive garbled.
 
-**Mouse**
+### Mouse
 
 - **Wheel over the terminal:** scrolls back through the output. Any key, or wheeling back down, returns to the live view. If the app turns on mouse reporting itself (a fullscreen TUI such as Claude's fullscreen renderer), the wheel and clicks go to the app instead, so it scrolls its own view.
 - **Wheel or click in the session list:** moves the selection. Clicking the terminal focuses it.
@@ -167,7 +274,7 @@ Modified keys that plain terminal input can't express, such as shift+enter (a ne
 - **Clicking a group's ▾/▸:** folds or unfolds it.
 - **Selecting text:** deckhand uses mouse reporting, so in Windows Terminal hold **shift** while dragging.
 
-**New session dialog**
+### New session dialog
 
 The folder box lists matching folders as you type. Recent folders come first, then the folders in the directory you're typing in. Matching ignores case and also finds letters typed in order (`dnw` finds `dotnet-new-web`). A plain word searches the current folder and your recent folders. The "Start in" line shows exactly which folder will be used.
 
@@ -175,7 +282,7 @@ The folder box lists matching folders as you type. Recent folders come first, th
 |---|---|
 | tab | Complete the highlighted (or best) match and list its subfolders |
 | ↑/↓ | Choose from the list (↑ from the top moves to the row above, ↓ past the bottom to the row below) |
-| ctrl+w | Up one level |
+| ctrl+w (or ctrl+backspace) | Up one level |
 | shift+tab | Back a row (to the agent row, then ←/→ to change agent) |
 | ctrl+t | Turn the worktree on or off (when there's a git repo; see [Worktree sessions](#worktree-sessions)) |
 | enter | Start the session (with an empty box: the current folder) |
@@ -189,6 +296,8 @@ The last agent you used is preselected. Sessions are named after their folder (w
 
 Press `c` in the session list to set deckhand up without editing `config.toml`. It opens in the main area, like the new-session dialog. The welcome screen suggests it when there's no config file yet.
 
+![The config screen with two custom agents, review and claude-opus, above the built-in ones. claude-opus is being tested: the status line at the top says the hooks work, and its test session, test · claude-opus, is in the list.](docs/img/config.png)
+
 - **Agents:** your custom agents, in the order the new-session dialog shows them, then the built-in ones. `enter` edits one, `a` adds one, `d` deletes it and `shift+↑/↓` moves it. The form asks for a name, the kind (a PowerShell command, or a program or script), the command, arguments (for a program), the type (Claude Code or other) and, for a PowerShell command, how to resume it (with `{id}`). It checks the agent with the same rules as loading the file, and shows any problem under the field.
 - **Testing an agent:** `t` on an agent, or the form's `[Test]` button, starts the agent as it's edited (saved or not) in a temporary session, `test · <name>`, in the selected session's folder (or the current folder when none is selected). The session appears in the list and is selected, and the config screen stays open with a status line at the top: `starting…` then `running` for a program or shell. For a Claude agent it shows `waiting for Claude's SessionStart hook…`, then `✓ hooks work (SessionStart received)`. If no hook arrives within about 30 s it shows `✗ no hook events yet`, with a hint: a PowerShell agent must call `claude`, not `claude.exe`, so the shim applies, and a program agent must pass deckhand's arguments on. If the agent exits, it shows the exit code and the last lines of output. A test is a real start (for Claude, a real, empty conversation), but nothing is sent to it. When you're done, `ctrl+t` (or `t` on an agent) asks whether to keep it as a normal session, named after its folder (`k`), or discard it (`x`). `esc` leaves the test running. Leaving the config screen during a test asks the same question. A Claude test isn't ended while Claude is still starting: a discard waits until Claude is ready, or until the 30 s timeout, and shows "stopping when Claude is ready…" until then.
 - **Pick from your PowerShell profile:** for a PowerShell agent, "Pick from your PowerShell profile…" (or `ctrl+p`) lists the functions and aliases your profile defines, leaving out PowerShell's own. Type to filter, `enter` to pick. If the function has a `-Resume` parameter, deckhand assumes it starts Claude and suggests `<name> -Resume {id}` as the resume command. Listing them runs PowerShell once with your profile, in the background (at most 10 s).
@@ -197,7 +306,7 @@ Press `c` in the session list to set deckhand up without editing `config.toml`. 
 - **History:** whether each session's output is saved for after a restart, and how many lines are kept (empty means 5000). See [Output after a restart](#output-after-a-restart).
 - **Open:** the editor and terminal commands, with presets (VS Code, Rider, IntelliJ IDEA, VS Code Insiders; Windows Terminal in a new tab or a new window). "Try it" runs the command as typed on the selected session's folder.
 
-Keys: `↑/↓` or `tab`/`shift+tab` move, `←/→` (or `space`) change a choice, `enter` confirms (on an agent it edits it, like `e`), `a` adds an agent, `d` (or `delete`) deletes it, `shift+↑/↓` (or `K`/`J`) moves it, `t` tests it (then `ctrl+t` asks: `k` keeps the test session, `x` discards it, `esc` decides later), `ctrl+s` saves, and `esc` leaves (asking first if there are unsaved changes). In the agent form, `↑/↓` or `tab` move between fields, `enter` is done (on `[Test]` it starts a test), `esc` cancels and `ctrl+p` picks from your profile; in the profile picker, type to filter, `↑/↓` choose, `enter` picks and `esc` goes back to the form. `F1` shows all of these, with the config screen's keys first. The title says "unsaved changes" until you save.
+Keys: `↑/↓` or `tab`/`shift+tab` move, `←/→` (or `space`, `h`/`l`) change a choice, `enter` confirms (on an agent it edits it, like `e`), `a` adds an agent, `d` (or `delete`) deletes it, `shift+↑/↓` (or `K`/`J`) moves it, `t` tests it (then `ctrl+t` asks: `k` keeps the test session, `x` discards it, `esc` decides later), `ctrl+s` saves, and `esc` leaves (asking first if there are unsaved changes). In the agent form, `↑/↓` or `tab` move between fields, `enter` is done (on `[Test]` it starts a test), `esc` cancels and `ctrl+p` picks from your profile; in the profile picker, type to filter, `↑/↓` choose, `enter` picks and `esc` goes back to the form. `F1` shows all of these, with the config screen's keys first. The title says "unsaved changes" until you save.
 
 **Saving** writes the file atomically (a temporary file, then a rename) and keeps the previous one as `config.toml.bak`. The new settings apply straight away, without a restart: new agents show up in the new-session dialog, and running sessions keep running. A session whose agent you renamed or deleted keeps working until it exits.
 
@@ -232,6 +341,8 @@ A `command` agent that is a program or `.cmd` file gets the extra arguments on i
 
 Press `d` in the session list to see what the selected session changed, without leaving deckhand. It's read-only and works whether the session is running or not.
 
+![The diff preview for api: two files changed, +10 −3 against main, with the hunks of src/auth/login.ts and the untracked test file.](docs/img/diff.png)
+
 - **What it compares:** the session's work tree (its worktree, or its code repo when it was started from a notes folder) against the merge base with the repo's default branch, so it shows the branch's commits plus staged, unstaged and untracked changes. The default branch is `origin/HEAD`, then `origin/main` or `origin/master`, then (with no remote) the local `main` or `master`. deckhand doesn't fetch first, so the base is as recent as your last fetch. With no default branch it shows only uncommitted changes, and in a repo with no commits everything is new.
 - **Layout:** a summary (`2 files changed +83 −1 vs origin/main (merge base b01a2cc)`), the files with their status (`M`, `A`, `D`, `R`, `?` for untracked) and `+`/`−` counts, then each file's hunks in colour. Untracked files show as added; binary files are listed without content.
 - **Keys:** `↑/↓` (or `j/k`), `PgUp/PgDn`, `home/end` and the mouse wheel scroll; `n` and `N` jump to the next and previous file; `esc` (or `d`, `q`) closes it.
@@ -254,6 +365,8 @@ A session can run in its own git worktree, on its own branch, so several agents 
 **A notes folder with a separate code repo**
 
 You can run Claude from a folder that isn't a git repo, such as your notes, while the session works on a code repo somewhere else. When the folder isn't in git, the dialog has a **Repo** row: type or pick the code repo (with the same completions). deckhand remembers the code repo for each folder and fills it in next time.
+
+![The new-session dialog for the plans notes folder, with the claude agent, the cli code repo filled in from last time, the worktree on and the cli group. It will start in S:\src\plans, with a new worktree of cli in S:\src\cli-wt.](docs/img/new-session.png)
 
 - The agent still starts in the notes folder.
 - **Claude** gets `--add-dir <worktree>` and an `--append-system-prompt` telling it to make code changes for that repo in the worktree, on its branch, and not in the main checkout. Resume passes them again.
@@ -291,6 +404,8 @@ Press `p` in the session list to push the selected session's branch to `origin` 
 
 - **Which branch:** a worktree session's branch, in its worktree (never a notes start folder). A plain session uses the branch its folder (or code repo) is on. deckhand never pushes the default branch: on it, `p` says so and does nothing. It also refuses a detached HEAD, and a worktree that has been switched off the session's branch.
 - **No PR yet:** deckhand asks first, showing the branch, the remote and the title: ``Push quiet-otter to origin and open a PR into main, "Retry failed uploads"? y/n``. The title (and body) is the first commit's, as `gh pr create --fill-first` uses. On `y` it runs `git push -u origin <branch>`, then `gh pr create --fill-first --base <default> --head <branch>`, and opens the PR in the browser. Uncommitted files aren't pushed; the question says how many there are. With no commits that aren't on the default branch, there's nothing to push and it says so.
+
+  ![The question p asks for the web session: push fix/win-tests to origin and open a PR into main, titled after its first commit, with one uncommitted file not included. In the list, api shows PR #7 with failing checks and quiet-otter PR #12 with passing ones.](docs/img/pr.png)
 - **A PR already:** it's opened in the browser. If the branch has commits that origin doesn't, deckhand asks to push them first.
 - **A rejected push** (origin's branch has commits you don't): git's reason shows, and deckhand never retries with `--force`.
 - **Messages** say when `gh` isn't installed, isn't signed in (`gh auth status`), or the repo has no GitHub remote.
@@ -303,6 +418,8 @@ Press `m` in the session list to merge the selected session's branch, then close
 **With a GitHub PR** (`gh` installed and signed in, and an `origin` on GitHub, as for `p`):
 
 - deckhand asks, showing the PR's number, title and base: ``Squash-merge PR #12 "Retry failed uploads" into main on GitHub and delete its branch? y/n``. On `y` it runs `gh pr merge <n> --squash --delete-branch --match-head-commit <tip> -R <owner/repo>`. With `-R`, gh deletes the branch on GitHub but doesn't switch or delete anything locally; closing the session does that. With `--match-head-commit`, GitHub refuses the merge if the PR has moved on since deckhand checked.
+
+  ![The question m asks for the quiet-otter worktree session: squash-merge PR #12, "Retry failed uploads", into main on GitHub and delete its branch.](docs/img/merge.png)
 - **It refuses, and says why,** when the branch has no PR (press `p`), the PR is a draft or closed, its checks are failing or still running, GitHub says it can't be merged (conflicts, blocked by the branch's rules, behind the base when that must be up to date, or not worked out yet), or origin doesn't have the local commits (press `p` to push them first). If `gh` isn't signed in, it says so and doesn't merge locally instead.
 - **Already merged:** it goes straight to the offer to close.
 - A plain session on a branch other than the default branch can merge its PR too.
@@ -319,6 +436,8 @@ Press `m` in the session list to merge the selected session's branch, then close
 ## Groups
 
 Sessions can be filed under groups, for example by project, with headers you can fold away. With no groups, the list looks as it always has.
+
+![The list with an app group of four sessions, the cli group folded, and the notes shell from (no group) being dragged into app: a line under docs shows where it will land.](docs/img/groups.png)
 
 ```
  ▾ app  (3)             ● 1 ⠹ ✓ 1
@@ -354,6 +473,8 @@ Automatic grouping by repo or folder (`[list] group_by`) isn't there yet.
 ## Hiding the session list
 
 Press `F3` to hide the session list and give the selected session the full window width. Press it again to show the list. It works the same in the list and inside a session, where `F3` no longer reaches the agent. Claude Code binds no function keys by default, Codex uses `F2` and Gemini CLI uses `F4`, `F6`–`F9` and `F12`, so `F3` is free in all three, and neither Windows Terminal nor WezTerm binds it. The first default, `ctrl+\`, is 1Password's global shortcut on Windows, so it never reached deckhand on machines running 1Password. You can choose another key in the config (below).
+
+![The api session with the list hidden: its terminal uses the full width, and the end of the header says 1 need you · 2 finished · F3 list.](docs/img/hidden.png)
 
 - Every session is resized to the new width, as when the window is resized.
 - `F5` still goes back to the list, and shows it again if it's hidden. `/` shows it too, since the filter is typed at the top of the list.
@@ -409,6 +530,8 @@ The session list is saved in `%LOCALAPPDATA%\deckhand\sessions.json`. Each Claud
 
 `f` in the list forks the selected Claude session: a new session, right below it, that starts with a copy of its conversation. Then you can try another approach without losing the original. shift+enter is different: it starts a fresh conversation with the same agent and folder.
 
+![docs (fork), right below docs and selected, with docs's conversation on the right. Its second line in the list shows ⑂ docs until it gets a prompt.](docs/img/fork.png)
+
 - The fork is selected and starts at once. It's named `<name> (fork)`, or `(fork 2)` and so on if that name is taken; `r` renames it. Until you send it a prompt, its second line in the list shows `⑂ <original name>`.
 - Claude makes the copy: deckhand runs `claude --resume <original's id> --fork-session --session-id <new id>`, so the fork has its own Claude session ID and transcript, and the original's conversation isn't changed. `sessions.json` records which session it was forked from (`forked_from`). After a restart, enter resumes the fork's own conversation.
 - A custom `pwsh` agent with `type = "claude"` (such as `smc`) runs its `resume` command with the original's ID, and the [claude shim](#custom-agents-your-own-scripts-and-profile-functions) adds `--fork-session` and the new `--session-id`. Without a `resume` command it can't fork.
@@ -419,6 +542,8 @@ The session list is saved in `%LOCALAPPDATA%\deckhand\sessions.json`. Each Claud
 ## Output after a restart
 
 Each session's output (its scrollback and screen, with colours, at most 5000 lines) is saved to `%LOCALAPPDATA%\deckhand\sessions\<id>\screen.ans`: when deckhand quits (before it ends the running sessions), when a session's process exits, and every 30 s while a session prints something. Writes go to a temporary file that is then renamed, so a crash leaves the previous save. On the alternate screen (a fullscreen app such as Claude's fullscreen renderer) only the visible screen is saved.
+
+![The exited notes shell selected: its PowerShell output from before the restart, with the header saying last output · saved 2h ago · ⏎ restart · ⇧⏎ new.](docs/img/restored.png)
 
 After deckhand restarts, an exited session shows that output instead of "Not running", dimmed so it's clear it isn't live. The header says `last output · saved 2h ago · ⏎ resume · ⇧⏎ new`. The wheel and shift+PgUp/PgDn scroll it like a live session's scrollback. Lines saved at another width are cut or padded, not re-wrapped. Pressing enter resumes or restarts the session as before, and the live terminal replaces the saved output.
 
@@ -441,6 +566,12 @@ go build -ldflags "-X main.version=0.1.0" -o $HOME\.local\bin\deckhand.exe .
 go test ./...                                              # unit tests
 go test -tags e2e -run TestE2EShell -v                     # drives deckhand in a real ConPTY
 $env:DECKHAND_E2E_CLAUDE=1; go test -tags e2e -run TestE2EClaude -v   # sends one tiny prompt
+```
+
+The screenshots in this README are generated: `TestE2EReadmeShots` plays a scripted scene with fake Claude sessions and writes one PNG per shot to `docs/img`. To regenerate them all:
+
+```powershell
+$env:DECKHAND_SCREENSHOTS="docs/img"; go test -tags e2e -run TestE2EReadmeShots -v -timeout 20m
 ```
 
 Install the binary in a folder without spaces in its path. Hook commands then don't need quoting, so they work whichever shell Claude runs them in.
