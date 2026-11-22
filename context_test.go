@@ -221,6 +221,10 @@ func TestConfigScreenContext(t *testing.T) {
 		t.Errorf("config screen lacks the context row:\n%s", screen)
 	}
 	m.handleKey(key("right")) // percent
+	m.handleKey(key("enter")) // keeps it
+	if m.cfg.ctxShow != ctxShowPercent {
+		t.Fatalf("after right, enter: %q, want %q", m.cfg.ctxShow, ctxShowPercent)
+	}
 	m.handleKey(key("ctrl+s"))
 	if m.cfg.statusErr {
 		t.Fatalf("save: %q", m.cfg.status)

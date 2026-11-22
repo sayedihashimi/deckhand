@@ -581,7 +581,8 @@ func (m *model) leaveConfigScreen() tea.Cmd {
 	return nil
 }
 
-// cycleChoice moves a choice of several options left or right.
+// cycleChoice moves a choice of several options left or right. Enter
+// leaves it as it is.
 func cycleChoice(opts []string, cur, key string) string {
 	i := 0
 	for j, o := range opts {
@@ -592,7 +593,7 @@ func cycleChoice(opts []string, cur, key string) string {
 	switch key {
 	case "left", "h":
 		return opts[(i+len(opts)-1)%len(opts)]
-	case "right", "l", "space", "enter":
+	case "right", "l", "space":
 		return opts[(i+1)%len(opts)]
 	}
 	return cur
@@ -600,7 +601,7 @@ func cycleChoice(opts []string, cur, key string) string {
 
 func isToggleKey(key string) bool {
 	switch key {
-	case "enter", "space", "left", "right", "h", "l":
+	case "space", "left", "right", "h", "l":
 		return true
 	}
 	return false
