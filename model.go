@@ -61,6 +61,16 @@ type model struct {
 	// A press on a session that may become a drag (drag.go).
 	drag *dragState
 
+	// Groups in the list (groups.go): their order and whether they're
+	// collapsed, and whether the selection is a header (which one: "" is
+	// "(no group)") rather than the session m.sel.
+	groups           []*group
+	noGroupCollapsed bool
+	onHeader         bool
+	selHeader        string
+	renameGroup      *group     // the group being renamed (r on a header), with rename
+	assign           *assignBox // moving a session to a group (a)
+
 	help *helpOverlay // the key help (? or F1), when open
 	diff *diffView    // the diff preview (d), when open
 
@@ -111,6 +121,8 @@ func newModel() *model {
 		agents:   availableAgents(),
 	}
 	m.listHidden = loadPrefs().ListHidden
+	m.setGroups(loadGroups())
+	m.keepSelectionVisible() // the first session may be in a collapsed group
 	if _, err := os.Stat(configPath()); err == nil {
 		m.haveConfig = true
 	}
@@ -150,8 +162,11 @@ func (m *model) termSize() (int, int) {
 // current is the selected session, or nil when there's none or the filter
 // hides it.
 func (m *model) current() *Session {
-	if m.sel < 0 || m.sel >= len(m.sessions) {
+	if m.onHeader || m.sel < 0 || m.sel >= len(m.sessions) {
 		return nil
+	}
+	if m.grouped() && m.collapsed(m.sessions[m.sel].group()) && !m.filtering() {
+		return nil // in a collapsed group
 	}
 	if m.filtering() && visiblePos(m.visible(), m.sel) < 0 {
 		return nil
@@ -233,10 +248,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			now := time.Now()
 			for i, s := range m.sessions {
 				s.Refresh(now)
-				if n := s.TakeNotice(); n != nil && !s.testing.Load() && shouldNotify(notifyMode, m.focusKnown, m.windowFocused, i == m.sel) {
+				if n := s.TakeNotice(); n != nil && !s.testing.Load() && shouldNotify(notifyMode, m.focusKnown, m.windowFocused, i == m.selectedIdx()) {
 					go sendNotice(s, *n)
 				}
-				s.MaybePoll(now, i == m.sel)
+				s.MaybePoll(now, i == m.selectedIdx())
 				s.MaybePollPR(now)
 				s.MaybeSaveScreen(now)
 			}
@@ -263,6 +278,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.rename != nil {
 			var cmd tea.Cmd
 			*m.rename, cmd = m.rename.Update(msg)
+			return m, cmd
+		}
+		if m.assign != nil {
+			var cmd tea.Cmd
+			m.assign.input, cmd = m.assign.input.Update(msg)
+			m.assign.hi = 0
 			return m, cmd
 		}
 		switch m.focus {
@@ -394,11 +415,20 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if m.assign != nil {
+		return m, m.assignKey(k)
+	}
+
 	if m.rename != nil {
 		switch key {
 		case "esc":
-			m.rename = nil
+			m.rename, m.renameGroup = nil, nil
 		case "enter":
+			if g := m.renameGroup; g != nil {
+				m.renameGroupTo(g, m.rename.Value())
+				m.rename, m.renameGroup = nil, nil
+				return m, nil
+			}
 			if s := m.current(); s != nil {
 				if name := strings.TrimSpace(m.rename.Value()); name != "" {
 					s.mu.Lock()
@@ -487,9 +517,9 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "down", "j":
 		m.moveSel(1)
 	case "home", "g":
-		m.selectVisible(0)
+		m.selectRowAt(0)
 	case "end", "G":
-		m.selectVisible(-1)
+		m.selectRowAt(-1)
 	case "shift+up", "shift+down", "shift+home", "shift+end":
 		// Move the selected session; the order is saved right away.
 		moved := false
@@ -502,7 +532,7 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			moved = m.moveSessionToEnd(key == "shift+home")
 		}
 		if moved {
-			_ = saveSessions(m.sessions)
+			m.saveAll()
 		}
 	case "/":
 		m.setListHidden(false) // the filter is typed in the list's header
@@ -525,7 +555,25 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.keepSelectionVisible()
 		}
 	case "enter", "right", "l":
+		if m.onHeader {
+			// On a group header: enter folds or unfolds it, → unfolds it.
+			m.toggleHeader(map[bool]int{true: 0, false: 1}[key == "enter"])
+			return m, nil
+		}
 		return m, m.openSelected()
+	case "space", "left":
+		// On a header: space folds or unfolds it, ← folds it. ← on a
+		// session in a group goes to its header.
+		switch {
+		case m.onHeader && key == "space":
+			m.toggleHeader(0)
+		case m.onHeader:
+			m.toggleHeader(-1)
+		case key == "left":
+			m.selectOwnHeader()
+		}
+	case "a":
+		return m, m.openAssign()
 	case "shift+enter", "alt+enter":
 		// alt+enter is ESC CR: terminals with shift+enter remapped to send
 		// it (a common setup for Claude Code) deliver shift+enter this way.
@@ -558,6 +606,7 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		w, _ := m.termSize()
 		m.dialog = newNewDialog(m.agents, w, m.sessions)
+		m.dialog.setGroups(m.groups, m.defaultGroup())
 		m.focus = focusDialog
 		return m, m.dialog.focusCmd()
 	case "c":
@@ -569,6 +618,9 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "m":
 		return m, m.startMerge()
 	case "r":
+		if m.onHeader {
+			return m, m.startRenameGroup()
+		}
 		if s := m.current(); s != nil {
 			ti := textinput.New()
 			ti.Prompt = " Rename: "
@@ -579,6 +631,10 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, m.rename.Focus()
 		}
 	case "x", "delete":
+		if m.onHeader {
+			m.askDeleteGroup()
+			return m, nil
+		}
 		if s := m.current(); s != nil && s.hasWorktree() {
 			m.closeWorktreeSession(s)
 		} else if s != nil && s.preparing.Load() {
@@ -657,7 +713,7 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		m.diffMouse(msg)
 		return nil
 	}
-	if m.focus == focusDialog || m.focus == focusConfig || m.rename != nil || m.confirm != nil || m.closing != nil || m.filterInput != nil {
+	if m.focus == focusDialog || m.focus == focusConfig || m.rename != nil || m.confirm != nil || m.closing != nil || m.filterInput != nil || m.assign != nil {
 		m.cancelDrag()
 		return nil
 	}
@@ -681,10 +737,14 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 			}
 		case tea.MouseClickMsg:
 			if ms.Button == tea.MouseLeft && ms.Y >= 2 {
-				p := m.scroll + (ms.Y-listTop)/rowsPerSession
-				if m.selectVisible(p) {
+				rows := m.rows()
+				if r, line := m.rowAt(rows, ms.Y); r >= 0 && r < len(rows) && !rows[r].temp {
+					m.selectRow(rows[r])
 					m.focus = focusSidebar
-					m.startDrag(p, ms.X, ms.Y) // a drag if it moves before the release
+					if rows[r].kind == rowHeader && line == rowHeight(rows, r)-1 && ms.X <= 2 {
+						m.toggleHeader(0) // a click on ▾/▸ folds or unfolds it
+					}
+					m.startDrag(rows[r], ms.X, ms.Y) // a drag if it moves before the release
 				}
 			}
 		}
@@ -807,6 +867,7 @@ func (m *model) startLikeSelected() tea.Cmd {
 	}
 	n := newSession(agent, dir, sessionName(dir))
 	n.override = s.override // a kept test of an agent that may not be saved
+	n.Group = s.group()     // right below it, in its group
 	w, h := m.termSize()
 	if err := startSession(n, w, h, false, m.dirty); err != nil {
 		m.setFlash("Couldn't start: " + err.Error())
@@ -815,6 +876,7 @@ func (m *model) startLikeSelected() tea.Cmd {
 	m.sel++
 	m.sessions = slices.Insert(m.sessions, m.sel, n)
 	m.clearFilter() // so the new session shows
+	m.showSelected()
 	m.focus = focusTerminal
 	_ = saveSessions(m.sessions)
 	return nil
@@ -873,6 +935,15 @@ func (m *model) jumpToAttention() {
 	vis := m.visible()
 	n := len(vis)
 	p := visiblePos(vis, m.sel)
+	if m.onHeader {
+		// From a header: start after the sessions above it.
+		p = -1
+		for q, i := range vis {
+			if m.groupRank(m.sessions[i].group()) < m.groupRank(m.selHeader) {
+				p = q
+			}
+		}
+	}
 	for _, want := range []func(snapshot) bool{
 		func(s snapshot) bool { return s.status == StatusWaiting },
 		func(s snapshot) bool { return s.unread },
@@ -881,6 +952,7 @@ func (m *model) jumpToAttention() {
 			j := vis[(p+i+n)%n]
 			if want(m.sessions[j].Snapshot()) {
 				m.sel = j
+				m.showSelected() // opening its group if it's collapsed
 				return
 			}
 		}
@@ -933,6 +1005,7 @@ func (m *model) createFromDialog() tea.Cmd {
 		}
 	}
 	agent := d.agents[d.agentIdx]
+	grp := d.group()
 	remember := func() {
 		p := loadPrefs()
 		p.useDir(dir)
@@ -945,9 +1018,10 @@ func (m *model) createFromDialog() tea.Cmd {
 	if d.useWorktree() {
 		m.dialog = nil
 		remember()
-		return m.startWorktreeSession(agent, dir, codeRepo, len(m.sessions))
+		return m.startWorktreeSession(agent, dir, codeRepo, len(m.sessions), grp)
 	}
 	s := newSession(agent, dir, sessionName(dir))
+	s.Group = grp
 	if codeRepo != "" {
 		s.CodeRepo = codeRepo
 		if r, err := findRepo(codeRepo); err == nil {
@@ -961,7 +1035,9 @@ func (m *model) createFromDialog() tea.Cmd {
 	}
 	m.sessions = append(m.sessions, s)
 	m.sel = len(m.sessions) - 1
+	m.normalize()   // to the end of its group
 	m.clearFilter() // so the new session shows
+	m.showSelected()
 	m.dialog = nil
 	m.focus = focusTerminal
 	_ = saveSessions(m.sessions)
@@ -1027,6 +1103,7 @@ const (
 	fieldFolder
 	fieldRepo     // the code repo, when the folder isn't in git
 	fieldWorktree // worktree on/off, when there's a repo
+	fieldGroup    // the group it joins, when there are groups
 )
 
 type newDialog struct {
@@ -1044,6 +1121,32 @@ type newDialog struct {
 	sugg     []folderSuggestion // for the focused picker (the folder, unless it's the repo)
 	hi       int                // highlighted suggestion, -1 for none (use what's typed)
 	err      string
+
+	// The group the session joins: groupNames[groupIdx], where the last
+	// choice is "" ("(no group)"). Empty when there are no groups.
+	groupNames []string
+	groupIdx   int
+}
+
+// setGroups gives the dialog the groups to choose from, with def chosen.
+func (d *newDialog) setGroups(groups []*group, def string) {
+	d.groupNames = nil
+	if len(groups) == 0 {
+		return
+	}
+	for _, g := range groups {
+		d.groupNames = append(d.groupNames, g.Name)
+	}
+	d.groupNames = append(d.groupNames, "")
+	d.groupIdx = max(slices.Index(d.groupNames, def), 0)
+}
+
+// group is the group the new session joins.
+func (d *newDialog) group() string {
+	if len(d.groupNames) == 0 {
+		return ""
+	}
+	return d.groupNames[d.groupIdx]
 }
 
 func newNewDialog(agents []Agent, width int, sessions []*Session) *newDialog {
@@ -1166,6 +1269,9 @@ func (d *newDialog) fields() []int {
 	if d.gitRepo() != "" {
 		f = append(f, fieldWorktree)
 	}
+	if len(d.groupNames) > 0 {
+		f = append(f, fieldGroup)
+	}
 	return f
 }
 
@@ -1263,6 +1369,23 @@ func (d *newDialog) update(msg tea.Msg) tea.Cmd {
 		switch k.String() {
 		case "left", "right", "h", "l", "space":
 			d.worktree = !d.worktree
+		case "up", "shift+tab":
+			return d.moveField(-1)
+		case "down":
+			return d.moveField(1)
+		case "tab":
+			return d.setField(fieldFolder)
+		}
+		return nil
+	}
+
+	if isKey && d.field == fieldGroup {
+		n := len(d.groupNames)
+		switch k.String() {
+		case "left", "h":
+			d.groupIdx = (d.groupIdx + n - 1) % n
+		case "right", "l", "space":
+			d.groupIdx = (d.groupIdx + 1) % n
 		case "up", "shift+tab":
 			return d.moveField(-1)
 		case "tab":

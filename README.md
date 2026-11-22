@@ -115,7 +115,9 @@ Press `?` in the session list, or `F1` anywhere (also inside a session, the new-
 | ↑/↓ or j/k | Select a session (its terminal shows on the right) |
 | home/end or g/G | Select the first or last session |
 | shift+↑/↓ | Move the selected session up or down one place, or drag it with the mouse. The order is saved, so it's the same after a restart. With a filter on, it moves past the next session you can see, skipping hidden ones |
-| shift+home/end | Move the selected session to the top or the bottom (with a filter on: just before the first, or after the last, session you can see) |
+| shift+home/end | Move the selected session to the top or the bottom (with a filter on: just before the first, or after the last, session you can see). With groups, to the top or the bottom of its group |
+| a | Move the selected session to a group: type to filter the groups or to name a new one, ↑/↓ choose, enter moves it. `(no group)` takes it out of its group (see [Groups](#groups)) |
+| space, ←/→ | On a group header: fold or unfold the group (← folds, → unfolds; `enter` also switches). ← on a session in a group selects its header |
 | enter | Type into the session; starts or resumes it if it isn't running |
 | shift+enter | Start a new session with the same agent and folder, right below the selected one. The selected session is left as it is, so its conversation can still be resumed. Claude gets a fresh conversation; a custom agent runs its normal command, not its `resume` one. ESC enter (what a remapped shift+enter sends) does the same. Where a terminal sends plain enter for shift+enter, it acts like enter |
 | 1–9 | Jump straight into session N |
@@ -134,10 +136,10 @@ Press `?` in the session list, or `F1` anywhere (also inside a session, the new-
 | o | Open the session's folder (its worktree, if it has one) in your editor (see [Opening a session's folder](#opening-a-sessions-folder)) |
 | O | Open the session's folder in Explorer |
 | t | Open a new Windows Terminal tab in the session's folder (its worktree, if it has one) |
-| r | Rename the session |
+| r | Rename the session. On a group header: rename the group |
 | c | Config screen: agents, notifications, the session list, history and open commands (see [The config screen](#the-config-screen)) |
 | K | End the session's process (it stays in the list) |
-| x (or delete) | End and remove the session, after asking (`Y/n`: `enter` answers yes, `n` or `esc` cancels). For a worktree session, its worktree and branch are removed too if the work is merged; otherwise you choose (see [Worktree sessions](#worktree-sessions)) |
+| x (or delete) | End and remove the session, after asking (`Y/n`: `enter` answers yes, `n` or `esc` cancels). For a worktree session, its worktree and branch are removed too if the work is merged; otherwise you choose (see [Worktree sessions](#worktree-sessions)). On a group header: delete the group, after asking; its sessions move to "(no group)" and none are removed |
 | F3 | Hide or show the session list (see [Hiding the session list](#hiding-the-session-list)) |
 | F5 (or ctrl+q, ctrl+]) | Show the session list if it's hidden |
 | ? or F1 | Show the keys |
@@ -161,7 +163,8 @@ Modified keys that plain terminal input can't express, such as shift+enter (a ne
 
 - **Wheel over the terminal:** scrolls back through the output. Any key, or wheeling back down, returns to the live view. If the app turns on mouse reporting itself (a fullscreen TUI such as Claude's fullscreen renderer), the wheel and clicks go to the app instead, so it scrolls its own view.
 - **Wheel or click in the session list:** moves the selection. Clicking the terminal focuses it.
-- **Dragging a session in the list:** press on it and move the pointer to reorder it. A line shows where it will land: on the top of a session it goes above it, on the bottom line below. Releasing moves it there and saves the order, as shift+↑/↓ does (with a filter on, positions count only the sessions you can see). Holding the pointer on the list's header or its last row scrolls the list. `esc`, or releasing over the terminal, cancels.
+- **Dragging a session in the list:** press on it and move the pointer to reorder it. A line shows where it will land: on the top of a session it goes above it, on the bottom line below. Releasing moves it there and saves the order, as shift+↑/↓ does (with a filter on, positions count only the sessions you can see). Holding the pointer on the list's header or its last row scrolls the list. `esc`, or releasing over the terminal, cancels. With groups, drag sessions into, out of and between groups, and drag a group's header to move the group (see [Groups](#groups)).
+- **Clicking a group's ▾/▸:** folds or unfolds it.
 - **Selecting text:** deckhand uses mouse reporting, so in Windows Terminal hold **shift** while dragging.
 
 **New session dialog**
@@ -312,6 +315,41 @@ Press `m` in the session list to merge the selected session's branch, then close
 - With no commits that aren't on the default branch, it's already merged and goes straight to the offer to close.
 
 **Then:** `Merged. Close the session and remove the worktree? y/n` (with what was merged). `y` runs the same close path as `x` (see [Worktree sessions](#worktree-sessions)): the agent is stopped, the merged check runs, and the worktree and the local branch are removed. The branch on `origin` is deleted too, except after a local merge: until the default branch is pushed, it's the only copy of the work off your machine, so it's kept. Uncommitted files in the worktree aren't merged (the question says how many there are), so with any of them the close warning shows instead. `n` leaves the session as it is.
+
+## Groups
+
+Sessions can be filed under groups, for example by project, with headers you can fold away. With no groups, the list looks as it always has.
+
+```
+ ▾ app  (3)             ● 1 ⠹ ✓ 1
+ 1 ● api                      12s
+     claude · Bash: npm test
+     feature/login* · opus 5.5 · 84k
+ ...
+
+ ▸ cli  (1)                    ✓ 1
+
+ ▾ (no group)  (1)
+ 4 ■ notes
+```
+
+- **Making a group:** press `a` on a session, type a name and press enter (`+ new group "name"`). `a` also moves a session to another group, or to `(no group)`.
+- **Headers:** `▾` is open and `▸` folded; the count is how many sessions the group has. Every header also sums up its sessions on the right: `● N` need you (blinking, like a session), a spinner if any is working, and `✓ N` finished and unread. So a folded group still shows when something in it needs you, and `tab` opens a folded group when the next session that needs you is in it.
+- **On a header:** `space` or `enter` folds or unfolds the group (`←` folds, `→` unfolds), `r` renames it and `x` deletes it after asking. Deleting a group moves its sessions to `(no group)`; it never removes a session. `shift+↑/↓` moves the whole group, and `shift+home/end` moves it to the top or the bottom.
+- **On a session:** `shift+↑/↓` moves it within its group, and past the group's edge into the group above (at its end) or below (at its top), opening that group if it's folded. `shift+home/end` moves it to the top or the bottom of its group.
+- **Numbers:** `1`–`9` count only the sessions you can see, so headers and folded sessions are skipped.
+- **"(no group)"** holds the sessions that aren't in a group. It's always last, and only shows when it has sessions and at least one group exists.
+- **Empty groups** stay, showing `(0)`, so you can move sessions back in. `x` on the header deletes one.
+- **New sessions:** `shift+enter` and `W` put the new session in the same group as the one it came from. `n` picks the selected session's group (or the selected header's); the dialog has a Group row to change it (`←/→`).
+- **Filters:** `/` and `@` search every group. Matching sessions in folded groups show while the filter is on, and headers with no matches hide.
+- **Dragging with the mouse:**
+  - Drop a session between two sessions of a group, or on the top line of its first session, to put it there. The drop line is indented under the group it lands in.
+  - Drop it on a group's header to add it at the end of that group. That works for a folded group too: the header lights up while you're over it, and the group stays folded (its count goes up). Hold it over a folded header for about a second to open the group and drop at an exact place; it folds again if you move on without dropping.
+  - Drop it in `(no group)`, or on its header, to take it out of its group. When every session is in a group, a `(no group)` target shows at the bottom of the list while you drag.
+  - Drag a group's header to move the group, with its sessions, between the others: on a header it goes above that group, on a group's sessions below it. Groups can't go inside other groups.
+- **Where it's saved:** each session's group is in `sessions.json` (`"group"`), and the groups' order and which are folded in `groups.json` beside it, so a deckhand from before groups still reads `sessions.json`.
+
+Automatic grouping by repo or folder (`[list] group_by`) isn't there yet.
 
 ## Hiding the session list
 

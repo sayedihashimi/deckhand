@@ -30,6 +30,7 @@ type Session struct {
 	Started         bool      `json:"started,omitempty"` // has run at least once, so it can be resumed
 	TranscriptPath  string    `json:"transcript_path,omitempty"`
 	ForkedFrom      string    `json:"forked_from,omitempty"` // deckhand ID of the session it was forked from (f)
+	Group           string    `json:"group,omitempty"`       // its group in the list (groups.go); "" for none
 
 	// Git (see worktree.go). CodeRepo is the repo folder picked for the
 	// session: a code repo beside a start folder that isn't in git, or the

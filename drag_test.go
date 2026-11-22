@@ -178,7 +178,7 @@ func TestDragReleaseOverTerminalCancels(t *testing.T) {
 	mouseDown(m, 5, rowY(2, 0))
 	mouseMove(m, 5, rowY(0, 0))
 	mouseMove(m, 60, rowY(0, 0))
-	if m.drag.target.kind != dropNone || m.dropGap() >= 0 {
+	if m.drag.target.kind != dropNone || dropGapOf(m) >= 0 {
 		t.Errorf("over the terminal there's no drop target: %+v", m.drag.target)
 	}
 	mouseUp(m, 60, rowY(0, 0))
@@ -302,4 +302,10 @@ func TestDragFollowsTheSession(t *testing.T) {
 	if got := order(m); got != "B D C" {
 		t.Errorf("order %q, want B D C", got)
 	}
+}
+
+// dropGapOf is the row the drop line is drawn above, or -1.
+func dropGapOf(m *model) int {
+	gap, _ := m.dropLineAt()
+	return gap
 }
