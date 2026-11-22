@@ -402,6 +402,33 @@ statusline = false
 	}
 }
 
+// On every choice row, ←/→ (or space) change the choice and enter leaves it
+// as it is, so picking with the arrows and then pressing enter keeps it.
+func TestConfigChoiceEnterKeeps(t *testing.T) {
+	keepGlobals(t)
+	t.Setenv("DECKHAND_HOME", t.TempDir())
+	tempConfig(t, "")
+	m := testModel("api")
+	m.width, m.height = 120, 32
+	m.handleKey(key("c"))
+	m.cfg.focusRow(m.cfg.rowOf(rowListStatus))
+	was := m.cfg.listStatus
+	m.handleKey(key("enter"))
+	if m.cfg.listStatus != was {
+		t.Errorf("enter changed Status to %v", m.cfg.listStatus)
+	}
+	m.handleKey(key("right"))
+	if m.cfg.listStatus == was {
+		t.Errorf("right didn't change Status")
+	}
+	m.cfg.focusRow(m.cfg.rowOf(rowNotifyEnabled))
+	was = m.cfg.notifyOn
+	m.handleKey(key("enter"))
+	if m.cfg.notifyOn != was {
+		t.Errorf("enter changed Enabled to %v", m.cfg.notifyOn)
+	}
+}
+
 func TestConfigScreenCost(t *testing.T) {
 	keepGlobals(t)
 	defer setCostSettings(costConfigNow())
@@ -417,6 +444,11 @@ func TestConfigScreenCost(t *testing.T) {
 		t.Errorf("config screen lacks the cost row:\n%s", screen)
 	}
 	m.handleKey(key("right")) // tokens
+	// Enter keeps the choice the arrows picked; it doesn't move on to "off".
+	m.handleKey(key("enter"))
+	if m.cfg.costShow != costTokens {
+		t.Fatalf("after right, enter: %q, want %q", m.cfg.costShow, costTokens)
+	}
 	m.handleKey(key("ctrl+s"))
 	if m.cfg.statusErr {
 		t.Fatalf("save: %q", m.cfg.status)

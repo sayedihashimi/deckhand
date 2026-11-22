@@ -515,7 +515,7 @@ func (m *model) configKey(k tea.KeyPressMsg) tea.Cmd {
 		switch key {
 		case "left", "h":
 			c.costShow = opts[(i+len(opts)-1)%len(opts)]
-		case "right", "l", "space", "enter":
+		case "right", "l", "space":
 			c.costShow = opts[(i+1)%len(opts)]
 		}
 	case rowHistorySave:
@@ -586,7 +586,7 @@ func (m *model) leaveConfigScreen() tea.Cmd {
 
 func isToggleKey(key string) bool {
 	switch key {
-	case "enter", "space", "left", "right", "h", "l":
+	case "space", "left", "right", "h", "l":
 		return true
 	}
 	return false

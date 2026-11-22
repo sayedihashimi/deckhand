@@ -254,7 +254,7 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 	case rowAddAgent:
 		hint = "enter add an agent: a PowerShell command from your profile, or a program"
 	case rowNotifyEnabled, rowNotifyWhen:
-		hint = "←/→ or enter change"
+		hint = "←/→ change"
 	case rowNotifyTest:
 		hint = "enter send one now"
 	case rowListKey:
@@ -262,9 +262,9 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 	case rowListBackKey:
 		hint = `back to the list from a session (ctrl+q and ctrl+] always work too), e.g. f5 or f10; empty: ` + keyLabel(defaultBackKey)
 	case rowListStatus, rowHistorySave:
-		hint = "←/→ or enter change"
+		hint = "←/→ change"
 	case rowListCost:
-		hint = "←/→ or enter change · dollars at API prices (notional on a Pro or Max plan), tokens, or off"
+		hint = "←/→ change · dollars at API prices (notional on a Pro or Max plan), tokens, or off"
 	case rowHistoryLines:
 		hint = fmt.Sprintf("lines of output kept per session, 1 to %d; empty: %d", maxHistoryLines, maxHistoryLines)
 	case rowEditor:
