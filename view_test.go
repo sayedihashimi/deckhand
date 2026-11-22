@@ -4,9 +4,27 @@ import (
 	"image/color"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
 )
+
+// An exited session's age doesn't keep counting: it shows none. A live one
+// shows how long it's been in its state.
+func TestExitedSessionHasNoAge(t *testing.T) {
+	m := testModel("api", "docs")
+	m.sessions[0].status, m.sessions[0].since = StatusIdle, time.Now().Add(-5*time.Minute)
+	m.sessions[1].status, m.sessions[1].since = StatusExited, time.Now().Add(-7*time.Minute)
+	lines := m.renderSidebar(40, 12)
+	all := ansi.Strip(strings.Join(lines, "\n"))
+	if !strings.Contains(all, "5m") {
+		t.Errorf("idle session should show its age (5m):\n%s", all)
+	}
+	if strings.Contains(all, "7m") {
+		t.Errorf("exited session shows an age:\n%s", all)
+	}
+}
 
 // The selected session's three rows must be highlighted across the whole
 // width, not just between the inner styled pieces.

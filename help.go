@@ -68,6 +68,7 @@ var helpGroups = []helpGroup{
 		{keys: "enter", desc: "open (starts or resumes it)", match: []string{"enter", "right", "l"}, footer: "enter open", short: "⏎ open"},
 		{keys: "shift+enter", desc: "new session, same folder", match: []string{"shift+enter", "alt+enter"}, footer: "⇧⏎ new here", short: "⇧⏎ here"},
 		{keys: "n W", desc: "new session; W: new worktree", match: []string{"n", "W"}, footer: "n new"},
+		{keys: "f", desc: "fork: copy the conversation", match: []string{"f"}},
 		{keys: "1–9", desc: "jump into session N", match: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9"}},
 		{keys: "tab", desc: "next one that needs you", match: []string{"tab"}, footer: "tab next"},
 		{keys: "d p m", desc: "diff; p: push, PR; m: merge", match: []string{"d", "p", "m"}, footer: "d diff", short: "-"},

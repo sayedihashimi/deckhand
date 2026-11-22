@@ -305,7 +305,7 @@ func TestConfigScreenSaveAndReload(t *testing.T) {
 
 	// Turn notifications off; esc then asks before discarding.
 	m.cfg.row = m.cfg.rowOf(rowNotifyEnabled)
-	m.handleKey(key("enter"))
+	m.handleKey(key("right"))
 	m.handleKey(key("esc"))
 	if m.confirm == nil || m.cfg == nil {
 		t.Fatal("esc with changes should ask first")

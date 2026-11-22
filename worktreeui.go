@@ -316,11 +316,11 @@ func (m *model) closeWorktreeSession(s *Session) {
 	s.mu.Lock()
 	name, branch := s.Name, s.Branch
 	s.mu.Unlock()
-	text := fmt.Sprintf("Close %q? If %s is merged, its worktree and branch are removed; if not, you choose. y/n", name, branch)
+	text := fmt.Sprintf("Close %q? If %s is merged, its worktree and branch are removed; if not, you choose. Y/n", name, branch)
 	if s.Running() {
-		text = fmt.Sprintf("End %q and close it? If %s is merged, its worktree and branch are removed; if not, you choose. y/n", name, branch)
+		text = fmt.Sprintf("End %q and close it? If %s is merged, its worktree and branch are removed; if not, you choose. Y/n", name, branch)
 	}
-	m.confirm = &confirmPrompt{text: text, action: func(m *model) tea.Cmd { return m.startCloseCheck(s) }}
+	m.confirm = &confirmPrompt{text: text, defaultYes: true, action: func(m *model) tea.Cmd { return m.startCloseCheck(s) }}
 }
 
 func (m *model) startCloseCheck(s *Session) tea.Cmd {

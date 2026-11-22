@@ -16,8 +16,10 @@ import (
 )
 
 // TestE2EScreenshot sets up a scripted scene (four fake Claude sessions in
-// different states, in git repos (one in a worktree, run from a notes
-// folder; two with a pull request, from a fake gh), plus an exited shell)
+// different states, with what each has cost and how full its context is,
+// in git repos (one in a worktree, run from a notes
+// folder; two with a pull request, from a fake gh), a fork of one of them
+// (f), plus an exited shell)
 // and saves deckhand's
 // screen as a PNG, with the exited shell's restored output, the config
 // screen ("c", testing an agent with t), the help opened from it (F1) and the api session's diff
@@ -70,7 +72,7 @@ func TestE2EScreenshot(t *testing.T) {
 			t.Fatalf("git init: %v\n%s", err, out)
 		}
 		// hookapp.txt itself is untracked, so hide it from git status.
-		_ = os.WriteFile(filepath.Join(dir, ".git", "info", "exclude"), []byte("hookapp.txt\n"), 0o644)
+		_ = os.WriteFile(filepath.Join(dir, ".git", "info", "exclude"), []byte("hookapp*.txt\n"), 0o644)
 		if dirty {
 			_ = os.WriteFile(filepath.Join(dir, "changed.txt"), []byte("x"), 0o644)
 		}
@@ -80,6 +82,7 @@ func TestE2EScreenshot(t *testing.T) {
 
 	api := repo("api", "feature/login", true, `event SessionStart
 reply 84200 I'll run the tests to confirm the fix.
+statusline 2.37 200000 84200
 say \e[1m> fix the login redirect loop\e[0m
 say
 say \e[32m●\e[0m Read src/auth/login.ts
@@ -100,14 +103,22 @@ event PermissionRequest Bash | npm test -- --watch=false
 	docs := repo("docs", "main", false, `sleep 1500
 event SessionStart
 reply 31000 Updated the README with the new install steps.
+statusline 0.42 200000 31000
 say \e[1m> document the install steps\e[0m
 event UserPromptSubmit
 event PreToolUse Edit | README.md
 event PostToolUse Edit
 event Stop
 `)
+	// A fork of docs (f) waits for its first prompt: the sidebar shows
+	// what it was forked from.
+	_ = os.WriteFile(filepath.Join(docs, "hookapp-fork.txt"), []byte(`event SessionStart
+say \e[1m> document the install steps\e[0m
+say \e[32m●\e[0m Updated the README with the new install steps.
+`), 0o644)
 	web := repo("web", "main", true, `event SessionStart
 reply 152300 Running the test suite.
+statusline 3.10 200000 152300
 say \e[1m> make the tests pass on Windows\e[0m
 event UserPromptSubmit
 event PreToolUse Bash | go test ./...
@@ -215,21 +226,32 @@ editor = 'code "{dir}"'
 	h.waitFor("⎇ cli:quiet-otter", 10*time.Second)
 	h.waitFor("#12✓", 10*time.Second) // the PR badges
 	h.waitFor("#7✗", 10*time.Second)
-	time.Sleep(3500 * time.Millisecond) // let every session's git details arrive
+	// Fork docs (f), then select api again.
+	h.send("j")
+	h.send("f")
+	h.waitFor("Updated the README with the new install steps.", 15*time.Second)
+	h.send(keyF5)
+	h.send("1") // api again, then back to the list
+	h.send(keyF5)
+	h.waitFor("claude · ⑂ docs", 10*time.Second)
+	h.waitFor(" $7.14  1 need you", 10*time.Second) // today's total; the sidebar is too narrow for "today"
+	h.waitFor("76% · $3.10", 10*time.Second)        // context: yellow from 60%
+	h.waitFor("▰▱▱▱▱ 16% · $0.42", 10*time.Second)  // the meter, where there's room
+	time.Sleep(3500 * time.Millisecond)             // let every session's git details arrive
 
 	scene := screenFromEmulator(h.emu)
 	sceneText := h.screen()
 
 	// The exited shell selected: its saved output, restored after the
-	// restart. It's six rows down: past docs, web, the cli header,
-	// quiet-otter and the (no group) header.
-	h.send("\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B")
+	// restart. It's seven rows down: past docs, its fork, web, the cli
+	// header, quiet-otter and the (no group) header.
+	h.send("\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B")
 	h.waitFor("last output · saved 2h ago", 5*time.Second)
 	h.waitFor("planning-review.md", 3*time.Second)
 	time.Sleep(300 * time.Millisecond)
 	restored := screenFromEmulator(h.emu)
 	t.Logf("restored output:\n%s", h.screen())
-	h.send("\x1b[A\x1b[A\x1b[A\x1b[A\x1b[A\x1b[A")
+	h.send("\x1b[A\x1b[A\x1b[A\x1b[A\x1b[A\x1b[A\x1b[A")
 	h.waitGone("last output", 3*time.Second)
 
 	// The config screen, with the second agent selected and being tested
@@ -267,15 +289,16 @@ editor = 'code "{dir}"'
 	h.send("\x1b")
 	h.waitGone("files changed", 3*time.Second)
 
-	// The cli group collapsed (space on its header, three rows down), its
+	// The cli group collapsed (space on its header, four rows down), its
 	// header showing quiet-otter's ✓; then the notes shell dragged into the
 	// app group with the mouse: the drop line, indented under app, shows
 	// it would land after docs. esc cancels the drag.
-	h.send("\x1b[B\x1b[B\x1b[B ")
+	h.send("\x1b[B\x1b[B\x1b[B\x1b[B ")
 	h.waitFor("▸ cli", 3*time.Second)
-	// 2 app, 3-5 api, 6-8 docs, 9-11 web, 13 cli, 15 (no group), 16-18 notes
-	h.send("\x1b[<0;6;17M")  // press on notes
-	h.send("\x1b[<32;6;12M") // over web
+	// 2 app, 3-5 api, 6-8 docs, 9-11 docs (fork), 12-14 web, 16 cli,
+	// 18 (no group), 19-21 notes (0-based lines; SGR rows are 1-based)
+	h.send("\x1b[<0;6;20M")  // press on notes
+	h.send("\x1b[<32;6;15M") // over web
 	h.send("\x1b[<32;6;9M")  // docs's last line: below it
 	h.waitFor("━━━━━━", 3*time.Second)
 	time.Sleep(300 * time.Millisecond)
@@ -384,6 +407,7 @@ func worktreeScene(t *testing.T, gitExe, src string) (plans, cli, wt string) {
 	_ = os.WriteFile(filepath.Join(plans, "hookapp.txt"), []byte(`sleep 800
 event SessionStart
 reply 64100 Added retries to the upload client, committed on quiet-otter.
+statusline 1.25 200000 64100
 say \e[1m> add retries to the upload client\e[0m
 event UserPromptSubmit
 event PreToolUse Edit | upload.go

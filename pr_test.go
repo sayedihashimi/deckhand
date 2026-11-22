@@ -349,15 +349,15 @@ func TestSessionPRBadge(t *testing.T) {
 	if sn.pr == nil {
 		t.Fatal("no PR in the snapshot")
 	}
-	// 120 columns: the model goes first, then the context, so the branch
-	// and the badge fit.
+	// 120 columns: the model goes first, then the meter, then the
+	// context, so the branch and the badge fit (opus 5.5 has a 1M window).
 	if got := ansi.Strip(infoLine(s, sn, 24)); got != "⎇ cli:quiet-otter↑1 #12✓" {
 		t.Errorf("info line at 24: %q", got)
 	}
-	if got := ansi.Strip(infoLine(s, sn, 30)); got != "⎇ cli:quiet-otter↑1 #12✓ · 64k" {
+	if got := ansi.Strip(infoLine(s, sn, 30)); got != "⎇ cli:quiet-otter↑1 #12✓ · 6%" {
 		t.Errorf("info line at 30: %q", got)
 	}
-	if got := ansi.Strip(infoLine(s, sn, 50)); got != "⎇ cli:quiet-otter↑1 #12✓ · opus 5.5 · 64k" {
+	if got := ansi.Strip(infoLine(s, sn, 50)); got != "⎇ cli:quiet-otter↑1 #12✓ · opus 5.5 · ▰▱▱▱▱ 6%" {
 		t.Errorf("wide info line: %q", got)
 	}
 	if got := ansi.Strip(infoLine(s, sn, 14)); ansi.StringWidth(got) > 14 || !strings.HasSuffix(got, "#12✓") {
@@ -368,7 +368,7 @@ func TestSessionPRBadge(t *testing.T) {
 	p.info.git = gitInfo{ok: true, branch: "feature/login", dirty: true}
 	p.info.model, p.info.ctxTokens = "claude-opus-5-5", 84200
 	p.prs = prState{branch: "feature/login", pr: &prInfo{Number: 7, State: "OPEN", Checks: []prCheck{{Typename: "StatusContext", State: "FAILURE"}}}}
-	if got := ansi.Strip(infoLine(p, p.Snapshot(), 24)); got != "feature/login* #7✗ · 84k" {
+	if got := ansi.Strip(infoLine(p, p.Snapshot(), 24)); got != "feature/login* #7✗ · 8%" {
 		t.Errorf("plain session: %q", got)
 	}
 	p.info.git.branch = "main" // switched: the old PR doesn't show
