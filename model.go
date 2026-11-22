@@ -96,7 +96,7 @@ type confirmPrompt struct {
 	action func(m *model) tea.Cmd
 	cancel func(m *model) // when it's answered with anything but y; may be nil
 	// defaultYes makes enter answer yes too. Only for prompts that are cheap to
-	// get wrong and usually answered yes (x); their text ends in Y/n.
+	// get wrong and usually answered yes (x, K); their text ends in Y/n.
 	defaultYes bool
 }
 
@@ -586,7 +586,7 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.openFolder(openTerminal)
 	case "K":
 		if s := m.current(); s != nil && s.Running() {
-			m.confirm = &confirmPrompt{text: fmt.Sprintf("End %q (it stays in the list)? y/n", s.Name), action: func(m *model) tea.Cmd {
+			m.confirm = &confirmPrompt{text: fmt.Sprintf("End %q (it stays in the list)? Y/n", s.Name), defaultYes: true, action: func(m *model) tea.Cmd {
 				s.Kill()
 				return nil
 			}}

@@ -267,19 +267,28 @@ func TestRemoveConfirmEnterIsYes(t *testing.T) {
 	}
 }
 
-// Other prompts have no default: enter on K's cancels.
-func TestEndConfirmEnterCancels(t *testing.T) {
-	m := testModel("one")
-	m.sessions[0].running = true
-	press(m, tea.KeyPressMsg{Code: 'K', Text: "K"})
-	if m.confirm == nil || m.confirm.defaultYes || !strings.HasSuffix(m.confirm.text, " y/n") {
-		t.Fatalf("K prompt: %+v", m.confirm)
-	}
-	ended := false
-	action := m.confirm.action
-	m.confirm.action = func(m *model) tea.Cmd { ended = true; return action(m) }
-	press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if m.confirm != nil || ended {
-		t.Errorf("enter should cancel K: confirm %+v, ended %v", m.confirm, ended)
+// K's prompt defaults to yes too: enter ends the session, n keeps it.
+func TestEndConfirmEnterEnds(t *testing.T) {
+	for _, tc := range []struct {
+		key  tea.KeyPressMsg
+		want bool
+	}{
+		{tea.KeyPressMsg{Code: tea.KeyEnter}, true},
+		{tea.KeyPressMsg{Code: 'n', Text: "n"}, false},
+		{tea.KeyPressMsg{Code: tea.KeyEscape}, false},
+	} {
+		m := testModel("one")
+		m.sessions[0].running = true
+		press(m, tea.KeyPressMsg{Code: 'K', Text: "K"})
+		if m.confirm == nil || !m.confirm.defaultYes || !strings.HasSuffix(m.confirm.text, " Y/n") {
+			t.Fatalf("K prompt: %+v", m.confirm)
+		}
+		ended := false
+		action := m.confirm.action
+		m.confirm.action = func(m *model) tea.Cmd { ended = true; return action(m) }
+		press(m, tc.key)
+		if m.confirm != nil || ended != tc.want {
+			t.Errorf("%s on K: confirm %+v, ended %v, want %v", tc.key, m.confirm, ended, tc.want)
+		}
 	}
 }
