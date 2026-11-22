@@ -97,7 +97,7 @@ Set-Alias fk Start-Fake
 
 	// esc leaves without saving (after asking, since there are changes).
 	before := read()
-	h.send("\x1b[B\r") // ↓ to notifications "Enabled", toggle it off
+	h.send("\x1b[B ") // ↓ to notifications "Enabled", space toggles it off
 	h.waitFor("unsaved changes", 3*time.Second)
 	h.send("\x1b")
 	h.waitFor("discard your changes", 3*time.Second)

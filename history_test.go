@@ -498,7 +498,7 @@ func TestConfigScreenHistory(t *testing.T) {
 	m.cfg.histLines.SetValue("")
 	typeText(m, "300")
 	m.cfg.focusRow(m.cfg.rowOf(rowHistorySave))
-	m.handleKey(key("enter")) // off
+	m.handleKey(key("right")) // off
 	m.handleKey(key("ctrl+s"))
 	if m.cfg.statusErr {
 		t.Fatalf("save: %q", m.cfg.status)

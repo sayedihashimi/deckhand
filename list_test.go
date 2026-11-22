@@ -435,7 +435,7 @@ func TestConfigScreenListSettings(t *testing.T) {
 	if m.cfg.current().kind != rowListStatus {
 		t.Fatalf("enter should move to the status row, at %v", m.cfg.current())
 	}
-	m.handleKey(key("enter")) // off
+	m.handleKey(key("right")) // off
 	m.handleKey(key("ctrl+s"))
 	if m.cfg.statusErr || m.cfg.dirty() {
 		t.Fatalf("save: %q", m.cfg.status)

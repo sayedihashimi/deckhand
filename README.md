@@ -40,13 +40,55 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 
 ## Contents
 
-- [A typical workflow](#a-typical-workflow)
+- [Getting started](#getting-started) · [A typical workflow](#a-typical-workflow)
 - [Status icons](#status-icons) · [Session details](#session-details) · [Cost](#cost) · [Notifications](#notifications) · [Finding sessions](#finding-sessions)
 - [Keys](#keys) · [The config screen](#the-config-screen) · [Custom agents](#custom-agents-your-own-scripts-and-profile-functions)
 - [Diff preview](#diff-preview) · [Worktree sessions](#worktree-sessions) · [Pull requests](#pull-requests) · [Merging](#merging)
 - [Groups](#groups) · [Hiding the session list](#hiding-the-session-list) · [Opening a session's folder](#opening-a-sessions-folder)
 - [Resuming](#resuming) · [Forking](#forking) · [Output after a restart](#output-after-a-restart)
 - [Build](#build) · [Debugging](#debugging)
+
+## Getting started
+
+You need Windows 10 (1809 or later) or Windows 11, [Go](https://go.dev/dl/) 1.27 or later to build it, and the agents you want to run on your `PATH`, such as Claude Code's `claude.exe`. Windows Terminal or WezTerm is recommended: in them, deckhand also gets shift+enter and other modified keys (see [Inside a session](#inside-a-session)).
+
+1. **Install it.** Either let Go install it in `%USERPROFILE%\go\bin`:
+
+   ```powershell
+   go install github.com/sayedihashimi/deckhand@latest
+   ```
+
+   or build it from a clone into a folder of your own:
+
+   ```powershell
+   git clone https://github.com/sayedihashimi/deckhand
+   cd deckhand
+   go build -o $HOME\.local\bin\deckhand.exe .
+   ```
+
+   Use a folder without spaces in its path, so Claude's hook commands work without quoting.
+
+2. **Put it on your PATH.** If that folder isn't on it yet, add it for your user and open a new terminal:
+
+   ```powershell
+   [Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ";$HOME\.local\bin", 'User')
+   ```
+
+   `deckhand version` should now print the version.
+
+3. **Run it.** In Windows Terminal, run:
+
+   ```powershell
+   deckhand
+   ```
+
+   It opens with an empty list the first time.
+
+4. **Start a session.** Press `n`, type or pick a folder (`tab` completes it), choose the agent with `shift+tab` and `←/→` if it isn't the one you want, and press `enter`. The agent starts on the right. Type into it, and press `F5` to go back to the list.
+
+5. **Find your way around.** `?` (or `F1`) shows the keys for wherever you are, `c` opens the config screen and `q` quits. Claude sessions can be resumed the next time you start deckhand.
+
+deckhand needs no setup. It works with your existing Claude Code settings and login, and passes its hooks to each Claude session itself, so it never edits your `~/.claude/settings.json`. Its own settings are in `~/.config/deckhand/config.toml` (`deckhand config` prints the path), and its state is in `%LOCALAPPDATA%\deckhand`. `deckhand help` lists the commands.
 
 ## A typical workflow
 
