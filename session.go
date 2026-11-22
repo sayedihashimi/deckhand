@@ -29,6 +29,7 @@ type Session struct {
 	ClaudeSessionID string    `json:"claude_session_id,omitempty"`
 	Started         bool      `json:"started,omitempty"` // has run at least once, so it can be resumed
 	TranscriptPath  string    `json:"transcript_path,omitempty"`
+	ForkedFrom      string    `json:"forked_from,omitempty"` // deckhand ID of the session it was forked from (f)
 
 	// Git (see worktree.go). CodeRepo is the repo folder picked for the
 	// session: a code repo beside a start folder that isn't in git, or the
@@ -41,6 +42,12 @@ type Session struct {
 	Branch     string `json:"branch,omitempty"`
 	BaseBranch string `json:"base_branch,omitempty"`
 	BaseCommit string `json:"base_commit,omitempty"`
+
+	// A fork (see fork.go): forkOf is the Claude session ID whose
+	// conversation the next start copies, and forkHint the original's name,
+	// shown in the sidebar until the fork's first turn.
+	forkOf   string
+	forkHint string
 
 	info     sessionInfo // git and transcript details, filled in the background
 	summary  string      // latest hook's tool summary
@@ -143,6 +150,10 @@ func (s *Session) Start(width, height int, resume bool, dirty *atomic.Bool) erro
 	}
 	s.mu.Lock()
 	extra := s.launchExtrasLocked()
+	if agent.Claude && s.forkOf != "" {
+		extra.forkFrom = s.forkOf
+		resume = false
+	}
 	s.mu.Unlock()
 	spec, err := buildLaunch(agent, s.ID, s.ClaudeSessionID, resume, extra)
 	if err != nil {
@@ -198,6 +209,7 @@ func (s *Session) Start(width, height int, resume bool, dirty *atomic.Bool) erro
 	s.scrollOff = 0
 	s.running = true
 	s.Started = true
+	s.forkOf = "" // the copy is made; from now on it resumes its own conversation
 	s.bell = false
 	s.exitInfo = ""
 	s.lastSeq = 0
@@ -310,6 +322,9 @@ func (s *Session) setStatusLocked(st Status, detail string) {
 		if st == StatusWaiting || (st == StatusIdle && s.status == StatusWorking) || st == StatusExited {
 			s.unread = true
 		}
+		if st == StatusWorking {
+			s.forkHint = "" // the fork's own turn has begun
+		}
 		if st == StatusIdle {
 			// Read the transcript on the next tick, so the finished reply
 			// shows without waiting for the regular poll.
@@ -374,12 +389,13 @@ type snapshot struct {
 	worktree bool     // it has its own git worktree
 	repoName string   // the code repo's name, when it isn't the start folder's
 	pr       *prInfo  // the branch's pull request, when it has one
+	forkOf   string   // a new fork: the original's name, until its first turn
 }
 
 func (s *Session) Snapshot() snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	sn := snapshot{s.status, s.detail, s.since, s.unread, s.running, s.title, s.exitInfo, s.info, s.summary, nil, s.Worktree != "", "", nil}
+	sn := snapshot{s.status, s.detail, s.since, s.unread, s.running, s.title, s.exitInfo, s.info, s.summary, nil, s.Worktree != "", "", nil, ""}
 	if s.prs.pr != nil && s.prs.branch == s.prBranchLocked() {
 		pr := *s.prs.pr
 		sn.pr = &pr
@@ -387,6 +403,7 @@ func (s *Session) Snapshot() snapshot {
 	if s.separateRepoLocked() {
 		sn.repoName = s.repoNameLocked()
 	}
+	sn.forkOf = s.forkHint
 	// Only a transcript read after the turn ended has that turn's reply;
 	// an earlier read could still hold the previous one.
 	if s.status == StatusIdle && s.detail == detailYourTurn && !s.info.textAt.Before(s.since) {

@@ -213,6 +213,8 @@ func sessionDetail(sn snapshot) (text string, isReply bool) {
 	switch {
 	case len(sn.reply) > 0:
 		return sn.reply[0], true
+	case sn.forkOf != "" && (sn.status == StatusStarting || sn.status == StatusIdle):
+		return forkMark + " " + sn.forkOf, false
 	case sn.status == StatusWaiting && strings.HasPrefix(sn.detail, perm) && sn.summary != "":
 		tool := strings.TrimPrefix(sn.detail, perm)
 		if tool == "" {
