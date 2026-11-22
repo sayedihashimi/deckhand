@@ -138,7 +138,7 @@ func envWith(home, path string) []string {
 		// wantKeyRecords); tests that act like one set WT_SESSION or
 		// TERM_PROGRAM themselves (wtEnv, weztermEnv).
 		switch k {
-		case "DECKHAND_HOME", "WT_SESSION", "TERM_PROGRAM", "DECKHAND_SESSION_ID", "DECKHAND_KEY_RECORDS":
+		case "DECKHAND_HOME", "CLAUDE_CONFIG_DIR", "WT_SESSION", "TERM_PROGRAM", "DECKHAND_SESSION_ID", "DECKHAND_KEY_RECORDS":
 			continue
 		}
 		if path != "" && k == "PATH" {
@@ -150,6 +150,10 @@ func envWith(home, path string) []string {
 	// the new-session dialog). Tests that need a config append their own
 	// DECKHAND_CONFIG later, which wins.
 	env = append(env, "DECKHAND_HOME="+home, "DECKHAND_CONFIG="+filepath.Join(home, "no-config.toml"))
+	// Nor the user's Claude settings: deckhand's status line runs the
+	// statusLine command it finds there. Tests that need one append their
+	// own CLAUDE_CONFIG_DIR.
+	env = append(env, "CLAUDE_CONFIG_DIR="+filepath.Join(home, "claude-config"))
 	if path != "" {
 		env = append(env, "PATH="+path)
 	}

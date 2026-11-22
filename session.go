@@ -29,6 +29,7 @@ type Session struct {
 	ClaudeSessionID string    `json:"claude_session_id,omitempty"`
 	Started         bool      `json:"started,omitempty"` // has run at least once, so it can be resumed
 	TranscriptPath  string    `json:"transcript_path,omitempty"`
+	ForkedFrom      string    `json:"forked_from,omitempty"` // deckhand ID of the session it was forked from (f)
 
 	// Git (see worktree.go). CodeRepo is the repo folder picked for the
 	// session: a code repo beside a start folder that isn't in git, or the
@@ -42,12 +43,24 @@ type Session struct {
 	BaseBranch string `json:"base_branch,omitempty"`
 	BaseCommit string `json:"base_commit,omitempty"`
 
+	// Cost so far (see cost.go), kept so an exited session still shows it.
+	Cost *sessionCost `json:"cost,omitempty"`
+	// A fork (see fork.go): forkOf is the Claude session ID whose
+	// conversation the next start copies, and forkHint the original's name,
+	// shown in the sidebar until the fork's first turn.
+	forkOf   string
+	forkHint string
+
 	info     sessionInfo // git and transcript details, filled in the background
 	summary  string      // latest hook's tool summary
 	notice   *notice     // a status change to notify about, taken by the model
 	polling  atomic.Bool
 	lastPoll time.Time
 	trStamp  string // transcript size and mtime when last read
+
+	trCost      transcriptCost // the transcript's usage so far; only the poll goroutine uses it
+	statusSeq   int64          // the last status line record applied
+	costChanged atomic.Bool    // Cost changed since sessions.json was saved
 
 	mu         sync.Mutex
 	emu        *vt.SafeEmulator
@@ -143,6 +156,11 @@ func (s *Session) Start(width, height int, resume bool, dirty *atomic.Bool) erro
 	}
 	s.mu.Lock()
 	extra := s.launchExtrasLocked()
+	extra.dir = s.Dir
+	if agent.Claude && s.forkOf != "" {
+		extra.forkFrom = s.forkOf
+		resume = false
+	}
 	s.mu.Unlock()
 	spec, err := buildLaunch(agent, s.ID, s.ClaudeSessionID, resume, extra)
 	if err != nil {
@@ -198,6 +216,7 @@ func (s *Session) Start(width, height int, resume bool, dirty *atomic.Bool) erro
 	s.scrollOff = 0
 	s.running = true
 	s.Started = true
+	s.forkOf = "" // the copy is made; from now on it resumes its own conversation
 	s.bell = false
 	s.exitInfo = ""
 	s.lastSeq = 0
@@ -310,6 +329,9 @@ func (s *Session) setStatusLocked(st Status, detail string) {
 		if st == StatusWaiting || (st == StatusIdle && s.status == StatusWorking) || st == StatusExited {
 			s.unread = true
 		}
+		if st == StatusWorking {
+			s.forkHint = "" // the fork's own turn has begun
+		}
 		if st == StatusIdle {
 			// Read the transcript on the next tick, so the finished reply
 			// shows without waiting for the regular poll.
@@ -361,25 +383,32 @@ func (s *Session) Refresh(now time.Time) {
 
 // snapshot is a consistent copy of what the sidebar needs.
 type snapshot struct {
-	status   Status
-	detail   string
-	since    time.Time
-	unread   bool
-	running  bool
-	title    string
-	exitInfo string
-	info     sessionInfo
-	summary  string   // latest hook's tool summary, e.g. the Bash command
-	reply    []string // the reply that ended the turn, once it's been read
-	worktree bool     // it has its own git worktree
-	repoName string   // the code repo's name, when it isn't the start folder's
-	pr       *prInfo  // the branch's pull request, when it has one
+	status    Status
+	detail    string
+	since     time.Time
+	unread    bool
+	running   bool
+	title     string
+	exitInfo  string
+	info      sessionInfo
+	summary   string   // latest hook's tool summary, e.g. the Bash command
+	reply     []string // the reply that ended the turn, once it's been read
+	worktree  bool     // it has its own git worktree
+	repoName  string   // the code repo's name, when it isn't the start folder's
+	pr        *prInfo  // the branch's pull request, when it has one
+	cost      string   // the cost as [cost] show has it: "$1.84", "~$0.40", "1.2M tok" or ""
+	forkOf    string   // a new fork: the original's name, until its first turn
+	ctxWindow int      // the context window's size, or 0 when it isn't known (context.go)
 }
 
 func (s *Session) Snapshot() snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	sn := snapshot{s.status, s.detail, s.since, s.unread, s.running, s.title, s.exitInfo, s.info, s.summary, nil, s.Worktree != "", "", nil}
+	sn := snapshot{s.status, s.detail, s.since, s.unread, s.running, s.title, s.exitInfo, s.info, s.summary, nil, s.Worktree != "", "", nil, "", "", 0}
+	sn.cost = costLabel(s.Cost, costConfigNow().show)
+	if a, ok := s.agent(); ok && a.Claude {
+		sn.ctxWindow = contextWindow(infoOpts, s.info.model, s.info.status.Model, s.info.status.CtxWindow)
+	}
 	if s.prs.pr != nil && s.prs.branch == s.prBranchLocked() {
 		pr := *s.prs.pr
 		sn.pr = &pr
@@ -387,6 +416,7 @@ func (s *Session) Snapshot() snapshot {
 	if s.separateRepoLocked() {
 		sn.repoName = s.repoNameLocked()
 	}
+	sn.forkOf = s.forkHint
 	// Only a transcript read after the turn ended has that turn's reply;
 	// an earlier read could still hold the previous one.
 	if s.status == StatusIdle && s.detail == detailYourTurn && !s.info.textAt.Before(s.since) {
@@ -444,6 +474,7 @@ func (s *Session) MaybePoll(now time.Time, active bool) {
 		s.lastPoll = now
 	}
 	dir, base, tr, stamp := s.gitDirLocked(), s.BaseBranch, s.transcriptPathLocked(), s.trStamp
+	conv := s.ClaudeSessionID
 	s.mu.Unlock()
 	if !due || !s.polling.CompareAndSwap(false, true) {
 		return
@@ -451,8 +482,7 @@ func (s *Session) MaybePoll(now time.Time, active bool) {
 	go func() {
 		defer s.polling.Store(false)
 		g := readGitInfo(dir, base)
-		var model, text string
-		var tokens int
+		var tail transcriptEnd
 		var readErr error
 		checked := false
 		newStamp := stamp
@@ -461,7 +491,7 @@ func (s *Session) MaybePoll(now time.Time, active bool) {
 				checked = true
 				newStamp = fmt.Sprintf("%d/%d", fi.Size(), fi.ModTime().UnixNano())
 				if newStamp != stamp {
-					model, tokens, text, readErr = readTranscriptInfo(tr)
+					tail, readErr = readTranscriptTail(tr)
 				}
 			}
 		}
@@ -469,15 +499,25 @@ func (s *Session) MaybePoll(now time.Time, active bool) {
 		s.info.git = g
 		if newStamp != stamp && readErr == nil {
 			s.trStamp = newStamp
-			if model != "" {
-				s.info.model, s.info.ctxTokens = model, tokens
+			if tail.model != "" {
+				prev := s.info.ctxTokens
+				s.info.model, s.info.ctxTokens = tail.model, tail.ctxTokens
+				// Compacted: until the next reply, which changes the size.
+				switch {
+				case compactDrop(prev, tail.ctxTokens):
+					s.info.compactAt = tail.ctxTokens
+				case tail.ctxTokens != s.info.compactAt:
+					s.info.compactAt = 0
+				}
 			}
-			s.info.lastText = replyLines(text)
+			s.info.compacted = tail.compacted || s.info.compactAt > 0
+			s.info.lastText = replyLines(tail.lastText)
 		}
 		if checked && readErr == nil {
 			s.info.textAt = now
 		}
 		s.mu.Unlock()
+		s.pollCost(now, tr, conv)
 		if s.dirty != nil {
 			s.dirty.Store(true)
 		}
@@ -719,4 +759,52 @@ func (s *Session) Kill() {
 	if running && cmd != nil && cmd.Process != nil {
 		_ = cmd.Process.Kill()
 	}
+}
+
+// pollCost updates the session's cost from its transcript and from the
+// latest status line record. It runs on the poll goroutine. The transcript
+// is read first, so a conversation first seen today gets its earlier spend
+// from the transcript's timestamps.
+func (s *Session) pollCost(now time.Time, tr, conv string) {
+	if a, ok := s.agent(); !ok || !a.Claude {
+		return
+	}
+	prices := costConfigNow().prices
+	added := false
+	if tr != "" {
+		added, _ = s.trCost.read(tr, prices, now)
+		if c := transcriptConv(tr); c != "" {
+			conv = c
+		}
+	}
+	rec, recErr := readStatusRecord(s.ID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Cost == nil {
+		s.Cost = &sessionCost{}
+	}
+	if added && conv != "" {
+		sum, before := s.trCost.sum, s.trCost.before
+		s.Cost.update(now, conv, func(c *convCost) { c.EstUSD, c.Tokens = sum.usd, sum.tokens }, &before)
+		s.costChanged.Store(true)
+	}
+	if recErr == nil && rec.Seq > s.statusSeq {
+		s.statusSeq = rec.Seq
+		s.info.status = rec
+		if rec.CostUSD != nil && rec.ClaudeSessionID != "" {
+			usd := *rec.CostUSD
+			s.Cost.update(now, rec.ClaudeSessionID, func(c *convCost) { c.USD = usd }, nil)
+			s.costChanged.Store(true)
+		}
+	}
+}
+
+// transcriptConv is the Claude session ID a transcript belongs to: its
+// file name, <id>.jsonl, when that looks like one.
+func transcriptConv(path string) string {
+	id := strings.TrimSuffix(filepath.Base(path), ".jsonl")
+	if len(id) == 36 && strings.Count(id, "-") == 4 && validID(id) {
+		return id
+	}
+	return ""
 }

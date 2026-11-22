@@ -101,8 +101,27 @@ func (m *model) renderSidebar(w, h int) []string {
 		}
 		head = " " + lipgloss.NewStyle().Foreground(colAccent).Render(strings.Join(parts, " ")) + stMuted.Render(" · esc clears")
 	}
+	var badge string
 	if waiting > 0 && m.filterInput == nil {
-		badge := stWaitText.Render(fmt.Sprintf("%d need you ", waiting))
+		badge = stWaitText.Render(fmt.Sprintf("%d need you ", waiting))
+	}
+	// Today's spend, on the right ("$12.40 today"). Short of room it
+	// drops "today", then "n need you" takes its place.
+	if !m.filtering() && m.filterInput == nil {
+		if today := todayLabel(m.sessions, costConfigNow().show, time.Now()); today != "" {
+			for _, t := range []string{today, strings.TrimSuffix(today, " today")} {
+				right := stMuted.Render(t + " ")
+				if badge != "" {
+					right = stMuted.Render(t) + "  " + badge
+				}
+				if ansi.StringWidth(head)+2+ansi.StringWidth(right) <= w {
+					badge = right
+					break
+				}
+			}
+		}
+	}
+	if badge != "" {
 		head = fit(head, w-ansi.StringWidth(badge)) + badge
 	}
 	lines = append(lines, fit(head, w), stBorder.Render(strings.Repeat("─", w)))
@@ -143,8 +162,11 @@ func (m *model) renderSidebar(w, h int) []string {
 		sn := s.Snapshot()
 		selected := i == m.sel
 
+		// The age is how long it's been working, waiting or idle. An exited
+		// session has no clock running, so it shows none (like one restored
+		// at startup).
 		age := ""
-		if !sn.since.IsZero() {
+		if !sn.since.IsZero() && sn.status != StatusExited {
 			age = shortAge(now.Sub(sn.since))
 		}
 		nameStyle := lipgloss.NewStyle()
@@ -159,6 +181,9 @@ func (m *model) renderSidebar(w, h int) []string {
 		row1 := fit(left, w-len(age)-1) + stMuted.Render(age) + " "
 
 		detail, isReply := sessionDetail(sn)
+		if sn.info.compacted {
+			detail = compactedMark + " · " + detail
+		}
 		if sn.status == StatusExited {
 			detail = exitedDetail(detail, w-6-ansi.StringWidth(s.Agent+" · "))
 		}
@@ -218,6 +243,8 @@ func sessionDetail(sn snapshot) (text string, isReply bool) {
 	switch {
 	case len(sn.reply) > 0:
 		return sn.reply[0], true
+	case sn.forkOf != "" && (sn.status == StatusStarting || sn.status == StatusIdle):
+		return forkMark + " " + sn.forkOf, false
 	case sn.status == StatusWaiting && strings.HasPrefix(sn.detail, perm) && sn.summary != "":
 		tool := strings.TrimPrefix(sn.detail, perm)
 		if tool == "" {
@@ -269,24 +296,76 @@ func branchLabel(sn snapshot) (mark, repo, branch string) {
 }
 
 // infoLine is a session's third sidebar line: the git branch and its PR,
-// then the Claude model and context size ("main* · opus 5.5 · 84k",
-// "⎇ quiet-otter↑1 #12✓ · 64k"). The branch is shortened first so the model
-// and context stay visible; with a PR badge, the model and then the
-// context go first instead. Outside git and Claude it's the folder.
+// then the Claude model, how full the context is and the cost ("main* ·
+// opus 5.5 · ▰▰▱▱▱ 42% · $1.84", "⎇ quiet-otter↑1 #12✓ · 6%"; see
+// context.go). When it's short of room the model
+// goes first, then the context's meter, then the cost, then the context,
+// so the branch keeps at least 8 cells (all of it with a PR badge, which
+// comes right after it); after that the branch is shortened. Outside git and Claude it's the folder.
 func infoLine(s *Session, sn snapshot, w int) string {
 	in := sn.info
-	var right []string
+	var model string
 	if in.model != "" {
-		right = append(right, shortModel(in.model))
+		model = shortModel(in.model)
 	}
-	if in.ctxTokens > 0 {
-		right = append(right, shortTokens(in.ctxTokens))
+	ctxs := contextVariants(infoOpts.context, in.ctxTokens, sn.ctxWindow)
+	ctxStyle := contextStyle(contextPct(in.ctxTokens, sn.ctxWindow))
+	ctx := func() string {
+		if len(ctxs) == 0 {
+			return ""
+		}
+		return ctxs[0]
 	}
-	tail := strings.Join(right, " · ")
+	cost := sn.cost
+	// tail is the details as plain text, for measuring; styledTail is how
+	// they're drawn, with the context coloured by how full it is.
+	pieces := func() []string {
+		var parts []string
+		for _, p := range []string{model, ctx(), cost} {
+			if p != "" {
+				parts = append(parts, p)
+			}
+		}
+		return parts
+	}
+	tail := func() string { return strings.Join(pieces(), " · ") }
+	styledTail := func() string {
+		var parts []string
+		if model != "" {
+			parts = append(parts, stMuted.Render(model))
+		}
+		if c := ctx(); c != "" {
+			parts = append(parts, ctxStyle.Render(c))
+		}
+		if cost != "" {
+			parts = append(parts, stMuted.Render(cost))
+		}
+		return strings.Join(parts, stMuted.Render(" · "))
+	}
+	// drop shortens the tail by one step: the model goes, then the
+	// context's meter (or window size), then the cost, then the context;
+	// false when it's empty.
+	drop := func() bool {
+		switch {
+		case model != "":
+			model = ""
+		case len(ctxs) > 1:
+			ctxs = ctxs[1:]
+		case cost != "":
+			cost = ""
+		case len(ctxs) > 0:
+			ctxs = ctxs[1:]
+		default:
+			return false
+		}
+		return true
+	}
 	mark, repo, branch := branchLabel(sn)
 	if branch == "" {
-		if tail != "" {
-			return stMuted.Render(tail)
+		for ansi.StringWidth(tail()) > w && drop() {
+		}
+		if tail() != "" {
+			return styledTail()
 		}
 		return stMuted.Render(shortDir(s.Dir, w))
 	}
@@ -296,19 +375,26 @@ func infoLine(s *Session, sn snapshot, w int) string {
 	}
 	room := func() int {
 		r := w - ansi.StringWidth(badge)
-		if tail == "" {
+		if tail() == "" {
 			return max(r, 2)
 		}
-		return max(r-ansi.StringWidth(tail)-3, 4)
+		return max(r-ansi.StringWidth(tail())-3, 4)
 	}
-	// With the code repo's name too, the model goes first when there's
-	// little room, then the branch is cut, then the repo name.
 	head := ansi.StringWidth(mark + repo)
-	if in.model != "" && (repo != "" && room()-head < 8 || badge != "" && room()-head < ansi.StringWidth(branch)) {
-		tail = strings.TrimPrefix(strings.TrimPrefix(tail, shortModel(in.model)), " · ")
+	want := min(ansi.StringWidth(branch), 8)
+	if badge != "" {
+		want = ansi.StringWidth(branch)
 	}
-	if badge != "" && tail != "" && room()-head < ansi.StringWidth(branch) {
-		tail = ""
+	// What the branch gets with the whole tail, which can be less than
+	// room's floor.
+	left := func() int {
+		r := w - ansi.StringWidth(badge) - head
+		if t := tail(); t != "" {
+			r -= ansi.StringWidth(t) + 3
+		}
+		return r
+	}
+	for left() < want && drop() {
 	}
 	if head > room()-4 {
 		if n := room() - 4 - ansi.StringWidth(mark); n >= 2 {
@@ -319,10 +405,22 @@ func infoLine(s *Session, sn snapshot, w int) string {
 		head = ansi.StringWidth(mark + repo)
 	}
 	line := stBranch.Render(mark) + stMuted.Render(repo) + stBranch.Render(clip(branch, max(room()-head, 2))) + badge
-	if tail == "" {
-		return line
+	if tail() != "" {
+		return line + stMuted.Render(" · ") + styledTail()
 	}
-	return line + stMuted.Render(" · "+tail)
+	return line
+}
+
+// headerContext is the context for the session header: "142k context",
+// or with the window size "142k/200k context · 71%", coloured by how full
+// it is.
+func headerContext(sn snapshot) string {
+	tokens := shortTokens(sn.info.ctxTokens)
+	if sn.ctxWindow <= 0 {
+		return stMuted.Render(tokens + " context")
+	}
+	pct := contextPct(sn.info.ctxTokens, sn.ctxWindow)
+	return contextStyle(pct).Render(fmt.Sprintf("%s/%s context · %.0f%%", tokens, shortTokens(sn.ctxWindow), pct))
 }
 
 // shortDir shows a folder in w cells, keeping its end ("…\src\api").
@@ -417,7 +515,10 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 		}
 	}
 	if sn.info.model != "" {
-		header += stMuted.Render("  " + shortModel(sn.info.model) + " · " + shortTokens(sn.info.ctxTokens) + " context")
+		header += stMuted.Render("  "+shortModel(sn.info.model)+" · ") + headerContext(sn)
+	}
+	if sn.cost != "" {
+		header += stMuted.Render(" · " + sn.cost)
 	}
 	if len(sn.reply) > 0 {
 		// Before the folder: real paths are long and would push the reply

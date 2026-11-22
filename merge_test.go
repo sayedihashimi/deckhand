@@ -315,6 +315,12 @@ func TestMKeyLocal(t *testing.T) {
 		t.Fatal("n should cancel without merging")
 	}
 	pressKey(m, 'm')
+	_, cmd := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter}) // no default: cancels too
+	runCmd(m, cmd)
+	if m.confirm != nil || s.mergeBusy.Load() || git(t, clone, "rev-parse", "main") != git(t, clone, "rev-parse", "origin/main") {
+		t.Fatal("enter should cancel without merging")
+	}
+	pressKey(m, 'm')
 	pressKey(m, 'y')
 	want := "Merged into main in api (not pushed). Close the session and remove the worktree? y/n"
 	if m.confirm == nil || m.confirm.text != want || s.mergeBusy.Load() {
@@ -356,7 +362,11 @@ func TestCloseMergedOnOriginDeletesRemote(t *testing.T) {
 	}
 	m, s := mergeModel(w)
 	pressKey(m, 'x')
-	pressKey(m, 'y')
+	if m.confirm == nil || !m.confirm.defaultYes || !strings.HasSuffix(m.confirm.text, "you choose. Y/n") {
+		t.Fatalf("x prompt: %+v", m.confirm)
+	}
+	_, cmd := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter}) // enter is yes
+	runCmd(m, cmd)
 	if slices.Contains(m.sessions, s) || isDir(w.path) {
 		t.Fatalf("should be closed (flash %q)", m.flash)
 	}

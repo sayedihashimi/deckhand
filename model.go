@@ -37,20 +37,21 @@ func frameTick() tea.Cmd {
 }
 
 type model struct {
-	sessions []*Session
-	sel      int
-	scroll   int
-	focus    focusArea
-	width    int
-	height   int
-	frame    int
-	dirty    *atomic.Bool
-	agents   []Agent
-	dialog   *newDialog
-	confirm  *confirmPrompt
-	closing  *closePrompt // x's warning for a worktree session that isn't merged
-	rename   *textinput.Model
-	flash    string
+	sessions    []*Session
+	costSavedAt time.Time // when sessions.json was last saved for a cost change
+	sel         int
+	scroll      int
+	focus       focusArea
+	width       int
+	height      int
+	frame       int
+	dirty       *atomic.Bool
+	agents      []Agent
+	dialog      *newDialog
+	confirm     *confirmPrompt
+	closing     *closePrompt // x's warning for a worktree session that isn't merged
+	rename      *textinput.Model
+	flash       string
 
 	// Filtering the list ("/" and "@").
 	filter        string
@@ -98,6 +99,9 @@ type confirmPrompt struct {
 	text   string
 	action func(m *model) tea.Cmd
 	cancel func(m *model) // when it's answered with anything but y; may be nil
+	// defaultYes makes enter answer yes too. Only for prompts that are cheap to
+	// get wrong and usually answered yes (x, K); their text ends in Y/n.
+	defaultYes bool
 }
 
 func newModel() *model {
@@ -237,6 +241,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				s.MaybeSaveScreen(now)
 			}
 			m.tickTest(now)
+			m.maybeSaveCosts(now)
 		}
 		m.dragTick()
 		if s := m.current(); s != nil {
@@ -338,7 +343,7 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.confirm != nil {
 		c := m.confirm
 		m.confirm = nil
-		if key == "y" || key == "Y" {
+		if key == "y" || key == "Y" || (key == "enter" && c.defaultYes) {
 			return m, c.action(m)
 		}
 		if c.cancel != nil {
@@ -527,6 +532,8 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.startLikeSelected()
 	case "W":
 		return m, m.worktreeLikeSelected()
+	case "f":
+		return m, m.forkSelected()
 	case "tab":
 		m.jumpToAttention()
 	case "v":
@@ -578,11 +585,11 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.setFlash("Still creating its worktree; wait for it to finish")
 		} else if s != nil {
 			name := s.Name
-			text := fmt.Sprintf("Remove %q from the list? y/n", name)
+			text := fmt.Sprintf("Remove %q from the list? Y/n", name)
 			if s.Running() {
-				text = fmt.Sprintf("End %q and remove it? y/n", name)
+				text = fmt.Sprintf("End %q and remove it? Y/n", name)
 			}
-			m.confirm = &confirmPrompt{text: text, action: func(m *model) tea.Cmd {
+			m.confirm = &confirmPrompt{text: text, defaultYes: true, action: func(m *model) tea.Cmd {
 				m.removeSession(s) // by pointer: the list can change while it asks
 				return nil
 			}}
@@ -595,7 +602,7 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.openFolder(openTerminal)
 	case "K":
 		if s := m.current(); s != nil && s.Running() {
-			m.confirm = &confirmPrompt{text: fmt.Sprintf("End %q (it stays in the list)? y/n", s.Name), action: func(m *model) tea.Cmd {
+			m.confirm = &confirmPrompt{text: fmt.Sprintf("End %q (it stays in the list)? Y/n", s.Name), defaultYes: true, action: func(m *model) tea.Cmd {
 				s.Kill()
 				return nil
 			}}
@@ -1309,4 +1316,25 @@ func (d *newDialog) update(msg tea.Msg) tea.Cmd {
 		d.refresh()
 	}
 	return cmd
+}
+
+// costSaveEvery is how often sessions.json is saved while costs change.
+const costSaveEvery = 15 * time.Second
+
+// maybeSaveCosts saves sessions.json when a session's cost has changed,
+// at most every costSaveEvery, so the last cost survives a crash.
+func (m *model) maybeSaveCosts(now time.Time) {
+	if now.Sub(m.costSavedAt) < costSaveEvery {
+		return
+	}
+	changed := false
+	for _, s := range m.sessions {
+		if s.costChanged.Swap(false) {
+			changed = true
+		}
+	}
+	if changed {
+		m.costSavedAt = now
+		_ = saveSessions(m.sessions)
+	}
 }

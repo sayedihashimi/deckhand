@@ -116,10 +116,10 @@ func TestSnapshotWorktreeLabel(t *testing.T) {
 	}
 	// With Claude's model and context: the model goes before the repo name.
 	s.info.model, s.info.ctxTokens = "claude-opus-5-5", 64100
-	if got := ansi.Strip(infoLine(s, s.Snapshot(), 26)); got != "⎇ api:quiet-otter↑2 · 64k" {
+	if got := ansi.Strip(infoLine(s, s.Snapshot(), 26)); got != "⎇ api:quiet-ot… · ▰▱▱▱▱ 6%" {
 		t.Errorf("info line with a model %q", got)
 	}
-	if got := ansi.Strip(infoLine(s, s.Snapshot(), 40)); got != "⎇ api:quiet-otter↑2 · opus 5.5 · 64k" {
+	if got := ansi.Strip(infoLine(s, s.Snapshot(), 46)); got != "⎇ api:quiet-otter↑2 · opus 5.5 · ▰▱▱▱▱ 6%" {
 		t.Errorf("wide info line %q", got)
 	}
 	s.info.model, s.info.ctxTokens = "", 0
