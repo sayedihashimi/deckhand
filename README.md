@@ -114,7 +114,7 @@ Press `?` in the session list, or `F1` anywhere (also inside a session, the new-
 |---|---|
 | ↑/↓ or j/k | Select a session (its terminal shows on the right) |
 | home/end or g/G | Select the first or last session |
-| shift+↑/↓ | Move the selected session up or down one place. The order is saved, so it's the same after a restart. With a filter on, it moves past the next session you can see, skipping hidden ones |
+| shift+↑/↓ | Move the selected session up or down one place, or drag it with the mouse. The order is saved, so it's the same after a restart. With a filter on, it moves past the next session you can see, skipping hidden ones |
 | shift+home/end | Move the selected session to the top or the bottom (with a filter on: just before the first, or after the last, session you can see) |
 | enter | Type into the session; starts or resumes it if it isn't running |
 | shift+enter | Start a new session with the same agent and folder, right below the selected one. The selected session is left as it is, so its conversation can still be resumed. Claude gets a fresh conversation; a custom agent runs its normal command, not its `resume` one. ESC enter (what a remapped shift+enter sends) does the same. Where a terminal sends plain enter for shift+enter, it acts like enter |
@@ -161,6 +161,7 @@ Modified keys that plain terminal input can't express, such as shift+enter (a ne
 
 - **Wheel over the terminal:** scrolls back through the output. Any key, or wheeling back down, returns to the live view. If the app turns on mouse reporting itself (a fullscreen TUI such as Claude's fullscreen renderer), the wheel and clicks go to the app instead, so it scrolls its own view.
 - **Wheel or click in the session list:** moves the selection. Clicking the terminal focuses it.
+- **Dragging a session in the list:** press on it and move the pointer to reorder it. A line shows where it will land: on the top of a session it goes above it, on the bottom line below. Releasing moves it there and saves the order, as shift+↑/↓ does (with a filter on, positions count only the sessions you can see). Holding the pointer on the list's header or its last row scrolls the list. `esc`, or releasing over the terminal, cancels.
 - **Selecting text:** deckhand uses mouse reporting, so in Windows Terminal hold **shift** while dragging.
 
 **New session dialog**

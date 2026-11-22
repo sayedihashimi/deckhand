@@ -23,7 +23,7 @@ import (
 // and saves deckhand's
 // screen as a PNG, with the exited shell's restored output, the config
 // screen ("c", testing an agent with t), the help opened from it (F1) and the api session's diff
-// preview ("d") below it. The PR
+// preview ("d") below it, then a session being dragged in the list. The PR
 // workflow posts it on each pull request.
 //
 //	$env:DECKHAND_SCREENSHOT="shot.png"; go test -tags e2e -run TestE2EScreenshot -v
@@ -280,8 +280,21 @@ editor = 'code "{dir}"'
 	h.send("\x1b")
 	h.waitGone("files changed", 3*time.Second)
 
+	// Dragging the first session with the mouse: the drop line shows it
+	// would land between the second and third. esc cancels the drag.
+	h.send("\x1b[<0;6;3M")  // press on its first line
+	h.send("\x1b[<32;6;6M") // the second session's first line
+	h.send("\x1b[<32;6;8M") // its last line: below it
+	h.waitFor("━━━━━━", 3*time.Second)
+	time.Sleep(300 * time.Millisecond)
+	dragShot := screenFromEmulator(h.emu)
+	t.Logf("dragging:\n%s", h.screen())
+	h.send("\x1b")
+	h.send("\x1b[<0;6;8m") // the release after esc changes nothing
+	h.waitGone("━━━━━━", 3*time.Second)
+
 	// One image: the scene, the restored output, the config screen, the
-	// help opened from it and the diff preview, with a blank row between
+	// help opened from it, the diff preview and the drag, with a blank row between
 	// them.
 	blank := make([]termshot.Cell, len(scene[0]))
 	for i := range blank {
@@ -292,6 +305,7 @@ editor = 'code "{dir}"'
 	both = append(append(both, blank), config...)
 	both = append(append(both, blank), configHelp...)
 	both = append(append(both, blank), diffShot...)
+	both = append(append(both, blank), dragShot...)
 
 	f, err := os.Create(out)
 	if err != nil {
