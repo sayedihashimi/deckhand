@@ -17,8 +17,9 @@ import (
 
 // TestE2EScreenshot sets up a scripted scene (four fake Claude sessions in
 // different states, with what each has cost and how full its context is,
-// in git repos (one in a worktree, run from a notes
-// folder; two with a pull request, from a fake gh), plus an exited shell)
+// in git repos (one in a worktree, run from a notes folder; two with a
+// pull request, from a fake gh), a fork of one of them (f), plus an
+// exited shell)
 // and saves deckhand's
 // screen as a PNG, with the exited shell's restored output, the config
 // screen ("c", testing an agent with t), the help opened from it (F1) and the api session's diff
@@ -70,7 +71,7 @@ func TestE2EScreenshot(t *testing.T) {
 			t.Fatalf("git init: %v\n%s", err, out)
 		}
 		// hookapp.txt itself is untracked, so hide it from git status.
-		_ = os.WriteFile(filepath.Join(dir, ".git", "info", "exclude"), []byte("hookapp.txt\n"), 0o644)
+		_ = os.WriteFile(filepath.Join(dir, ".git", "info", "exclude"), []byte("hookapp*.txt\n"), 0o644)
 		if dirty {
 			_ = os.WriteFile(filepath.Join(dir, "changed.txt"), []byte("x"), 0o644)
 		}
@@ -108,6 +109,12 @@ event PreToolUse Edit | README.md
 event PostToolUse Edit
 event Stop
 `)
+	// A fork of docs (f) waits for its first prompt: the sidebar shows
+	// what it was forked from.
+	_ = os.WriteFile(filepath.Join(docs, "hookapp-fork.txt"), []byte(`event SessionStart
+say \e[1m> document the install steps\e[0m
+say \e[32m●\e[0m Updated the README with the new install steps.
+`), 0o644)
 	web := repo("web", "main", true, `event SessionStart
 reply 152300 Running the test suite.
 statusline 3.10 200000 152300
@@ -212,6 +219,13 @@ editor = 'code "{dir}"'
 	h.waitFor("⎇ cli:quiet-otter", 10*time.Second)
 	h.waitFor("#12✓", 10*time.Second) // the PR badges
 	h.waitFor("#7✗", 10*time.Second)
+	// Fork docs (f), then select api again.
+	h.send("j")
+	h.send("f")
+	h.waitFor("Updated the README with the new install steps.", 15*time.Second)
+	h.send(keyF5)
+	h.send("g")
+	h.waitFor("claude · ⑂ docs", 10*time.Second)
 	h.waitFor(" $7.14  1 need you", 10*time.Second) // today's total; the sidebar is too narrow for "today"
 	h.waitFor("76% · $3.10", 10*time.Second)        // context: yellow from 60%
 	h.waitFor("▰▱▱▱▱ 16% · $0.42", 10*time.Second)  // the meter, where there's room
@@ -222,13 +236,13 @@ editor = 'code "{dir}"'
 
 	// The exited shell selected: its saved output, restored after the
 	// restart.
-	h.send("\x1b[B\x1b[B\x1b[B\x1b[B")
+	h.send("\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B")
 	h.waitFor("last output · saved 2h ago", 5*time.Second)
 	h.waitFor("planning-review.md", 3*time.Second)
 	time.Sleep(300 * time.Millisecond)
 	restored := screenFromEmulator(h.emu)
 	t.Logf("restored output:\n%s", h.screen())
-	h.send("\x1b[A\x1b[A\x1b[A\x1b[A")
+	h.send("\x1b[A\x1b[A\x1b[A\x1b[A\x1b[A")
 	h.waitGone("last output", 3*time.Second)
 
 	// The config screen, with the second agent selected and being tested

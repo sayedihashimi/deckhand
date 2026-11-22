@@ -236,3 +236,59 @@ func TestRemoveConfirmUsesTheSessionAskedAbout(t *testing.T) {
 		t.Errorf("after y: %q, want %q", got, "one two")
 	}
 }
+
+// x's prompt defaults to yes: enter removes the session, running or not,
+// and the text says so with Y/n. n and esc still cancel.
+func TestRemoveConfirmEnterIsYes(t *testing.T) {
+	t.Setenv("DECKHAND_HOME", t.TempDir())
+	for _, running := range []bool{false, true} {
+		m := testModel("one", "two")
+		m.sessions[1].running = running // no process: Kill does nothing
+		m.sel = 1
+		want := `Remove "two" from the list? Y/n`
+		if running {
+			want = `End "two" and remove it? Y/n`
+		}
+		for _, cancel := range []tea.KeyPressMsg{{Code: 'n', Text: "n"}, {Code: tea.KeyEscape}} {
+			press(m, tea.KeyPressMsg{Code: 'x', Text: "x"})
+			if m.confirm == nil || m.confirm.text != want {
+				t.Fatalf("running=%v: prompt %+v, want %q", running, m.confirm, want)
+			}
+			press(m, cancel)
+			if m.confirm != nil || order(m) != "one two" {
+				t.Fatalf("running=%v: %q should cancel: %q", running, cancel.String(), order(m))
+			}
+		}
+		press(m, tea.KeyPressMsg{Code: 'x', Text: "x"})
+		press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		if m.confirm != nil || order(m) != "one" {
+			t.Errorf("running=%v: after enter: %q, want %q", running, order(m), "one")
+		}
+	}
+}
+
+// K's prompt defaults to yes too: enter ends the session, n keeps it.
+func TestEndConfirmEnterEnds(t *testing.T) {
+	for _, tc := range []struct {
+		key  tea.KeyPressMsg
+		want bool
+	}{
+		{tea.KeyPressMsg{Code: tea.KeyEnter}, true},
+		{tea.KeyPressMsg{Code: 'n', Text: "n"}, false},
+		{tea.KeyPressMsg{Code: tea.KeyEscape}, false},
+	} {
+		m := testModel("one")
+		m.sessions[0].running = true
+		press(m, tea.KeyPressMsg{Code: 'K', Text: "K"})
+		if m.confirm == nil || !m.confirm.defaultYes || !strings.HasSuffix(m.confirm.text, " Y/n") {
+			t.Fatalf("K prompt: %+v", m.confirm)
+		}
+		ended := false
+		action := m.confirm.action
+		m.confirm.action = func(m *model) tea.Cmd { ended = true; return action(m) }
+		press(m, tc.key)
+		if m.confirm != nil || ended != tc.want {
+			t.Errorf("%s on K: confirm %+v, ended %v, want %v", tc.key, m.confirm, ended, tc.want)
+		}
+	}
+}

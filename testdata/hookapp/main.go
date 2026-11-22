@@ -17,6 +17,12 @@
 //	                               used), and print "statusline: <its output>"
 //	                               when it prints something
 //	sleep <ms>
+//
+// With --fork-session (deckhand's f), it acts as Claude does: the
+// conversation from --resume continues under a new session ID, the one from
+// --session-id (or a made-up one without it), and it prints
+// "hookapp forked <from> as <new>". A hookapp-fork.txt in the working
+// folder is then the script, if there is one.
 package main
 
 import (
@@ -26,6 +32,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -36,14 +43,31 @@ var (
 )
 
 func main() {
-	var settings string
+	var settings, newID, resumeID string
 	for i := 1; i < len(os.Args)-1; i++ {
 		switch os.Args[i] {
 		case "--settings":
 			settings = os.Args[i+1]
-		case "--session-id", "--resume":
-			sessionID = os.Args[i+1]
+		case "--session-id":
+			newID = os.Args[i+1]
+		case "--resume":
+			resumeID = os.Args[i+1]
 		}
+	}
+	sessionID = newID
+	if resumeID != "" {
+		sessionID = resumeID
+	}
+	scriptFile := "hookapp.txt"
+	if resumeID != "" && slices.Contains(os.Args[1:], "--fork-session") {
+		if _, err := os.Stat("hookapp-fork.txt"); err == nil {
+			scriptFile = "hookapp-fork.txt"
+		}
+		sessionID = newID
+		if sessionID == "" {
+			sessionID = fmt.Sprintf("fork-%d", time.Now().UnixNano())
+		}
+		fmt.Println("hookapp forked", resumeID, "as", sessionID)
 	}
 	data, err := os.ReadFile(settings)
 	if err != nil {
@@ -66,7 +90,7 @@ func main() {
 	transcript = filepath.Join(filepath.Dir(settings), "transcript.jsonl")
 	_ = os.WriteFile(transcript, []byte(`{"type":"user","message":{"content":"fix it"}}`+"\n"), 0o600)
 
-	if script, err := os.ReadFile("hookapp.txt"); err == nil {
+	if script, err := os.ReadFile(scriptFile); err == nil {
 		runScript(string(script))
 	} else {
 		reply(83002, "Fixed the bug.")

@@ -130,13 +130,14 @@ Press `?` in the session list, or `F1` anywhere (also inside a session, the new-
 | m | Merge the session's branch: its GitHub PR, or locally into the default branch without GitHub, then offer to close the session (see [Merging](#merging)) |
 | n | New session (see below) |
 | W | Start a new worktree session with the same agent and repo, right below the selected one (see [Worktree sessions](#worktree-sessions)) |
+| f | Fork a Claude session: a new session right below it that starts from a copy of its conversation, named `<name> (fork)` (see [Forking](#forking)) |
 | o | Open the session's folder (its worktree, if it has one) in your editor (see [Opening a session's folder](#opening-a-sessions-folder)) |
 | O | Open the session's folder in Explorer |
 | t | Open a new Windows Terminal tab in the session's folder (its worktree, if it has one) |
 | r | Rename the session |
 | c | Config screen: agents, notifications, the session list, history and open commands (see [The config screen](#the-config-screen)) |
 | K | End the session's process (it stays in the list) |
-| x (or delete) | End and remove the session. For a worktree session, its worktree and branch are removed too if the work is merged; otherwise you choose (see [Worktree sessions](#worktree-sessions)) |
+| x (or delete) | End and remove the session, after asking (`Y/n`: `enter` answers yes, `n` or `esc` cancels). For a worktree session, its worktree and branch are removed too if the work is merged; otherwise you choose (see [Worktree sessions](#worktree-sessions)) |
 | F3 | Hide or show the session list (see [Hiding the session list](#hiding-the-session-list)) |
 | F5 (or ctrl+q, ctrl+]) | Show the session list if it's hidden |
 | ? or F1 | Show the keys |
@@ -219,7 +220,7 @@ args    = ["--model", "opus"]
 type    = "claude"
 ```
 
-**How status works when your script starts Claude:** for a `pwsh` agent (and a `.ps1` script) with `type = "claude"`, deckhand defines a PowerShell function named `claude` for that session only (`%LOCALAPPDATA%\deckhand\claude-shim.ps1`). PowerShell prefers functions to programs, so when your function or script calls `claude`, it calls the shim. The shim runs the real `claude.exe` and adds deckhand's `--settings` (the hooks) and `--session-id`, leaving out `--session-id` when you're resuming. Your script doesn't need to forward arguments, and neither it nor `~/.claude/settings.json` is changed.
+**How status works when your script starts Claude:** for a `pwsh` agent (and a `.ps1` script) with `type = "claude"`, deckhand defines a PowerShell function named `claude` for that session only (`%LOCALAPPDATA%\deckhand\claude-shim.ps1`). PowerShell prefers functions to programs, so when your function or script calls `claude`, it calls the shim. The shim runs the real `claude.exe` and adds deckhand's `--settings` (the hooks) and `--session-id`, leaving out `--session-id` when you're resuming (unless deckhand is [forking](#forking) the session, when it adds `--fork-session` too). Your script doesn't need to forward arguments, and neither it nor `~/.claude/settings.json` is changed.
 
 A `command` agent that is a program or `.cmd` file gets the extra arguments on its command line, so it must pass them on to `claude`.
 
@@ -265,7 +266,7 @@ You can run Claude from a folder that isn't a git repo, such as your notes, whil
 
 **Closing (`x`)**
 
-After you confirm (a running agent is stopped first), deckhand fetches and checks whether the work is merged: the branch tip is in `origin/<default>` (or the local default branch, after `m`'s local merge), or GitHub (`gh pr view`) has a merged pull request whose head is the branch tip. The second check catches squash merges, which git can't see.
+After you confirm (`y` or `enter`; a running agent is stopped first), deckhand fetches and checks whether the work is merged: the branch tip is in `origin/<default>` (or the local default branch, after `m`'s local merge), or GitHub (`gh pr view`) has a merged pull request whose head is the branch tip. The second check catches squash merges, which git can't see.
 
 - **Merged, and nothing uncommitted:** `git worktree remove`, then the local branch and the branch on `origin` are deleted. When the work is only in the local default branch (after `m`'s local merge, not pushed yet), the branch on `origin` is kept, since it's the only copy off your machine, and the message says so.
 - **Otherwise** (including merged with uncommitted files): a warning lists the uncommitted files, the commits that aren't on the default branch and the PR state. Press `k` to keep the worktree and branch and remove only the session, `D` to delete anyway (the worktree with its uncommitted files, and the local branch; the branch on origin is kept), or `esc` to cancel. The `D` line says how many commits aren't on the default branch and whether they'll be lost: they are when the branch isn't on origin, or origin's copy is at another commit.
@@ -364,6 +365,17 @@ terminal = 'wt.exe -w 0 nt -d "{dir}"'
 ## Resuming
 
 The session list is saved in `%LOCALAPPDATA%\deckhand\sessions.json`. Each Claude session is started with its own `--session-id`, so after you quit and restart deckhand, pressing enter on a Claude session runs `claude --resume <id>`.
+
+## Forking
+
+`f` in the list forks the selected Claude session: a new session, right below it, that starts with a copy of its conversation. Then you can try another approach without losing the original. shift+enter is different: it starts a fresh conversation with the same agent and folder.
+
+- The fork is selected and starts at once. It's named `<name> (fork)`, or `(fork 2)` and so on if that name is taken; `r` renames it. Until you send it a prompt, its second line in the list shows `⑂ <original name>`.
+- Claude makes the copy: deckhand runs `claude --resume <original's id> --fork-session --session-id <new id>`, so the fork has its own Claude session ID and transcript, and the original's conversation isn't changed. `sessions.json` records which session it was forked from (`forked_from`). After a restart, enter resumes the fork's own conversation.
+- A custom `pwsh` agent with `type = "claude"` (such as `smc`) runs its `resume` command with the original's ID, and the [claude shim](#custom-agents-your-own-scripts-and-profile-functions) adds `--fork-session` and the new `--session-id`. Without a `resume` command it can't fork.
+- The original has to have started at least once, and it can be running or exited. While it's in the middle of a turn (working, or waiting for a permission answer), `f` says to wait for it to finish its turn.
+- Agents that aren't Claude can't fork; `f` says so.
+- A fork of a worktree session works in the same worktree, and shows its branch, but doesn't own it: `x` on the fork only removes the fork from the list, and the worktree stays with the original.
 
 ## Output after a restart
 
