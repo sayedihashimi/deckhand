@@ -138,8 +138,11 @@ func (m *model) renderSidebar(w, h int) []string {
 		sn := s.Snapshot()
 		selected := i == m.sel
 
+		// The age is how long it's been working, waiting or idle. An exited
+		// session has no clock running, so it shows none (like one restored
+		// at startup).
 		age := ""
-		if !sn.since.IsZero() {
+		if !sn.since.IsZero() && sn.status != StatusExited {
 			age = shortAge(now.Sub(sn.since))
 		}
 		nameStyle := lipgloss.NewStyle()
