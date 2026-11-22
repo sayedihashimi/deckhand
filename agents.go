@@ -212,7 +212,7 @@ const sampleConfig = `# deckhand agents: each [[agents]] entry shows up in the n
 # name   = "smc"                # shown in the agent row
 # pwsh   = "smc"                # run in PowerShell with your profile loaded
 # type   = "claude"             # it starts Claude: status from hooks, resumable
-# resume = "smc -Resume {id}"   # how to resume; {id} is the Claude session ID
+# resume = "smc -Resume {id}"   # how to resume (and fork, f); {id} is the Claude session ID
 #
 # For type = "claude", deckhand defines a PowerShell function named "claude"
 # for that session. Your command calls it instead of claude.exe, and it adds
@@ -322,8 +322,19 @@ function global:claude {
     if ($env:DECKHAND_CLAUDE_PROMPT) { $extra += '--append-system-prompt', $env:DECKHAND_CLAUDE_PROMPT }
     if ($env:DECKHAND_CLAUDE_SETTINGS) { $extra += '--settings', $env:DECKHAND_CLAUDE_SETTINGS }
     $resuming = $false
-    foreach ($a in $args) { if ($a -in '--resume', '-r', '--continue', '-c') { $resuming = $true } }
-    if ($env:DECKHAND_CLAUDE_SESSION_ID -and -not $resuming) {
+    $forking = $false
+    foreach ($a in $args) {
+        if ($a -in '--resume', '-r', '--continue', '-c') { $resuming = $true }
+        if ($a -eq '--fork-session') { $forking = $true }
+    }
+    # A fork (f in deckhand) resumes a copy of the conversation into a new
+    # session ID, which Claude accepts with --session-id only together with
+    # --fork-session.
+    if ($env:DECKHAND_CLAUDE_FORK -eq '1' -and $resuming -and -not $forking) {
+        $extra += '--fork-session'
+        $forking = $true
+    }
+    if ($env:DECKHAND_CLAUDE_SESSION_ID -and (-not $resuming -or $forking)) {
         $extra += '--session-id', $env:DECKHAND_CLAUDE_SESSION_ID
     }
     & $exe.Source @extra @args
@@ -353,12 +364,28 @@ type launchExtras struct {
 	prompt string   // claude --append-system-prompt
 	env    []string // DECKHAND_WORKTREE=..., DECKHAND_BRANCH=...
 	dir    string   // the folder the agent starts in
+
+	// forkFrom is the Claude session ID a fork (f) copies its conversation
+	// from. The new conversation gets claudeID.
+	forkFrom string
 }
 
+var errForkNeedsResume = errors.New(`forking needs the agent's "resume" command`)
+
 // buildLaunch works out the command line for an agent. claudeID is the
-// Claude session ID to create (or resume, when resume is true).
+// Claude session ID to create (or resume, when resume is true). With
+// extra.forkFrom set, a Claude agent resumes that conversation into a new
+// one with the ID claudeID (claude --resume <from> --fork-session
+// --session-id <claudeID>).
 func buildLaunch(a Agent, sessionID, claudeID string, resume bool, extra launchExtras) (launchSpec, error) {
 	spec := launchSpec{env: append([]string{}, extra.env...)}
+	fork := a.Claude && extra.forkFrom != ""
+	if fork {
+		resume = false
+		if a.Pwsh != "" && a.Resume == "" {
+			return spec, errForkNeedsResume
+		}
+	}
 	var settings string
 	if a.Claude {
 		var err error
@@ -373,7 +400,11 @@ func buildLaunch(a Agent, sessionID, claudeID string, resume bool, extra launchE
 			return spec, errors.New("PowerShell not found")
 		}
 		script := a.Pwsh
-		if resume {
+		switch {
+		case fork:
+			// The shim adds --fork-session and the new --session-id.
+			script = strings.ReplaceAll(a.Resume, "{id}", extra.forkFrom)
+		case resume:
 			script = strings.ReplaceAll(a.Resume, "{id}", claudeID)
 		}
 		if a.Claude {
@@ -390,6 +421,9 @@ func buildLaunch(a Agent, sessionID, claudeID string, resume bool, extra launchE
 			}
 			if !resume {
 				spec.env = append(spec.env, "DECKHAND_CLAUDE_SESSION_ID="+claudeID)
+			}
+			if fork {
+				spec.env = append(spec.env, "DECKHAND_CLAUDE_FORK=1")
 			}
 			script = ". $env:DECKHAND_SHIM; " + script
 		}
@@ -411,9 +445,12 @@ func buildLaunch(a Agent, sessionID, claudeID string, resume bool, extra launchE
 		if extra.prompt != "" {
 			args = append(args, "--append-system-prompt", extra.prompt)
 		}
-		if resume {
+		switch {
+		case fork:
+			args = append(args, "--resume", extra.forkFrom, "--fork-session", "--session-id", claudeID)
+		case resume:
 			args = append(args, "--resume", claudeID)
-		} else {
+		default:
 			args = append(args, "--session-id", claudeID)
 		}
 		args = append(args, "--settings", settings)
