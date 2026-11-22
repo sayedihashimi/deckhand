@@ -279,6 +279,19 @@ const sampleConfig = `# deckhand agents: each [[agents]] entry shows up in the n
 # [cost.prices]
 # "claude-opus-5-5" = { input = 4, output = 20, cache_read = 0.2 }
 
+# How full each Claude session's context window is, on its third line:
+# "meter" (the default, "▰▰▰▱▱ 57%"), "percent" or "tokens"
+# ("114k/200k"). The window size comes from Claude's status line, else
+# [info.context_windows] for the model, else the model ID ("[1m]" and
+# 1M-context models), else context_window, else 200000.
+#
+# [info]
+# context        = "meter"
+# context_window = 200000
+#
+# [info.context_windows]
+# "claude-opus-4-6" = 1000000
+
 # Worktree sessions (the worktree line in the new-session dialog, or W in
 # the list): each gets its own git worktree and branch. root is where the
 # worktrees go; {repo} is the repo's main checkout, and a relative root is

@@ -21,7 +21,7 @@ const configHeader = `# deckhand config. Written by deckhand's config screen (pr
 `
 
 // reloadConfig reads the config file and applies it: agents, notifications,
-// [open], [list], [history], [worktree] and [cost]. Settings that fail to load fall back to their defaults;
+// [open], [list], [history], [worktree], [cost] and [info]. Settings that fail to load fall back to their defaults;
 // the first error is returned.
 func reloadConfig() error {
 	agents, err := loadAgents()
@@ -38,7 +38,9 @@ func reloadConfig() error {
 	worktreeSettings = wtCfg
 	costCfg, costErr := loadCostConfig()
 	setCostSettings(costCfg)
-	for _, e := range []error{err, notifyErr, openErr, listErr, histErr, wtErr, costErr} {
+	infoCfg, infoErr := loadInfoConfig()
+	infoOpts = infoCfg
+	for _, e := range []error{err, notifyErr, openErr, listErr, histErr, wtErr, costErr, infoErr} {
 		if e != nil {
 			return e
 		}
@@ -54,6 +56,7 @@ type configFile struct {
 	List          listConfig    `toml:"list"`
 	History       historyConfig `toml:"history"`
 	Cost          costConfig    `toml:"cost"`
+	Info          infoConfig    `toml:"info"`
 }
 
 // decodeConfig reads the edited settings and, separately, every table in
@@ -97,24 +100,11 @@ func encodeConfig(cfg configFile, raw map[string]any) (string, error) {
 	if cfg.History.Save != nil || cfg.History.Lines != 0 {
 		out["history"] = cfg.History
 	}
-	// [cost] keeps its other keys ([cost.prices], statusline): only show
-	// is edited here, and the default isn't written.
-	cost := map[string]any{}
-	if old, ok := raw["cost"].(map[string]any); ok {
-		for k, v := range old {
-			cost[k] = v
-		}
-	}
-	delete(cost, "show")
-	if cfg.Cost.Show != "" && cfg.Cost.Show != costDollars {
-		cost["show"] = cfg.Cost.Show
-	} else if old, ok := raw["cost"].(map[string]any); ok && old["show"] != nil && cfg.Cost.Show == costDollars {
-		cost["show"] = costDollars // it was set: keep it set
-	}
-	delete(out, "cost")
-	if len(cost) > 0 {
-		out["cost"] = cost
-	}
+	// [cost] and [info] keep their other keys ([cost.prices], statusline,
+	// context_window, [info.context_windows]): only one key of each is
+	// edited here.
+	setTableKey(out, raw, "cost", "show", cfg.Cost.Show, costDollars)
+	setTableKey(out, raw, "info", "context", cfg.Info.Context, ctxShowMeter)
 	var b strings.Builder
 	b.WriteString(configHeader)
 	enc := toml.NewEncoder(&b)
@@ -145,7 +135,10 @@ func checkConfigText(text string) error {
 	if _, err := parseWorktreeConfig(text); err != nil {
 		return err
 	}
-	_, err := parseCostConfig(text)
+	if _, err := parseCostConfig(text); err != nil {
+		return err
+	}
+	_, err := parseInfoConfig(text)
 	return err
 }
 
@@ -232,4 +225,26 @@ func inlineComment(line string) bool {
 		}
 	}
 	return false
+}
+
+// setTableKey sets one key of a table the config screen only partly edits,
+// keeping the table's other keys. The default value isn't written, unless
+// the file already had the key.
+func setTableKey(out, raw map[string]any, table, key, value, def string) {
+	t := map[string]any{}
+	old, _ := raw[table].(map[string]any)
+	for k, v := range old {
+		t[k] = v
+	}
+	delete(t, key)
+	switch {
+	case value != "" && value != def:
+		t[key] = value
+	case value == def && old[key] != nil:
+		t[key] = def // it was set: keep it set
+	}
+	delete(out, table)
+	if len(t) > 0 {
+		out[table] = t
+	}
 }

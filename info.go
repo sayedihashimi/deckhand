@@ -39,6 +39,19 @@ type sessionInfo struct {
 	lastText []string
 	textAt   time.Time
 	status   statusRecord // the latest status line record (statusline.go)
+	// compacted: the context was compacted and there's been no reply
+	// since. compactAt is the context size when a drop was seen.
+	compacted bool
+	compactAt int
+}
+
+// compactedMark goes before the second line's text while compacted.
+const compactedMark = "↻ compacted"
+
+// compactDrop reports whether the context going from before to after
+// tokens looks like a compaction: it lost over half, and at least 20k.
+func compactDrop(before, after int) bool {
+	return before > 0 && after > 0 && after*2 < before && before-after >= 20_000
 }
 
 const (
@@ -125,31 +138,67 @@ func parseGitStatus(out []byte) gitInfo {
 // usage is in the last few lines; tool results can make lines long.
 const transcriptTail = 512 << 10
 
+// transcriptEnd is what the end of a transcript says.
+type transcriptEnd struct {
+	model     string
+	ctxTokens int
+	lastText  string
+	compacted bool // the conversation was compacted after the latest reply
+}
+
 // readTranscriptInfo finds the model, context size and text of the latest
 // main-chain assistant reply in a Claude Code transcript (JSONL).
 func readTranscriptInfo(path string) (model string, ctxTokens int, lastText string, err error) {
+	t, err := readTranscriptTail(path)
+	return t.model, t.ctxTokens, t.lastText, err
+}
+
+// readTranscriptTail reads the end of a transcript.
+func readTranscriptTail(path string) (t transcriptEnd, err error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return "", 0, "", err
+		return t, err
 	}
 	defer f.Close()
 	fi, err := f.Stat()
 	if err != nil {
-		return "", 0, "", err
+		return t, err
 	}
 	start := fi.Size() - transcriptTail
 	if start < 0 {
 		start = 0
 	}
 	if _, err := f.Seek(start, io.SeekStart); err != nil {
-		return "", 0, "", err
+		return t, err
 	}
 	data, err := io.ReadAll(f)
 	if err != nil {
-		return "", 0, "", err
+		return t, err
 	}
-	model, ctxTokens, lastText = parseTranscriptTail(data)
-	return model, ctxTokens, lastText, nil
+	t.model, t.ctxTokens, t.lastText = parseTranscriptTail(data)
+	t.compacted = compactedAfterReply(data)
+	return t, nil
+}
+
+// compactedAfterReply reports whether a transcript's end has a compaction
+// (Claude Code writes a compact_boundary entry and a summary) after the
+// latest main-chain reply.
+func compactedAfterReply(data []byte) bool {
+	lines := bytes.Split(data, []byte("\n"))
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := bytes.TrimSpace(lines[i])
+		switch {
+		case len(line) == 0:
+		case bytes.Contains(line, []byte(`"compact_boundary"`)) || bytes.Contains(line, []byte(`"isCompactSummary":true`)):
+			return true
+		case bytes.Contains(line, []byte(`"assistant"`)):
+			var e transcriptEntry
+			if json.Unmarshal(line, &e) == nil && e.Type == "assistant" && !e.IsSidechain && e.Message.Usage != nil {
+				return false
+			}
+		}
+	}
+	return false
 }
 
 type transcriptEntry struct {

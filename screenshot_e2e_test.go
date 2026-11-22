@@ -16,9 +16,10 @@ import (
 )
 
 // TestE2EScreenshot sets up a scripted scene (four fake Claude sessions in
-// different states, with what each has cost, in git repos (one in a
-// worktree, run from a notes folder; two with a pull request, from a fake
-// gh), a fork of one of them (f), plus an exited shell)
+// different states, with what each has cost and how full its context is,
+// in git repos (one in a worktree, run from a notes folder; two with a
+// pull request, from a fake gh), a fork of one of them (f), plus an
+// exited shell)
 // and saves deckhand's
 // screen as a PNG, with the exited shell's restored output, the config
 // screen ("c", testing an agent with t), the help opened from it (F1) and the api session's diff
@@ -226,8 +227,9 @@ editor = 'code "{dir}"'
 	h.send("g")
 	h.waitFor("claude · ⑂ docs", 10*time.Second)
 	h.waitFor(" $7.14  1 need you", 10*time.Second) // today's total; the sidebar is too narrow for "today"
-	h.waitFor("152k · $3.10", 10*time.Second)
-	time.Sleep(3500 * time.Millisecond) // let every session's git details arrive
+	h.waitFor("76% · $3.10", 10*time.Second)        // context: yellow from 60%
+	h.waitFor("▰▱▱▱▱ 16% · $0.42", 10*time.Second)  // the meter, where there's room
+	time.Sleep(3500 * time.Millisecond)             // let every session's git details arrive
 
 	scene := screenFromEmulator(h.emu)
 	sceneText := h.screen()
