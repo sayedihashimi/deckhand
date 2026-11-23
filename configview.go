@@ -88,6 +88,9 @@ func (m *model) renderConfig(w, h int) []string {
 		}
 		foot = append(foot, fit(st.Render("  "+c.status), w))
 	}
+	if m.temp {
+		foot = append(foot, fit(stWaitText.Render("  "+tempConfigNote), w))
+	}
 	foot = append(foot, fit(stMuted.Render("  "+hint), w))
 
 	// Scroll the body so the focused row stays in view.

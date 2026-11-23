@@ -220,7 +220,5 @@ func (m *model) setListHidden(hidden bool) {
 	if m.width > 0 && m.height > 0 {
 		m.resizeAll()
 	}
-	p := loadPrefs()
-	p.ListHidden = hidden
-	_ = p.save()
+	_ = updatePrefs(func(p *prefs) { p.ListHidden = hidden })
 }

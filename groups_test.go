@@ -485,7 +485,7 @@ func TestOldSessionsFileLoads(t *testing.T) {
 	if m.grouped() || order(m) != "one two" || rowsText(m) != "one two" {
 		t.Errorf("old file: grouped %v, order %q", m.grouped(), order(m))
 	}
-	if err := saveSessions(m.sessions); err != nil {
+	if err := m.saveSessions(); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(filepath.Join(home, "sessions.json"))

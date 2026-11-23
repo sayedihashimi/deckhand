@@ -270,7 +270,7 @@ func TestWorktreeSessionLifecycle(t *testing.T) {
 	if !s.preparing.Load() || len(s.PrepLog()) == 0 {
 		t.Error("the new session shows its worktree being made")
 	}
-	if err := saveSessions(m.sessions); err != nil {
+	if err := m.saveSessions(); err != nil {
 		t.Fatal(err)
 	}
 	if data, _ := os.ReadFile(storePath()); strings.Contains(string(data), s.ID) {

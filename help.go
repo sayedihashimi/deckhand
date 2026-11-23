@@ -463,6 +463,9 @@ func (m *model) helpContent(inner, rows int) helpLayout {
 func (m *model) helpTail(inner int) []string {
 	out := []string{"", stHelpGroup.Render("Status icons")}
 	out = append(out, m.statusLegend(inner)...)
+	if m.temp {
+		out = append(out, "", stHelpGroup.Render(tempHelpNote))
+	}
 	return append(out, "", stMuted.Render("Config file: ")+configPath()+stMuted.Render("  (c edits it here; deckhand config creates it)"))
 }
 

@@ -46,6 +46,8 @@ type Session struct {
 
 	// Cost so far (see cost.go), kept so an exited session still shows it.
 	Cost *sessionCost `json:"cost,omitempty"`
+	// Fields this build doesn't know, kept from sessions.json (store.go).
+	extra extraFields
 	// A fork (see fork.go): forkOf is the Claude session ID whose
 	// conversation the next start copies, and forkHint the original's name,
 	// shown in the sidebar until the fork's first turn.

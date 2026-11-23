@@ -88,6 +88,9 @@ func (m *model) renderSidebar(w, h int) []string {
 		}
 	}
 	head := stTitle.Render(" deckhand")
+	if m.temp {
+		head += stMuted.Render(" temporary")
+	}
 	switch {
 	case m.filterInput != nil:
 		head = " " + m.filterInput.View()
@@ -927,7 +930,12 @@ func (m *model) windowTitle() string {
 			waiting++
 		}
 	}
-	if waiting > 0 {
+	switch {
+	case m.temp && waiting > 0:
+		return fmt.Sprintf("deckhand (temporary, %d need you)", waiting)
+	case m.temp:
+		return "deckhand (temporary)"
+	case waiting > 0:
 		return fmt.Sprintf("deckhand (%d need you)", waiting)
 	}
 	return "deckhand"

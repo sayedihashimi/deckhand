@@ -13,6 +13,7 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 - Claude Code, Codex, Gemini CLI, PowerShell, cmd and your own scripts or profile functions, each in a real terminal ([Custom agents](#custom-agents-your-own-scripts-and-profile-functions)).
 - A new session with a folder box that completes as you type (`n`), or another one in the same folder with shift+enter ([New session dialog](#new-session-dialog)).
 - Claude sessions resume after a restart, and every session's last output is kept ([Resuming](#resuming), [Output after a restart](#output-after-a-restart)).
+- Open more windows while one is running, like Notepad: the first keeps the saved list, the others are temporary (`deckhand --temp`) ([More than one window](#more-than-one-window)).
 - Fork a Claude conversation to try another approach (`f`) ([Forking](#forking)).
 - Hide the list to give the session the full width (`F3`), and go back to it from a session with `F5` ([Hiding the session list](#hiding-the-session-list)).
 - Open a session's folder in your editor, Explorer or a new terminal tab (`o`, `O`, `t`) ([Opening a session's folder](#opening-a-sessions-folder)).
@@ -45,7 +46,7 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 - [Keys](#keys) · [The config screen](#the-config-screen) · [Custom agents](#custom-agents-your-own-scripts-and-profile-functions)
 - [Diff preview](#diff-preview) · [Worktree sessions](#worktree-sessions) · [Pull requests](#pull-requests) · [Merging](#merging)
 - [Groups](#groups) · [Hiding the session list](#hiding-the-session-list) · [Opening a session's folder](#opening-a-sessions-folder)
-- [Resuming](#resuming) · [Forking](#forking) · [Output after a restart](#output-after-a-restart)
+- [Resuming](#resuming) · [More than one window](#more-than-one-window) · [Forking](#forking) · [Output after a restart](#output-after-a-restart)
 - [Build](#build) · [Debugging](#debugging)
 
 ## Getting started
@@ -525,6 +526,22 @@ terminal = 'wt.exe -w 0 nt -d "{dir}"'
 ## Resuming
 
 The session list is saved in `%LOCALAPPDATA%\deckhand\sessions.json`. Each Claude session is started with its own `--session-id`, so after you quit and restart deckhand, pressing enter on a Claude session runs `claude --resume <id>`.
+
+## More than one window
+
+You can run more than one deckhand at a time, like Notepad's windows:
+
+- The first one started is the **main** window. It shows the saved sessions and saves changes to them, as described above.
+- Any deckhand started while the main one is running is a **temporary** window. It says `temporary` next to "deckhand" in the list header, and its title is `deckhand (temporary)`. It starts with an empty list, and its sessions aren't saved: when it closes, they're gone from deckhand. Their Claude conversations still exist, and `claude --resume <id>` resumes one. Quitting asks first only when sessions are running, as in the main window.
+- `deckhand --temp` starts a temporary window even when no main one is running (for a demo, say).
+- In a temporary window the config screen (`c`) shows the config but can't save it, and groups are off (`a` says they're saved only in the main window). Recent folders and the other preferences in `prefs.json` are shared: each change is merged into the file, so neither window undoes the other's.
+- When the main window closes, temporary ones stay temporary. The next deckhand started becomes the main one and shows the saved sessions. A main window that crashed doesn't get in the way: Windows releases its lock (a named mutex per data folder; `deckhand.lock` on other systems) when the process ends.
+- Each data folder (`DECKHAND_HOME`) has its own main window.
+
+`sessions.json` and `groups.json` keep fields this deckhand doesn't know, so an older build doesn't drop a newer one's data. `state.json` records the format of the saved files; a deckhand that finds a newer format than it knows runs as a temporary window ("sessions were saved by a newer deckhand") instead of overwriting them.
+
+> [!WARNING]
+> A deckhand from before temporary windows doesn't know about the main window. If you keep an older build (such as a `deckhand.old.exe`), don't run it at the same time as a newer one: it acts as a main window too, and the last one to save overwrites the other's sessions.
 
 ## Forking
 

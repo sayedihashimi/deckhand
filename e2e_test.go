@@ -50,11 +50,17 @@ func startHarness(t *testing.T, exe string, env []string, dir string) *harness {
 
 func startHarnessSize(t *testing.T, exe string, env []string, dir string, w, h int) *harness {
 	t.Helper()
+	return startHarnessArgs(t, exe, nil, env, dir, w, h)
+}
+
+// startHarnessArgs starts deckhand with command-line arguments.
+func startHarnessArgs(t *testing.T, exe string, args, env []string, dir string, w, h int) *harness {
+	t.Helper()
 	pty, err := xpty.NewPty(w, h)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(exe)
+	cmd := exec.Command(exe, args...)
 	cmd.Env = env
 	cmd.Dir = dir
 	if err := pty.Start(cmd); err != nil {
