@@ -247,6 +247,9 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 		}
 		add(" "+cfgLabel(cur.kind == f.preset, "  presets", lw)+chips(labels, hi, cur.kind == f.preset), true)
 	}
+	multiSel := map[string]int{multiAsk: 0, multiAll: 1, multiFirst: 2}[c.openMulti]
+	add(" "+cfgLabel(cur.kind == rowOpenMulti, "Folders", lw)+chips([]string{"ask", "all", "first"}, multiSel, cur.kind == rowOpenMulti)+
+		stMuted.Render("  o and t on a session with more than one folder"), true)
 	tryOn := "select a session first"
 	if s := m.current(); s != nil {
 		tryOn = "on " + shortDir(s.Dir, max(w-50, 10))
@@ -302,6 +305,8 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 		hint = "empty: " + defaultTerminal
 	case rowEditorPreset, rowTerminalPreset:
 		hint = "←/→ choose · enter use it"
+	case rowOpenMulti:
+		hint = "←/→ change · ask: a picker, All folders first; all: every folder (VS Code: one workspace); first: the same folder as before, the worktree if there is one, otherwise the start folder"
 	case rowTryOpen:
 		hint = "←/→ choose · enter run it (as typed, unsaved) on the selected session's folder"
 	case rowSave:

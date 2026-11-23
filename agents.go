@@ -239,10 +239,17 @@ const sampleConfig = `# deckhand agents: each [[agents]] entry shows up in the n
 # {dir} is the folder. The command is split into words first, then {dir}
 # is filled in, so a folder name can't add arguments. No shell is used.
 # Without an editor, o uses VS Code (code) if it's on PATH, else Explorer.
+# multi is what o and t do for a session with more than one folder (a
+# code repo or worktree beside the start folder, or folders added with
+# /add-dir): "ask" (the default) shows a picker with "All folders" first,
+# "all" opens every folder (one VS Code workspace, or one terminal tab
+# each) and "first" opens the same folder as before: the worktree if
+# there is one, otherwise the start folder.
 #
 # [open]
 # editor   = 'rider64.exe "{dir}"'
 # terminal = 'wt.exe -w 0 nt -d "{dir}"'
+# multi    = "ask"
 
 # The session list. toggle_key hides and shows it from anywhere (inside a
 # session too, so that key no longer reaches the agent). back_key goes back
