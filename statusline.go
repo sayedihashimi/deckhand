@@ -38,6 +38,7 @@ type statusRecord struct {
 	CtxWindow       int      `json:"context_window_size,omitempty"`
 	CtxUsedPct      *float64 `json:"used_percentage,omitempty"`
 	CtxTokens       int      `json:"context_tokens,omitempty"` // input + cache tokens of the last reply
+	AddedDirs       []string `json:"added_dirs,omitempty"`     // the session's extra working folders (--add-dir, /add-dir)
 }
 
 // statusPayload is the part of Claude Code's status line JSON deckhand
@@ -49,8 +50,9 @@ type statusPayload struct {
 		ID string `json:"id"`
 	} `json:"model"`
 	Workspace struct {
-		CurrentDir string `json:"current_dir"`
-		ProjectDir string `json:"project_dir"`
+		CurrentDir string   `json:"current_dir"`
+		ProjectDir string   `json:"project_dir"`
+		AddedDirs  []string `json:"added_dirs"`
 	} `json:"workspace"`
 	Cost *struct {
 		TotalCostUSD *float64 `json:"total_cost_usd"`
@@ -68,7 +70,7 @@ type statusPayload struct {
 }
 
 func (p statusPayload) record(seq int64) statusRecord {
-	r := statusRecord{Seq: seq, ClaudeSessionID: p.SessionID, Model: p.Model.ID}
+	r := statusRecord{Seq: seq, ClaudeSessionID: p.SessionID, Model: p.Model.ID, AddedDirs: p.Workspace.AddedDirs}
 	if p.Cost != nil {
 		r.CostUSD = p.Cost.TotalCostUSD
 	}
