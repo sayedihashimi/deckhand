@@ -168,7 +168,7 @@ func (m *model) worktreeCreated(msg worktreeCreatedMsg) tea.Cmd {
 	}
 	w := msg.w
 	s.mu.Lock()
-	s.Name = w.branch
+	s.Name, s.NameSource = w.branch, nameFolder
 	s.RepoRoot, s.Worktree, s.Branch = w.repoRoot, w.path, w.branch
 	s.BaseBranch, s.BaseCommit = w.base, w.baseCommit
 	if !msg.separate {

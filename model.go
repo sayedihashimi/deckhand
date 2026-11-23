@@ -246,6 +246,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.frame++
 		if m.frame%refreshEvery == 0 {
 			now := time.Now()
+			renamed := false
 			for i, s := range m.sessions {
 				s.Refresh(now)
 				if n := s.TakeNotice(); n != nil && !s.testing.Load() && shouldNotify(notifyMode, m.focusKnown, m.windowFocused, i == m.selectedIdx()) {
@@ -254,6 +255,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				s.MaybePoll(now, i == m.selectedIdx())
 				s.MaybePollPR(now)
 				s.MaybeSaveScreen(now)
+				if s.applyTitle() {
+					renamed = true
+				}
+			}
+			if renamed {
+				_ = saveSessions(m.sessions)
 			}
 			m.tickTest(now)
 			m.maybeSaveCosts(now)
@@ -432,7 +439,7 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if s := m.current(); s != nil {
 				if name := strings.TrimSpace(m.rename.Value()); name != "" {
 					s.mu.Lock()
-					s.Name = name
+					s.Name, s.NameSource = name, nameUser
 					s.mu.Unlock()
 					_ = saveSessions(m.sessions)
 				}

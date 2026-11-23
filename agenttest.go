@@ -172,7 +172,7 @@ func (m *model) keepTest() {
 	m.test = nil
 	s := t.s
 	s.mu.Lock()
-	s.Name = sessionName(s.Dir)
+	s.Name, s.NameSource = sessionName(s.Dir), nameFolder
 	name := s.Name
 	s.mu.Unlock()
 	s.testing.Store(false)

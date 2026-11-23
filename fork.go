@@ -104,6 +104,14 @@ func (m *model) newFork(a Agent, s *Session) *Session {
 	n.ForkedFrom = s.ID
 	n.forkOf = s.ClaudeSessionID
 	n.forkHint = s.Name
+	// A fork's name is its own: Claude's automatic title doesn't replace
+	// it, a /rename in the fork does. Its transcript starts as a copy of
+	// the original's, so the original's last /rename isn't a new one.
+	n.NameSource = nameUser
+	if s.Title != nil {
+		t := *s.Title
+		n.Title = &t
+	}
 	n.override = s.override // a kept test of an agent that may not be saved
 	n.Group = s.Group       // right below it, in its group
 	// The fork shares the original's folder. A worktree session's worktree

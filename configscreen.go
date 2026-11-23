@@ -28,6 +28,7 @@ const (
 	rowListKey
 	rowListBackKey
 	rowListStatus
+	rowListTitle
 	rowListCost
 	rowListContext
 	rowHistorySave
@@ -90,6 +91,7 @@ type configScreen struct {
 	listKey    textinput.Model // [list] toggle_key
 	backKey    textinput.Model // [list] back_key
 	listStatus bool            // [list] status_line
+	listTitle  bool            // [list] follow_claude_title
 	costShow   string          // [cost] show
 	ctxShow    string          // [info] context
 	histSave   bool            // [history] save
@@ -145,6 +147,7 @@ func newConfigScreen(width int) *configScreen {
 	c.listKey.SetValue(cfg.List.ToggleKey)
 	c.backKey.SetValue(cfg.List.BackKey)
 	c.listStatus = cfg.List.StatusLine == nil || *cfg.List.StatusLine
+	c.listTitle = cfg.List.FollowTitle == nil || *cfg.List.FollowTitle
 	c.costShow, _ = checkCostShow(cfg.Cost.Show)
 	if c.costShow == "" {
 		c.costShow = costDollars
@@ -190,7 +193,7 @@ func (c *configScreen) setWidth(w int) {
 // settings is the screen's state as a config file.
 func (c *configScreen) settings() configFile {
 	on := c.notifyOn
-	status := c.listStatus
+	status, title := c.listStatus, c.listTitle
 	listKey := strings.TrimSpace(c.listKey.Value())
 	if k, err := checkToggleKey(listKey); err == nil {
 		listKey = k
@@ -203,7 +206,7 @@ func (c *configScreen) settings() configFile {
 	return configFile{
 		Agents:        c.agents,
 		Notifications: notifyConfig{Enabled: &on, When: c.notifyWhen},
-		List:          listConfig{ToggleKey: listKey, BackKey: backKey, StatusLine: &status},
+		List:          listConfig{ToggleKey: listKey, BackKey: backKey, StatusLine: &status, FollowTitle: &title},
 		History:       historyConfig{Save: &save, Lines: c.historyLines()},
 		Cost:          costConfig{Show: c.costShow},
 		Info:          infoConfig{Context: c.ctxShow},
@@ -271,7 +274,7 @@ func (c *configScreen) rows() []cfgRow {
 		rows = append(rows, cfgRow{rowAgent, i})
 	}
 	for _, k := range []cfgRowKind{rowAddAgent, rowNotifyEnabled, rowNotifyWhen, rowNotifyTest,
-		rowListKey, rowListBackKey, rowListStatus, rowListCost, rowListContext, rowHistorySave, rowHistoryLines, rowEditor, rowEditorPreset, rowTerminal, rowTerminalPreset, rowTryOpen, rowSave} {
+		rowListKey, rowListBackKey, rowListStatus, rowListTitle, rowListCost, rowListContext, rowHistorySave, rowHistoryLines, rowEditor, rowEditorPreset, rowTerminal, rowTerminalPreset, rowTryOpen, rowSave} {
 		rows = append(rows, cfgRow{kind: k})
 	}
 	return rows
@@ -510,6 +513,10 @@ func (m *model) configKey(k tea.KeyPressMsg) tea.Cmd {
 	case rowListStatus:
 		if isToggleKey(key) {
 			c.listStatus = !c.listStatus
+		}
+	case rowListTitle:
+		if isToggleKey(key) {
+			c.listTitle = !c.listTitle
 		}
 	case rowListCost:
 		c.costShow = cycleChoice([]string{costDollars, costTokens, costOff}, c.costShow, key)
