@@ -44,7 +44,7 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 - [Status icons](#status-icons) · [Session details](#session-details) · [Cost](#cost) · [Notifications](#notifications) · [Finding sessions](#finding-sessions)
 - [Keys](#keys) · [The config screen](#the-config-screen) · [Custom agents](#custom-agents-your-own-scripts-and-profile-functions)
 - [Diff preview](#diff-preview) · [Worktree sessions](#worktree-sessions) · [Pull requests](#pull-requests) · [Merging](#merging)
-- [Groups](#groups) · [Hiding the session list](#hiding-the-session-list) · [Opening a session's folder](#opening-a-sessions-folder)
+- [Groups](#groups) · [Hiding the session list](#hiding-the-session-list) · [Opening a session's folder](#opening-a-sessions-folder) · [Path aliases](#path-aliases)
 - [Resuming](#resuming) · [Forking](#forking) · [Output after a restart](#output-after-a-restart)
 - [Build](#build) · [Debugging](#debugging)
 
@@ -309,6 +309,7 @@ Press `c` in the session list to set deckhand up without editing `config.toml`. 
 - **Notifications:** on or off, when (only while deckhand isn't focused, or always), and a button that sends a test notification.
 - **Session list:** the key that hides and shows the list (empty means `F3`), the key that goes back to the list from a session (empty means `F5`), whether the status line shows while it's hidden, whether cost shows as dollars, tokens or not at all, and whether context shows as a meter, a percentage or tokens. See [Hiding the session list](#hiding-the-session-list) and [Cost](#cost).
 - **History:** whether each session's output is saved for after a restart, and how many lines are kept (empty means 5000). See [Output after a restart](#output-after-a-restart).
+- **Path aliases:** the names of the `[[paths.alias]]` entries, which are edited in the file. See [Path aliases](#path-aliases).
 - **Open:** the editor and terminal commands, with presets (VS Code, Rider, IntelliJ IDEA, VS Code Insiders; Windows Terminal in a new tab or a new window). "Try it" runs the command as typed on the selected session's folder.
 
 Keys: `↑/↓` or `tab`/`shift+tab` move, `←/→` (or `space`, `h`/`l`) change a choice, `enter` confirms (on an agent it edits it, like `e`), `a` adds an agent, `d` (or `delete`) deletes it, `shift+↑/↓` (or `K`/`J`) moves it, `t` tests it (then `ctrl+t` asks: `k` keeps the test session, `x` discards it, `esc` decides later), `ctrl+s` saves, and `esc` leaves (asking first if there are unsaved changes). In the agent form, `↑/↓` or `tab` move between fields, `enter` is done (on `[Test]` it starts a test), `esc` cancels and `ctrl+p` picks from your profile; in the profile picker, type to filter, `↑/↓` choose, `enter` picks and `esc` goes back to the form. `F1` shows all of these, with the config screen's keys first. The title says "unsaved changes" until you save.
@@ -526,6 +527,23 @@ terminal = 'wt.exe -w 0 nt -d "{dir}"'
 - deckhand splits the command into a program and its arguments first (double or single quotes group words with spaces), then fills in `{dir}`. A folder name with spaces or other characters stays one argument and can't add arguments of its own. No shell is used. To run a PowerShell command, write `pwsh -c ...` yourself.
 - The program runs in the background without a console window, and deckhand doesn't wait for it. If it can't start, the footer shows "Couldn't open: ...".
 - A `.cmd` or `.bat` file (such as VS Code's `code.cmd`) runs through `cmd.exe` with every argument quoted. A folder with `%` in its name can't be passed to one safely, so deckhand refuses and shows an error.
+
+## Path aliases
+
+deckhand shows the home folder as `~` everywhere it shows a path: the session list, the session header, the new-session dialog and its suggestions, the config screen, the diff preview, worktree, PR and merge messages, help and notifications. For demos and screen sharing, aliases can hide other folders behind a short name too:
+
+```toml
+[[paths.alias]]
+prefix = 'C:\src\notes'     # ~ works here too: '~\src\notes'
+name   = "notes"
+```
+
+With it, `C:\src\notes\features\x` shows as `notes\features\x`.
+
+- Matching ignores case and works only at folder boundaries, so `C:\src\notes2` isn't matched. The longest matching prefix wins, and aliases come before `~`. There are none by default.
+- It's display only: `sessions.json`, the commands deckhand runs and what the agents see keep the real paths. Paths an agent prints in its own terminal aren't changed.
+- The new-session dialog takes real paths, and also `~\…` and an alias followed by `\` (`notes\features`), so the folders it fills in show the same way.
+- The config screen lists the aliases' names (not their prefixes). They're edited in `config.toml`.
 
 ## Resuming
 

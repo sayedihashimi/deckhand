@@ -262,13 +262,13 @@ func (m *model) testLines(w int) []string {
 	case testFailed:
 		st = stErrText
 	}
-	line := " " + stSection.Render("Testing") + " " + t.agent.Name + stMuted.Render(" · ") + st.Render(text)
+	line := " " + stSection.Render("Testing") + " " + t.agent.Name + stMuted.Render(" · ") + st.Render(displayPathsIn(text))
 	if !t.stopping {
 		line += stMuted.Render("   ctrl+t keep or discard")
 	}
 	out := []string{fit(line, w)}
 	if hint != "" {
-		out = append(out, fit(stMuted.Render("      "+hint), w))
+		out = append(out, fit(stMuted.Render("      "+displayPathsIn(hint)), w))
 	}
 	if result == testFailed {
 		for _, l := range t.s.LastLines(3) {

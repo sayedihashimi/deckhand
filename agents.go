@@ -300,6 +300,16 @@ const sampleConfig = `# deckhand agents: each [[agents]] entry shows up in the n
 # [header]
 # reply_width = 40
 
+# Paths show the home folder as ~. An alias also hides a folder behind a
+# short name, for demos and screen sharing: with this one,
+# C:\src\notes\features\x shows as notes\features\x. Matching ignores case
+# and works at folder boundaries; the longest prefix wins. It's display
+# only: stored paths and the commands deckhand runs don't change.
+#
+# [[paths.alias]]
+# prefix = 'C:\src\notes'
+# name   = "notes"
+
 # Worktree sessions (the worktree line in the new-session dialog, or W in
 # the list): each gets its own git worktree and branch. root is where the
 # worktrees go; {repo} is the repo's main checkout, and a relative root is

@@ -77,5 +77,5 @@ func headerReply(reply []string, w, pct int) string {
 		}
 		text += l
 	}
-	return lead + ansi.Truncate(text, room, "…")
+	return lead + ansi.Truncate(displayPathsIn(text), room, "…")
 }

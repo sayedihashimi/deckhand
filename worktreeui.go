@@ -445,10 +445,10 @@ func (m *model) renderClose(w, h int) []string {
 	default:
 		add(warn.Render("   " + branch + " isn't merged into " + base + "."))
 	}
-	add(stMuted.Render("   Worktree  ") + wt)
+	add(stMuted.Render("   Worktree  ") + displayPath(wt))
 	add(stMuted.Render("   PR        ") + ck.pr)
 	if ck.fetchErr != "" {
-		add(stMuted.Render("   Couldn't fetch, so this may be out of date: " + ck.fetchErr))
+		add(stMuted.Render("   Couldn't fetch, so this may be out of date: " + displayPathsIn(ck.fetchErr)))
 	}
 	if ck.missing {
 		add(stMuted.Render("   The worktree folder is already gone."))
@@ -493,7 +493,7 @@ func renderPrep(log []string, w, rows int) []string {
 	out := []string{""}
 	start := max(len(log)-(rows-1), 0)
 	for _, l := range log[start:] {
-		out = append(out, fit(stMuted.Render("  "+l), w))
+		out = append(out, fit(stMuted.Render("  "+displayPathsIn(l)), w))
 	}
 	return out
 }
