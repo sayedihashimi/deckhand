@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -68,8 +67,9 @@ type model struct {
 	noGroupCollapsed bool
 	onHeader         bool
 	selHeader        string
-	renameGroup      *group     // the group being renamed (r on a header), with rename
-	assign           *assignBox // moving a session to a group (a)
+	renameGroup      *group      // the group being renamed (r on a header), with rename
+	assign           *assignBox  // moving a session to a group (a)
+	folderPick       *folderPick // which folder o or t opens (openmulti.go)
 
 	help *helpOverlay // the key help (? or F1), when open
 	diff *diffView    // the diff preview (d), when open
@@ -280,6 +280,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			*m.rename, cmd = m.rename.Update(msg)
 			return m, cmd
 		}
+		if m.folderPick != nil {
+			return m, nil
+		}
 		if m.assign != nil {
 			var cmd tea.Cmd
 			m.assign.input, cmd = m.assign.input.Update(msg)
@@ -417,6 +420,10 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	if m.assign != nil {
 		return m, m.assignKey(k)
+	}
+
+	if m.folderPick != nil {
+		return m, m.folderPickKey(k)
 	}
 
 	if m.rename != nil {
@@ -713,7 +720,7 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		m.diffMouse(msg)
 		return nil
 	}
-	if m.focus == focusDialog || m.focus == focusConfig || m.rename != nil || m.confirm != nil || m.closing != nil || m.filterInput != nil || m.assign != nil {
+	if m.focus == focusDialog || m.focus == focusConfig || m.rename != nil || m.confirm != nil || m.closing != nil || m.filterInput != nil || m.assign != nil || m.folderPick != nil {
 		m.cancelDrag()
 		return nil
 	}
@@ -889,39 +896,6 @@ const (
 	openExplorer
 	openTerminal
 )
-
-// openFolder opens the selected session's folder in the editor, Explorer or
-// a new terminal tab. It works whether or not the session is running.
-func (m *model) openFolder(target openTarget) {
-	s := m.current()
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	dir := s.Dir
-	if target != openExplorer && s.Worktree != "" {
-		dir = s.Worktree // the editor and the terminal open the worktree
-	}
-	s.mu.Unlock()
-	var tmpl string
-	fallback := false
-	switch target {
-	case openEditor:
-		tmpl, fallback = editorTemplate(openSettings, exec.LookPath)
-	case openExplorer:
-		tmpl = defaultExplorer
-	case openTerminal:
-		tmpl = terminalTemplate(openSettings)
-	}
-	if err := launchOpen(tmpl, dir); err != nil {
-		m.setFlash("Couldn't open: " + err.Error())
-		return
-	}
-	if fallback && !m.editorHinted {
-		m.editorHinted = true
-		m.setFlash("Opened in Explorer: no editor set and VS Code isn't on PATH. Set [open] editor in the config (deckhand config).")
-	}
-}
 
 // applyFilterInput filters the list as the filter is typed.
 func (m *model) applyFilterInput() {

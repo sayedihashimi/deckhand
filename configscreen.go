@@ -36,6 +36,7 @@ const (
 	rowEditorPreset
 	rowTerminal
 	rowTerminalPreset
+	rowOpenMulti
 	rowTryOpen
 	rowSave
 )
@@ -96,6 +97,7 @@ type configScreen struct {
 	histLines  textinput.Model // [history] lines
 	editor     textinput.Model
 	terminal   textinput.Model
+	openMulti  string // [open] multi: ask, all or first
 
 	saved     string // the encoded settings when opened or last saved
 	row       int
@@ -159,6 +161,10 @@ func newConfigScreen(width int) *configScreen {
 	}
 	c.editor.SetValue(cfg.Open.Editor)
 	c.terminal.SetValue(cfg.Open.Terminal)
+	c.openMulti, _ = checkMulti(cfg.Open.Multi)
+	if c.openMulti == "" {
+		c.openMulti = multiAsk
+	}
 	c.saved, _ = c.encode()
 	c.setWidth(width)
 	return c
@@ -210,6 +216,7 @@ func (c *configScreen) settings() configFile {
 		Open: openConfig{
 			Editor:   strings.TrimSpace(c.editor.Value()),
 			Terminal: strings.TrimSpace(c.terminal.Value()),
+			Multi:    multiValue(c.openMulti),
 		},
 	}
 }
@@ -271,7 +278,7 @@ func (c *configScreen) rows() []cfgRow {
 		rows = append(rows, cfgRow{rowAgent, i})
 	}
 	for _, k := range []cfgRowKind{rowAddAgent, rowNotifyEnabled, rowNotifyWhen, rowNotifyTest,
-		rowListKey, rowListBackKey, rowListStatus, rowListCost, rowListContext, rowHistorySave, rowHistoryLines, rowEditor, rowEditorPreset, rowTerminal, rowTerminalPreset, rowTryOpen, rowSave} {
+		rowListKey, rowListBackKey, rowListStatus, rowListCost, rowListContext, rowHistorySave, rowHistoryLines, rowEditor, rowEditorPreset, rowTerminal, rowTerminalPreset, rowOpenMulti, rowTryOpen, rowSave} {
 		rows = append(rows, cfgRow{kind: k})
 	}
 	return rows
@@ -552,6 +559,8 @@ func (m *model) configKey(k tea.KeyPressMsg) tea.Cmd {
 			in.CursorEnd()
 			c.setStatus("Set to "+presets[c.presetHi[which]].label+".", false)
 		}
+	case rowOpenMulti:
+		c.openMulti = cycleChoice([]string{multiAsk, multiAll, multiFirst}, c.openMulti, key)
 	case rowTryOpen:
 		switch key {
 		case "left", "right", "h", "l", "space":
@@ -583,6 +592,15 @@ func (m *model) leaveConfigScreen() tea.Cmd {
 
 // cycleChoice moves a choice of several options left or right. Enter
 // leaves it as it is.
+// multiValue is [open] multi as written to the file: nothing for ask, the
+// default.
+func multiValue(v string) string {
+	if v == multiAsk {
+		return ""
+	}
+	return v
+}
+
 func cycleChoice(opts []string, cur, key string) string {
 	i := 0
 	for j, o := range opts {

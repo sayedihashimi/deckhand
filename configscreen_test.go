@@ -346,3 +346,30 @@ func TestFooterHasConfigKey(t *testing.T) {
 		}
 	}
 }
+
+// The Folders row sets [open] multi; ask, the default, isn't written.
+func TestConfigScreenOpenMulti(t *testing.T) {
+	keepGlobals(t)
+	p := tempConfig(t, "")
+	m := testModel("api")
+	m.width, m.height = 120, 32
+	m.handleKey(key("c"))
+	if m.cfg.openMulti != multiAsk {
+		t.Fatalf("default = %q", m.cfg.openMulti)
+	}
+	if view := strings.Join(m.renderConfig(120, 60), "\n"); !strings.Contains(ansi.Strip(view), "Folders") {
+		t.Errorf("no Folders row:\n%s", ansi.Strip(view))
+	}
+	m.cfg.row = m.cfg.rowOf(rowOpenMulti)
+	m.handleKey(key("l"))
+	m.handleKey(key("ctrl+s"))
+	data, _ := os.ReadFile(p)
+	if !strings.Contains(string(data), `multi = "all"`) || openSettings.Multi != multiAll {
+		t.Errorf("config.toml:\n%s\nopenSettings = %+v", data, openSettings)
+	}
+	m.handleKey(key("h"))
+	m.handleKey(key("ctrl+s"))
+	if data, _ := os.ReadFile(p); strings.Contains(string(data), "multi") || openSettings.Multi != "" {
+		t.Errorf("ask is the default; config.toml:\n%s", data)
+	}
+}
