@@ -181,7 +181,7 @@ func (m *model) worktreeCreated(msg worktreeCreatedMsg) tea.Cmd {
 	}
 	s.lastPoll = time.Time{} // show the new branch now
 	s.mu.Unlock()
-	_ = saveSessions(m.sessions)
+	_ = m.saveSessions()
 
 	if setup := worktreeSettings.Setup; setup != "" {
 		s.setPrepStatus(StatusStarting, "running setup…")
@@ -224,7 +224,7 @@ func (m *model) startPrepared(s *Session) tea.Cmd {
 	if m.current() == s && m.focus == focusSidebar && m.dialog == nil && m.cfg == nil && m.closing == nil && m.confirm == nil {
 		m.focus = focusTerminal
 	}
-	_ = saveSessions(m.sessions)
+	_ = m.saveSessions()
 	return nil
 }
 
@@ -278,7 +278,7 @@ func (m *model) removeSession(s *Session) {
 		m.sel = 0
 	}
 	m.keepSelectionVisible()
-	_ = saveSessions(m.sessions)
+	_ = m.saveSessions()
 }
 
 // Closing -----------------------------------------------------------------------
