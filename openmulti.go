@@ -25,7 +25,9 @@ import (
 // worktree (never the main checkout of a worktree's repo), and the folders
 // added to a Claude session with /add-dir. With more than one, o and t show
 // a picker whose first row, "All folders", is preselected. [open] multi =
-// "all" or "first" skips it.
+// "all" skips it and opens them all; "first" skips it and opens the folder
+// o and t opened before: the worktree if there is one, else the start
+// folder.
 //
 // "All folders" in VS Code opens one window with a multi-root workspace,
 // written to the session's folder in deckhand's data dir. Other editors
@@ -72,6 +74,22 @@ func (s *Session) openFolders() []sessionFolder {
 		added = append(added, transcriptAddedDirs(tr)...)
 	}
 	return withAddedDirs(base, added, dir)
+}
+
+// mainFolder is the folder o and t open with [open] multi = "first": the
+// worktree if there is one, otherwise the start folder (what they always
+// opened before the picker).
+func (s *Session) mainFolder() sessionFolder {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Worktree != "" {
+		label := "worktree"
+		if s.Branch != "" {
+			label += " · " + s.Branch
+		}
+		return sessionFolder{s.Worktree, label}
+	}
+	return sessionFolder{s.Dir, "start folder"}
 }
 
 // withAddedDirs adds the added folders to base, resolving relative ones
@@ -349,10 +367,15 @@ func (m *model) openFolder(target openTarget) {
 		}
 		return
 	}
+	if openSettings.Multi == multiFirst {
+		// The folder o and t opened before there was a picker.
+		m.openIn(s, target, []sessionFolder{s.mainFolder()})
+		return
+	}
 	folders := s.openFolders()
 	switch {
-	case len(folders) == 1 || openSettings.Multi == multiFirst:
-		m.openIn(s, target, folders[:1])
+	case len(folders) == 1:
+		m.openIn(s, target, folders)
 	case openSettings.Multi == multiAll:
 		m.openIn(s, target, folders)
 	default:

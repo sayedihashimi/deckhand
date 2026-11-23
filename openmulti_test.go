@@ -372,6 +372,35 @@ func TestOpenMultiSetting(t *testing.T) {
 	}
 }
 
+// TestOpenMultiFirstWorktree: "first" on a worktree session whose worktree
+// is outside the start folder opens the worktree, as o and t did before
+// the picker, though the picker lists the start folder first.
+func TestOpenMultiFirstWorktree(t *testing.T) {
+	t.Setenv("DECKHAND_HOME", t.TempDir())
+	d := mkdirs(t, "notes", "api", "api-wt/feat")
+	launches := fakeLaunches(t)
+	withOpenSettings(t, openConfig{Editor: `rider64.exe "{dir}"`, Terminal: `wt.exe -w 0 nt -d "{dir}"`, Multi: multiFirst})
+	m := testModel("wt")
+	s := m.sessions[0]
+	s.Dir, s.CodeRepo, s.RepoRoot, s.Worktree, s.Branch = d[0], d[1], d[1], d[2], "feat"
+	if got := s.openFolders(); len(got) != 2 || got[0].dir != d[0] || got[1].dir != d[2] {
+		t.Fatalf("picker rows = %+v", got)
+	}
+	m.handleKey(key("o"))
+	m.handleKey(key("t"))
+	want := []launch{{"rider64.exe", []string{d[2]}, d[2]}, {"wt.exe", []string{"-w", "0", "nt", "-d", d[2]}, d[2]}}
+	if m.folderPick != nil || !reflect.DeepEqual(*launches, want) {
+		t.Errorf("first: picker %+v, launches %+v", m.folderPick, *launches)
+	}
+	// Without a worktree: the start folder.
+	*launches = nil
+	s.Worktree, s.RepoRoot, s.Branch = "", "", ""
+	m.handleKey(key("o"))
+	if len(*launches) != 1 || (*launches)[0].args[0] != d[0] {
+		t.Errorf("no worktree: %+v", *launches)
+	}
+}
+
 // TestOpenAllSkipsMissing: All folders leaves out a folder that's gone and
 // says so.
 func TestOpenAllSkipsMissing(t *testing.T) {

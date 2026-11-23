@@ -282,7 +282,7 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 	case rowEditorPreset, rowTerminalPreset:
 		hint = "←/→ choose · enter use it"
 	case rowOpenMulti:
-		hint = "←/→ change · ask: a picker, All folders first; all: every folder (VS Code: one workspace); first: the first folder"
+		hint = "←/→ change · ask: a picker, All folders first; all: every folder (VS Code: one workspace); first: the same folder as before, the worktree if there is one, otherwise the start folder"
 	case rowTryOpen:
 		hint = "←/→ choose · enter run it (as typed, unsaved) on the selected session's folder"
 	case rowSave:

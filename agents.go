@@ -243,7 +243,8 @@ const sampleConfig = `# deckhand agents: each [[agents]] entry shows up in the n
 # code repo or worktree beside the start folder, or folders added with
 # /add-dir): "ask" (the default) shows a picker with "All folders" first,
 # "all" opens every folder (one VS Code workspace, or one terminal tab
-# each) and "first" opens only the first.
+# each) and "first" opens the same folder as before: the worktree if
+# there is one, otherwise the start folder.
 #
 # [open]
 # editor   = 'rider64.exe "{dir}"'

@@ -539,7 +539,7 @@ A session can have more than one folder: a start folder with a code repo beside 
 
 - The VS Code workspace is written to `%LOCALAPPDATA%\deckhand\sessions\<id>\<session name>.code-workspace`, never into your folders, and rewritten each time. Its folders are named like `notes (start folder)` and `quiet-otter (worktree · quiet-otter)`, after the folder and its role.
 - Folders added with `/add-dir` come from the session's status line record (`workspace.added_dirs`, which Claude sends after each reply) and from its transcript (the `/add-dir` command itself, so a folder shows before the next reply). An editor that's already open doesn't change: a new folder shows up the next time you press `o` or `t`. Folders are listed once (ignoring case and a trailing `\`), and ones that no longer exist are left out.
-- `[open] multi` skips the picker: `"all"` always opens every folder, `"first"` only the first row's folder (the start folder, or the worktree when the start folder is in the repo). The default is `"ask"`.
+- `[open] multi` skips the picker: `"all"` always opens every folder, `"first"` opens the same folder as before: the worktree if there is one, otherwise the start folder. The default is `"ask"`.
 
 ## Resuming
 
