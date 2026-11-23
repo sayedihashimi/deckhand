@@ -277,7 +277,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			if renamed {
-				_ = saveSessions(m.sessions)
+				_ = m.saveSessions()
 			}
 			m.tickTest(now)
 			m.maybeSaveCosts(now)
