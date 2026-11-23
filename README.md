@@ -131,7 +131,12 @@ deckhand needs no setup. It works with your existing Claude Code settings and lo
 
 The second line under each session is the agent and what it's doing. For Claude it also shows:
 
-- **Finished:** the start of Claude's reply, in place of "your turn" (the ✓ already says it's your turn). It's the first line of the reply with Markdown removed, cut to fit, and bold until you look at the session. It shows once the turn has ended, never while Claude is still working, so an old reply isn't mistaken for a new one. The session header shows as much of the reply as fits, before the folder.
+- **Finished:** the start of Claude's reply, in place of "your turn" (the ✓ already says it's your turn). It's the first line of the reply with Markdown removed, cut to fit, and bold until you look at the session. It shows once the turn has ended, never while Claude is still working, so an old reply isn't mistaken for a new one. The session header shows the reply too, all its lines joined, before the folder. It takes at most 40 % of the header's width, cut with `…`, so a long reply can't push the folder, worktree and title out of view:
+
+  ```toml
+  [header]
+  reply_width = 40   # percent of the header's width; 0 hides the reply in the header
+  ```
 - **Needs you:** what the tool wants to do, such as `Bash: npm test`.
 
 The third line under each session shows the git branch, then for Claude the model, how full the context window is and what the session has cost:

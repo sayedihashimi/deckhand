@@ -541,10 +541,11 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 	if sn.cost != "" {
 		header += stMuted.Render(" · " + sn.cost)
 	}
-	if len(sn.reply) > 0 {
-		// Before the folder: real paths are long and would push the reply
-		// out of view. Whatever doesn't fit is cut off.
-		header += stMuted.Render("  · " + strings.Join(sn.reply, " "))
+	if r := headerReply(sn.reply, w, headerOpts.replyWidth); r != "" {
+		// Before the folder, so a long path can't push it out of view, but
+		// capped to a share of the width ([header] reply_width) so a long
+		// reply can't push out the folder either.
+		header += stMuted.Render(r)
 	}
 	header += stMuted.Render("  " + s.Dir)
 	if sn.worktree && sn.repoName != "" {
