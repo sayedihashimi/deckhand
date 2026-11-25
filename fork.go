@@ -114,6 +114,7 @@ func (m *model) newFork(a Agent, s *Session) *Session {
 	}
 	n.override = s.override // a kept test of an agent that may not be saved
 	n.Group = s.Group       // right below it, in its group
+	n.Color = s.Color       // its own color; the group's it inherits anyway
 	// The fork shares the original's folder. A worktree session's worktree
 	// becomes the fork's code repo, so the fork shows its branch but doesn't
 	// own it: x on the fork doesn't offer to remove the worktree.

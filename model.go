@@ -80,6 +80,7 @@ type model struct {
 	renameGroup      *group      // the group being renamed (r on a header), with rename
 	assign           *assignBox  // moving a session to a group (a)
 	folderPick       *folderPick // which folder o or t opens (openmulti.go)
+	colorPick        *colorPick  // the color picker (C, colors.go)
 
 	help *helpOverlay // the key help (? or F1), when open
 	diff *diffView    // the diff preview (d), when open
@@ -334,6 +335,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.folderPick != nil {
 			return m, nil
 		}
+		if m.colorPick != nil {
+			if m.colorPick.onHex {
+				var cmd tea.Cmd
+				m.colorPick.hex, cmd = m.colorPick.hex.Update(msg)
+				m.colorPick.err = ""
+				return m, cmd
+			}
+			return m, nil
+		}
 		if m.assign != nil {
 			var cmd tea.Cmd
 			m.assign.input, cmd = m.assign.input.Update(msg)
@@ -475,6 +485,10 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	if m.folderPick != nil {
 		return m, m.folderPickKey(k)
+	}
+
+	if m.colorPick != nil {
+		return m, m.colorPickKey(k)
 	}
 
 	if m.rename != nil {
@@ -634,6 +648,8 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "a":
 		return m, m.openAssign()
+	case "C":
+		return m, m.openColorPick()
 	case "shift+enter", "alt+enter":
 		// alt+enter is ESC CR: terminals with shift+enter remapped to send
 		// it (a common setup for Claude Code) deliver shift+enter this way.
@@ -768,6 +784,9 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	if m.diff != nil {
 		m.diffMouse(msg)
 		return nil
+	}
+	if m.colorPick != nil {
+		return m.colorPickMouse(msg)
 	}
 	if m.focus == focusDialog || m.focus == focusConfig || m.rename != nil || m.confirm != nil || m.closing != nil || m.filterInput != nil || m.assign != nil || m.folderPick != nil {
 		m.cancelDrag()
@@ -927,6 +946,7 @@ func (m *model) startLikeSelected() tea.Cmd {
 	n := newSession(agent, dir, sessionName(dir))
 	n.override = s.override // a kept test of an agent that may not be saved
 	n.Group = s.group()     // right below it, in its group
+	n.Color = s.color()     // its own color, like a fork's
 	w, h := m.termSize()
 	if err := startSession(n, w, h, false, m.dirty); err != nil {
 		m.setFlash("Couldn't start: " + err.Error())
