@@ -61,7 +61,7 @@ Keep the scene realistic but generic: no real names, paths or other products' br
 
 ## How the README screenshots work
 
-`readme_shots_e2e_test.go` (`TestE2EReadmeShots`) plays one scripted scene at 140×36 and writes a PNG per shot to `docs/img`: `main`, `hidden`, `help`, `diff`, `restored`, `new-session`, `pr`, `merge`, `config`, `fork`, `filter` and `groups`. Regenerate them all with:
+`readme_shots_e2e_test.go` (`TestE2EReadmeShots`) plays one scripted scene at 140×36 and writes a PNG per shot to `docs/img`: `main`, `hidden`, `help`, `diff`, `restored`, `new-session`, `pr`, `merge`, `config`, `fork`, `filter`, `groups` and `pad`. Regenerate them all with:
 
 ```powershell
 $env:DECKHAND_SCREENSHOTS="docs/img"; go test -tags e2e -run TestE2EReadmeShots -v -timeout 20m
