@@ -292,6 +292,14 @@ const sampleConfig = `# deckhand agents: each [[agents]] entry shows up in the n
 # [info.context_windows]
 # "claude-opus-4-6" = 1000000
 
+# The session header above the terminal shows Claude's latest reply before
+# the folder. reply_width caps it to a share of the header's width, in
+# percent (default 40), so a long reply can't push the folder out of view.
+# 0 hides the reply in the header; the session list still shows it.
+#
+# [header]
+# reply_width = 40
+
 # Worktree sessions (the worktree line in the new-session dialog, or W in
 # the list): each gets its own git worktree and branch. root is where the
 # worktrees go; {repo} is the repo's main checkout, and a relative root is

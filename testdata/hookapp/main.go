@@ -9,6 +9,7 @@
 //	say <text>                     print a line (\e is ESC, for colours)
 //	print <text>                   print without a newline (\e is ESC, \a is BEL)
 //	reply <tokens> <text>          add an assistant reply to the transcript
+//	                               (\n starts a new line)
 //	event <Name> [Tool] [| input]  send a hook event; input becomes the
 //	                               tool's command (or file_path for Edit/Write/Read)
 //	statusline <usd> [<window> <tokens>]
@@ -117,7 +118,7 @@ func runScript(script string) {
 		case "reply":
 			n, text, _ := strings.Cut(rest, " ")
 			tokens, _ := strconv.Atoi(n)
-			reply(tokens, text)
+			reply(tokens, strings.ReplaceAll(text, `\n`, "\n"))
 		case "statusline":
 			statusLine(strings.Fields(rest))
 		case "sleep":
