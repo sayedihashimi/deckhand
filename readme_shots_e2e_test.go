@@ -423,6 +423,24 @@ editor = 'code "{dir}"'
 	h.send("\x1b[<0;6;9m")
 	h.waitGone("━━━━━━", 3*time.Second)
 
+	// F6 in api: its scratch pad below the terminal, with notes typed in
+	// and the last line selected by dragging the mouse, ready to send.
+	h.send("1")
+	time.Sleep(500 * time.Millisecond)
+	h.send(keyF6)
+	h.waitFor("ctrl+enter send", 5*time.Second)
+	h.send("Next for api:\r- ask about retries on the upload client\r- then run the tests with -race\r\r")
+	h.send("Check that an expired session still redirects to /login once.")
+	h.waitFor("redirects to /login once.", 5*time.Second)
+	// SGR columns and rows are 1-based: the list is 32 wide, then its
+	// border and the pad's margin; the pad's title is on row 25, so its
+	// fifth line is row 30.
+	const padX = 32 + 1 + 1 + 1
+	h.send(fmt.Sprintf("\x1b[<0;%d;30M\x1b[<32;%d;30M\x1b[<0;%d;30m", padX, padX+70, padX+70))
+	h.waitFor("✎", 5*time.Second)
+	shot("pad")
+	h.send(keyF5)
+
 	h.send("q")
 	h.send("y")
 	h.waitExit(10 * time.Second)
@@ -433,8 +451,9 @@ var readmeAges = ageMap{"api": "12s", "docs": "3m", "docs (fork)": "4s", "web": 
 
 type ageMap map[string]string
 
-// sessionRow is a list row's first line: number, icon, name and age.
-var sessionRow = regexp.MustCompile(`^▌?([1-9 ]) (\S) (.+?) +(\d+[smhd]) $`)
+// sessionRow is a list row's first line: number, icon, name, the scratch
+// pad's ✎ and age.
+var sessionRow = regexp.MustCompile(`^▌?([1-9 ]) (\S) (.+?) +((?:✎ )?)(\d+[smhd]) $`)
 
 // pin sets each session's age in the list, which otherwise counts
 // the seconds the scene took.
@@ -464,10 +483,13 @@ func (a ageMap) pin(scr termshot.Screen) termshot.Screen {
 		if !ok {
 			continue
 		}
-		// The age ends one cell before the end of the list.
+		// The age, after ✎ when the pad has notes, ends one cell before the
+		// end of the list.
+		mark := text[m[8]:m[9]]
+		age = mark + age
 		end := len(runes) - 1
-		start := end - len([]rune(text[m[8]:m[9]]))
-		newStart := end - len(age)
+		start := end - len([]rune(mark+text[m[10]:m[11]]))
+		newStart := end - len([]rune(age))
 		if newStart <= utf8.RuneCountInString(text[:m[7]]) {
 			continue // no room after the name
 		}
@@ -475,7 +497,7 @@ func (a ageMap) pin(scr termshot.Screen) termshot.Screen {
 		for i := min(start, newStart); i < end; i++ {
 			row[cols[i]].Text = " "
 		}
-		for i, r := range age {
+		for i, r := range []rune(age) {
 			c := style
 			c.Text = string(r)
 			c.Width = 1

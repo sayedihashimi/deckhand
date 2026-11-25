@@ -231,7 +231,8 @@ func (m *model) renderSidebar(w, h int) []string {
 			numText = fmt.Sprintf("%d", num)
 		}
 		left := stMuted.Render(numText) + " " + m.statusIcon(sn) + " " + nameStyle.Render(s.Name)
-		row1 := fit(left, cw-len(age)-1) + stMuted.Render(age) + " "
+		mark := m.padMark(s, age) // ✎ when its scratch pad has notes
+		row1 := fit(left, cw-len(age)-1-ansi.StringWidth(mark)) + mark + stMuted.Render(age) + " "
 		pad := "     "[bw:] // rows 2 and 3 line up under the name, bar or not
 
 		detail, isReply := sessionDetail(sn)
@@ -253,10 +254,10 @@ func (m *model) renderSidebar(w, h int) []string {
 
 		if selected {
 			marker := lipgloss.NewStyle().Foreground(colAccent).Render("▌")
-			if m.focus == focusTerminal {
+			if m.focus == focusTerminal || m.focus == focusPad {
 				marker = lipgloss.NewStyle().Foreground(colMuted).Render("▌")
 			}
-			row1 = marker + onBackground(fit(left, cw-len(age)-2)+stMuted.Render(age)+" ", selBgSeq)
+			row1 = marker + onBackground(fit(left, cw-len(age)-2-ansi.StringWidth(mark))+mark+stMuted.Render(age)+" ", selBgSeq)
 			row2 = marker + onBackground(fit(pad[1:]+stMuted.Render(s.Agent+" · ")+detailStyle.Render(detail), cw-1), selBgSeq)
 			row3 = marker + onBackground(fit(pad[1:]+infoLine(s, sn, w-6), cw-1), selBgSeq)
 		}
@@ -626,11 +627,12 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 	}
 	lines = append(lines, fit(header, w))
 
+	th := h - 1 - m.padRows(s) // the terminal's rows; the pad is drawn below (overlayPad)
 	switch hs.view {
 	case viewScreen:
-		return append(lines, savedView(hs.hist.screen.lines, w, h-1, off)...), nil
+		return padLines(append(lines, savedView(hs.hist.screen.lines, w, th, off)...), w, h), nil
 	case viewConversation:
-		return append(lines, conversationView(hs.hist.conv, hs.hist.convAt, w, h-1, time.Now())...), nil
+		return padLines(append(lines, conversationView(hs.hist.conv, hs.hist.convAt, w, th, time.Now())...), w, h), nil
 	}
 
 	emu := s.Emulator()
@@ -659,7 +661,7 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 		// ending `off` lines above the bottom.
 		sb := emu.ScrollbackLen()
 		top := sb - off
-		for i := 0; i < h-1; i++ {
+		for i := 0; i < th; i++ {
 			row := top + i
 			l := ""
 			switch {
@@ -671,7 +673,7 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 			}
 			lines = append(lines, fit(l, w)+"\x1b[0m")
 		}
-		return lines, nil
+		return padLines(lines, w, h), nil
 	}
 	for i := 0; i < h-1; i++ {
 		l := ""
@@ -881,6 +883,8 @@ func (m *model) renderFooter(w int) string {
 		if m.listHidden {
 			help = strings.Replace(help, " hide list", " show list", 1)
 		}
+	case focusPad:
+		return fit(m.padFooter(w), w)
 	case focusDialog:
 		help = " enter start · esc cancel · F1 help"
 	case focusConfig:
@@ -939,6 +943,7 @@ func (m *model) View() tea.View {
 		side = m.renderSidebar(sw, bodyH)
 	}
 	main, cur := m.renderMain(mw, bodyH)
+	main, cur = m.overlayPad(main, mw, cur)
 	if m.listHidden && listOpts.statusLine {
 		// The status line goes at the end of the session header row.
 		st := m.statusLine()

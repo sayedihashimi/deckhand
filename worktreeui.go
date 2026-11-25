@@ -270,6 +270,7 @@ func (m *model) removeSession(s *Session) {
 	}
 	s.Kill()
 	removeSessionFiles(s.ID)
+	m.padRemoved(s) // its notes go to the archive, or are deleted (x's D)
 	m.sessions = slices.Delete(m.sessions, i, i+1)
 	if m.sel > i || (m.sel == i && m.sel >= len(m.sessions)) {
 		m.sel--

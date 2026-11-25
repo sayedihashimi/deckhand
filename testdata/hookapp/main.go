@@ -20,6 +20,8 @@
 //	                               used), and print "statusline: <its output>"
 //	                               when it prints something
 //	sleep <ms>
+//	input <file>                   read the keyboard raw (as VT input) and
+//	                               append everything typed to <file>
 //
 // With --fork-session (deckhand's f), it acts as Claude does: the
 // conversation from --resume continues under a new session ID, the one from
@@ -39,6 +41,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/sys/windows"
 )
 
 var (
@@ -129,6 +133,8 @@ func runScript(script string) {
 		case "sleep":
 			ms, _ := strconv.Atoi(rest)
 			time.Sleep(time.Duration(ms) * time.Millisecond)
+		case "input":
+			go recordInput(strings.TrimSpace(rest))
 		case "event":
 			head, input, hasInput := strings.Cut(rest, "|")
 			f := strings.Fields(head)
@@ -249,4 +255,29 @@ func send(event string, extra map[string]any) {
 func sendQuiet(event string, extra map[string]any) {
 	hook(event, extra)
 	time.Sleep(400 * time.Millisecond)
+}
+
+// recordInput puts the console in raw VT input mode, as Claude Code does,
+// and appends every byte typed to path.
+func recordInput(path string) {
+	in := windows.Handle(os.Stdin.Fd())
+	var mode uint32
+	if err := windows.GetConsoleMode(in, &mode); err == nil {
+		mode &^= windows.ENABLE_LINE_INPUT | windows.ENABLE_ECHO_INPUT | windows.ENABLE_PROCESSED_INPUT
+		mode |= windows.ENABLE_VIRTUAL_TERMINAL_INPUT
+		_ = windows.SetConsoleMode(in, mode)
+	}
+	buf := make([]byte, 1024)
+	for {
+		n, err := os.Stdin.Read(buf)
+		if n > 0 {
+			if f, ferr := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); ferr == nil {
+				_, _ = f.Write(buf[:n])
+				_ = f.Close()
+			}
+		}
+		if err != nil {
+			return
+		}
+	}
 }
