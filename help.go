@@ -92,23 +92,12 @@ var helpGroups = []helpGroup{
 	}},
 	{helpTerminal, []helpEntry{
 		{keys: "F5 ctrl+q ctrl+]", desc: "back to the list", match: []string{defaultBackKey, "ctrl+q", "ctrl+]"}, footer: "F5 list"},
-		{keys: "shift+PgUp/Dn", desc: "scroll back a page", match: []string{"shift+pgup", "shift+pgdown"}},
+		{keys: "shift+PgUp/Dn", desc: "scroll back", match: []string{"shift+pgup", "shift+pgdown"}},
 		{keys: "F3", desc: "hide / show the list", match: []string{defaultToggleKey}, footer: "F3 hide list"},
 		// [pad] key; withListKeys shows the configured one. esc closes the
 		// pad right after leaving it (padTerminalKey).
-		{keys: "F6 esc esc", desc: "scratch pad; esc esc: close it", match: []string{defaultPadKey, "esc"}, footer: "F6 notes"},
+		{keys: "F6", desc: "the scratch pad", match: []string{defaultPadKey, "esc"}, footer: "F6 notes"},
 		{keys: "F1", desc: "this help", match: []string{"f1"}, footer: "F1 help"},
-	}},
-	// padKey and the editor's editKey and changeKey (padeditor.go).
-	{helpPad, []helpEntry{
-		{keys: "ctrl+enter", desc: "send the selection or all (alt+⏎)", match: []string{"ctrl+enter", "alt+enter", "ctrl+j"}, footer: "ctrl+enter send", short: "^⏎ send"},
-		{keys: "ctrl+z ctrl+y", desc: "undo / redo", match: []string{"ctrl+z", "ctrl+y", "ctrl+shift+z"}, footer: "ctrl+z undo", short: "-"},
-		{keys: "ctrl+c x v a", desc: "copy, cut, paste, select all", match: []string{"ctrl+c", "ctrl+insert", "ctrl+x", "shift+delete", "ctrl+v", "shift+insert", "ctrl+a"}},
-		{keys: "arrows ctrl+⌫", desc: "move, delete; shift or drag selects", match: []string{
-			"left", "right", "up", "down", "home", "end", "pgup", "pgdown", "ctrl+left", "ctrl+right", "ctrl+home", "ctrl+end",
-			"enter", "shift+enter", "tab", "backspace", "shift+backspace", "ctrl+h", "delete", "ctrl+backspace", "alt+backspace", "ctrl+w", "ctrl+delete", "alt+delete"}},
-		{keys: "ctrl+o", desc: "open in your editor; reloads", match: []string{"ctrl+o"}, footer: "ctrl+o editor", short: "-"},
-		{keys: "esc F6 F5", desc: "terminal (esc esc closes); list", match: []string{"esc", defaultPadKey, defaultBackKey, "ctrl+q", "ctrl+]"}, footer: "esc terminal · F5 list", short: "esc · F5"},
 	}},
 	{helpDiff, []helpEntry{
 		{keys: "n N", desc: "next / previous file", match: []string{"n", "N", "up", "k", "down", "j", "pgup", "shift+pgup", "pgdown", "shift+pgdown", "space", "home", "g", "end", "G"}},
@@ -148,6 +137,19 @@ var helpGroups = []helpGroup{
 		{keys: "↑↓ enter", desc: "picker: choose, pick", match: []string{"up", "down", "tab", "shift+tab", "enter"}, footer: "↑↓ choose · enter pick", when: hintPicker},
 		{keys: "esc", desc: "picker: back to the form", match: []string{"esc"}, footer: "esc back", when: hintPicker},
 		{keys: "k x esc", desc: "test: keep, discard, not now", match: []string{"k", "x", "esc"}, footer: "k keep it as a session · x discard it · esc not now", when: hintTest},
+	}},
+	// The scratch pad: padKey and the editor's editKey and changeKey
+	// (padeditor.go). Last, so the groups before it still show on the
+	// first page of the help opened from the list.
+	{helpPad, []helpEntry{
+		{keys: "ctrl+enter", desc: "send the selection or all (alt+⏎)", match: []string{"ctrl+enter", "alt+enter", "ctrl+j"}, footer: "ctrl+enter send", short: "^⏎ send"},
+		{keys: "ctrl+z ctrl+y", desc: "undo / redo", match: []string{"ctrl+z", "ctrl+y", "ctrl+shift+z"}, footer: "ctrl+z undo", short: "-"},
+		{keys: "ctrl+c x v a", desc: "copy, cut, paste, select all", match: []string{"ctrl+c", "ctrl+insert", "ctrl+x", "shift+delete", "ctrl+v", "shift+insert", "ctrl+a"}},
+		{keys: "arrows ctrl+⌫", desc: "move, delete; shift or drag selects", match: []string{
+			"left", "right", "up", "down", "home", "end", "pgup", "pgdown", "ctrl+left", "ctrl+right", "ctrl+home", "ctrl+end",
+			"enter", "shift+enter", "tab", "backspace", "shift+backspace", "ctrl+h", "delete", "ctrl+backspace", "alt+backspace", "ctrl+w", "ctrl+delete", "alt+delete"}},
+		{keys: "ctrl+o", desc: "open in your editor; reloads", match: []string{"ctrl+o"}, footer: "ctrl+o editor", short: "-"},
+		{keys: "esc F6 F5", desc: "terminal (esc esc closes); list", match: []string{"esc", defaultPadKey, defaultBackKey, "ctrl+q", "ctrl+]"}, footer: "esc terminal · F5 list", short: "esc · F5"},
 	}},
 }
 
