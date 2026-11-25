@@ -24,7 +24,8 @@ import (
 // screen as a PNG, with the exited shell's restored output, a session
 // header with a long reply (replyScene), the config
 // screen ("c", testing an agent with t), the help opened from it (F1) and the api session's diff
-// preview ("d") below it, then a session being dragged into a group (the
+// preview ("d") below it, the folder picker (o on the worktree session),
+// then a session being dragged into a group (the
 // sessions are in two groups). The PR
 // workflow posts it on each pull request.
 //
@@ -292,6 +293,19 @@ editor = 'code "{dir}"'
 	h.send("\x1b")
 	h.waitGone("files changed", 3*time.Second)
 
+	// o on quiet-otter, a worktree session run from a notes folder: the
+	// folder picker, with All folders first. esc closes it unopened.
+	h.send("\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B")
+	h.send("o")
+	h.waitFor(`Open "quiet-otter" in the editor`, 5*time.Second)
+	h.waitFor("worktree · quiet-otter", 3*time.Second)
+	time.Sleep(300 * time.Millisecond)
+	pickShot := screenFromEmulator(h.emu)
+	t.Logf("folder picker:\n%s", h.screen())
+	h.send("\x1b")
+	h.waitGone("All folders", 3*time.Second)
+	h.send("\x1b[A\x1b[A\x1b[A\x1b[A\x1b[A")
+
 	// The cli group collapsed (space on its header, four rows down), its
 	// header showing quiet-otter's ✓; then the notes shell dragged into the
 	// app group with the mouse: the drop line, indented under app, shows
@@ -312,7 +326,7 @@ editor = 'code "{dir}"'
 	h.waitGone("━━━━━━", 3*time.Second)
 
 	// One image: the scene, the restored output, the long reply, the config screen, the
-	// help opened from it, the diff preview and the drag, with a blank row between
+	// help opened from it, the diff preview, the folder picker and the drag, with a blank row between
 	// them.
 	blank := make([]termshot.Cell, len(scene[0]))
 	for i := range blank {
@@ -323,6 +337,7 @@ editor = 'code "{dir}"'
 	both = append(append(both, blank), config...)
 	both = append(append(both, blank), configHelp...)
 	both = append(append(both, blank), diffShot...)
+	both = append(append(both, blank), pickShot...)
 	both = append(append(both, blank), dragShot...)
 	both = append(append(both, blank), replyScene(t, exe, path)...)
 

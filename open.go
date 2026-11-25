@@ -16,6 +16,11 @@ import (
 //	[open]
 //	editor   = 'rider64.exe "{dir}"'
 //	terminal = 'wt.exe -w 0 nt -d "{dir}"'
+//	multi    = "ask"
+//
+// multi is what o and t do for a session with more than one folder (see
+// openmulti.go): "ask" shows a picker, "all" opens every folder, and
+// "first" opens only the first one.
 //
 // A command is split into a program and arguments first, and {dir} is
 // substituted into each argument afterwards, so a folder name can't add
@@ -30,6 +35,24 @@ const (
 type openConfig struct {
 	Editor   string `toml:"editor,omitempty"`
 	Terminal string `toml:"terminal,omitempty"`
+	Multi    string `toml:"multi,omitempty"` // "ask" (or ""), "all" or "first"
+}
+
+// The values of [open] multi.
+const (
+	multiAsk   = "ask"
+	multiAll   = "all"
+	multiFirst = "first"
+)
+
+// checkMulti normalizes [open] multi: "" stays "" (ask, the default).
+func checkMulti(v string) (string, error) {
+	v = strings.ToLower(strings.TrimSpace(v))
+	switch v {
+	case "", multiAsk, multiAll, multiFirst:
+		return v, nil
+	}
+	return "", fmt.Errorf(`must be "ask", "all" or "first", not %q`, v)
 }
 
 // openSettings is [open] from the config file.
@@ -67,6 +90,11 @@ func parseOpenConfig(text string) (openConfig, error) {
 			return openConfig{}, fmt.Errorf("%s: open.%s: %w", configPath(), f.name, err)
 		}
 	}
+	m, err := checkMulti(o.Multi)
+	if err != nil {
+		return openConfig{}, fmt.Errorf("%s: open.multi: %w", configPath(), err)
+	}
+	o.Multi = m
 	return o, nil
 }
 
@@ -172,6 +200,16 @@ func launchOpen(tmpl, dir string) error {
 	if err != nil {
 		return err
 	}
+	return openStart(prog, args, dir)
+}
+
+// openStart starts a program for o, O or t. Tests replace it, so they
+// never launch a real editor or terminal.
+var openStart = startDetached
+
+// startDetached starts prog with args in dir, detached and without a
+// console window. It doesn't wait for the program.
+func startDetached(prog string, args []string, dir string) error {
 	path, err := exec.LookPath(prog)
 	if err != nil {
 		return fmt.Errorf("%s not found", prog)

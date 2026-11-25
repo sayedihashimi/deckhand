@@ -815,6 +815,9 @@ func (m *model) renderFooter(w int) string {
 	if m.assign != nil {
 		return fit(stMuted.Render(" type to filter or name a new group · ↑↓ choose · enter move · esc cancel"), w)
 	}
+	if m.folderPick != nil {
+		return fit(stMuted.Render(" ↑↓ choose · enter open · esc cancel"), w)
+	}
 	if m.help != nil {
 		return fit(stMuted.Render(m.helpFooter()), w)
 	}
@@ -896,6 +899,9 @@ func (m *model) View() tea.View {
 	}
 	if m.assign != nil {
 		main, cur = m.overlayAssign(main, mw), nil
+	}
+	if m.folderPick != nil {
+		main, cur = m.overlayFolderPick(main, mw), nil
 	}
 	if m.help != nil {
 		main, cur = m.overlayHelp(main, mw, bodyH), nil

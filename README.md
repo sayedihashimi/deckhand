@@ -259,9 +259,9 @@ Press `?` in the session list, or `F1` anywhere (also inside a session, the new-
 | n | New session (see below) |
 | W | Start a new worktree session with the same agent and repo, right below the selected one (see [Worktree sessions](#worktree-sessions)) |
 | f | Fork a Claude session: a new session right below it that starts from a copy of its conversation, named `<name> (fork)` (see [Forking](#forking)) |
-| o | Open the session's folder (its worktree, if it has one) in your editor (see [Opening a session's folder](#opening-a-sessions-folder)) |
+| o | Open the session's folder (its worktree, if it has one) in your editor. With more than one folder, pick one or All folders (see [Opening a session's folder](#opening-a-sessions-folder)) |
 | O | Open the session's folder in Explorer |
-| t | Open a new Windows Terminal tab in the session's folder (its worktree, if it has one) |
+| t | Open a new Windows Terminal tab in the session's folder (its worktree, if it has one). With more than one folder, pick one or All folders (a tab each) |
 | r | Rename the session. On a group header: rename the group |
 | c | Config screen: agents, notifications, the session list, history and open commands (see [The config screen](#the-config-screen)) |
 | K | End the session's process (it stays in the list) |
@@ -324,7 +324,7 @@ Press `c` in the session list to set deckhand up without editing `config.toml`. 
 - **Session list:** the key that hides and shows the list (empty means `F3`), the key that goes back to the list from a session (empty means `F5`), whether the status line shows while it's hidden, whether Claude sessions take Claude's title as their name (**Title**, see [Session names](#session-names)), whether cost shows as dollars, tokens or not at all, and whether context shows as a meter, a percentage or tokens. See [Hiding the session list](#hiding-the-session-list) and [Cost](#cost).
 - **History:** whether each session's output is saved for after a restart, and how many lines are kept (empty means 5000). See [Output after a restart](#output-after-a-restart).
 - **Path aliases:** the names of the `[[paths.alias]]` entries, which are edited in the file. See [Path aliases](#path-aliases).
-- **Open:** the editor and terminal commands, with presets (VS Code, Rider, IntelliJ IDEA, VS Code Insiders; Windows Terminal in a new tab or a new window). "Try it" runs the command as typed on the selected session's folder.
+- **Open:** the editor and terminal commands, with presets (VS Code, Rider, IntelliJ IDEA, VS Code Insiders; Windows Terminal in a new tab or a new window), and what `o` and `t` do for a session with more than one folder (Folders: `ask`, `all` or `first`). "Try it" runs the command as typed on the selected session's folder.
 
 Keys: `↑/↓` or `tab`/`shift+tab` move, `←/→` (or `space`, `h`/`l`) change a choice, `enter` confirms (on an agent it edits it, like `e`), `a` adds an agent, `d` (or `delete`) deletes it, `shift+↑/↓` (or `K`/`J`) moves it, `t` tests it (then `ctrl+t` asks: `k` keeps the test session, `x` discards it, `esc` decides later), `ctrl+s` saves, and `esc` leaves (asking first if there are unsaved changes). In the agent form, `↑/↓` or `tab` move between fields, `enter` is done (on `[Test]` it starts a test), `esc` cancels and `ctrl+p` picks from your profile; in the profile picker, type to filter, `↑/↓` choose, `enter` picks and `esc` goes back to the form. `F1` shows all of these, with the config screen's keys first. The title says "unsaved changes" until you save.
 
@@ -398,7 +398,7 @@ You can run Claude from a folder that isn't a git repo, such as your notes, whil
 **Showing**
 
 - The third line under the session starts with `⎇`, and with the code repo's name when it isn't the session's folder: `⎇ cli:quiet-otter↑1 · 64k`. Ahead/behind is counted against the branch it started from, not an upstream. Once the branch has a pull request (`p`, see [Pull requests](#pull-requests)), its badge follows the branch: `⎇ cli:quiet-otter↑1 #12✓`.
-- `O` opens the session's folder; `o` (editor) and `t` (terminal) open the worktree.
+- `O` opens the session's folder; `o` (editor) and `t` (terminal) open the worktree. When the worktree is outside the start folder, they offer both (see [Sessions with more than one folder](#sessions-with-more-than-one-folder)).
 - The repo, worktree, branch, base branch and base commit are saved with the session, so resume and the restored output keep working.
 
 **Closing (`x`)**
@@ -536,12 +536,31 @@ Set your own editor or terminal command in the config file:
 [open]
 editor   = 'rider64.exe "{dir}"'        # or 'code "{dir}"', 'idea64.exe "{dir}"', ...
 terminal = 'wt.exe -w 0 nt -d "{dir}"'
+multi    = "ask"                         # or "all", "first": see below
 ```
 
 - `{dir}` is the session's folder. Each command must contain it.
 - deckhand splits the command into a program and its arguments first (double or single quotes group words with spaces), then fills in `{dir}`. A folder name with spaces or other characters stays one argument and can't add arguments of its own. No shell is used. To run a PowerShell command, write `pwsh -c ...` yourself.
 - The program runs in the background without a console window, and deckhand doesn't wait for it. If it can't start, the footer shows "Couldn't open: ...".
 - A `.cmd` or `.bat` file (such as VS Code's `code.cmd`) runs through `cmd.exe` with every argument quoted. A folder with `%` in its name can't be passed to one safely, so deckhand refuses and shows an error.
+
+### Sessions with more than one folder
+
+A session can have more than one folder: a start folder with a code repo beside it, a worktree outside the start folder, or folders added to a Claude session with `/add-dir`. Then `o` and `t` show a picker:
+
+| Row | Opens |
+|---|---|
+| All folders (first, and selected) | Every folder. In VS Code (`code` or `code-insiders`, set or the fallback) that's one window with a multi-root workspace; another editor runs once per folder. In Windows Terminal (`wt.exe`) it's one tab per folder (`wt.exe -w 0 nt -d A ; nt -d B`); another terminal runs once per folder. |
+| `start folder` | The folder the session was started in |
+| `code repo` | The code repo beside it, when there's no worktree |
+| `worktree · <branch>` | The session's worktree (never the repo's main checkout) |
+| `added (/add-dir)` | A folder added with `/add-dir` |
+
+`↑/↓` choose, `enter` opens and `esc` cancels, so `o` then `enter` opens everything. A session with one folder opens it straight away, as before. `O` (Explorer) always opens the start folder.
+
+- The VS Code workspace is written to `%LOCALAPPDATA%\deckhand\sessions\<id>\<session name>.code-workspace`, never into your folders, and rewritten each time. Its folders are named like `notes (start folder)` and `quiet-otter (worktree · quiet-otter)`, after the folder and its role.
+- Folders added with `/add-dir` come from the session's status line record (`workspace.added_dirs`, which Claude sends after each reply) and from its transcript (the `/add-dir` command itself, so a folder shows before the next reply). An editor that's already open doesn't change: a new folder shows up the next time you press `o` or `t`. Folders are listed once (ignoring case and a trailing `\`), and ones that no longer exist are left out.
+- `[open] multi` skips the picker: `"all"` always opens every folder, `"first"` opens the same folder as before: the worktree if there is one, otherwise the start folder. The default is `"ask"`.
 
 ## Path aliases
 
