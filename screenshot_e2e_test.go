@@ -25,7 +25,8 @@ import (
 // header with a long reply (replyScene), the config
 // screen ("c", testing an agent with t), the help opened from it (F1) and the api session's diff
 // preview ("d") below it, the folder picker (o on the worktree session),
-// the color picker (C; the sessions and a group have colors),
+// the color picker (C; the sessions and a group have colors), the
+// right-click menu on the worktree session with its Group submenu,
 // then a session being dragged into a group (the
 // sessions are in two groups). The PR
 // workflow posts it on each pull request.
@@ -317,6 +318,19 @@ editor = 'code "{dir}"'
 	t.Logf("color picker:\n%s", h.screen())
 	h.send("\x1b")
 	h.waitGone(`Color for`, 3*time.Second)
+
+	// The right-click menu on quiet-otter (line 17, 0-based), a worktree
+	// session, with Group ▸ open (↓ to it past Rename and Fork, then →).
+	h.send("\x1b[<2;12;18M\x1b[<2;12;18m")
+	h.waitFor("Create PR", 5*time.Second)
+	h.send("\x1b[B\x1b[B\x1b[B\x1b[C")
+	h.waitFor("New group…", 3*time.Second)
+	time.Sleep(300 * time.Millisecond)
+	menuShot := screenFromEmulator(h.emu)
+	t.Logf("right-click menu:\n%s", h.screen())
+	h.send("\x1b")
+	h.send("\x1b")
+	h.waitGone("Create PR", 3*time.Second)
 	h.send("\x1b[A\x1b[A\x1b[A\x1b[A\x1b[A")
 
 	// The cli group collapsed (space on its header, four rows down), its
@@ -339,7 +353,7 @@ editor = 'code "{dir}"'
 	h.waitGone("━━━━━━", 3*time.Second)
 
 	// One image: the scene, the restored output, the long reply, the config screen, the
-	// help opened from it, the diff preview, the folder picker, the color picker and the drag, with a blank row between
+	// help opened from it, the diff preview, the folder picker, the color picker, the right-click menu and the drag, with a blank row between
 	// them.
 	blank := make([]termshot.Cell, len(scene[0]))
 	for i := range blank {
@@ -352,6 +366,7 @@ editor = 'code "{dir}"'
 	both = append(append(both, blank), diffShot...)
 	both = append(append(both, blank), pickShot...)
 	both = append(append(both, blank), colorShot...)
+	both = append(append(both, blank), menuShot...)
 	both = append(append(both, blank), dragShot...)
 	both = append(append(both, blank), replyScene(t, exe, path)...)
 

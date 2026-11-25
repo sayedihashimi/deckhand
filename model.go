@@ -79,6 +79,7 @@ type model struct {
 	assign           *assignBox  // moving a session to a group (a)
 	folderPick       *folderPick // which folder o or t opens (openmulti.go)
 	colorPick        *colorPick  // the color picker (C, colors.go)
+	menu             *ctxMenu    // the right-click menu (menu.go)
 
 	help *helpOverlay // the key help (? or F1), when open
 	diff *diffView    // the diff preview (d), when open
@@ -439,6 +440,12 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.closeKey(key)
 	}
 
+	if m.menu != nil {
+		if handled, cmd := m.menuKey(key); handled {
+			return m, cmd
+		}
+	}
+
 	// Any key ends a drag; esc only cancels it.
 	if m.drag != nil {
 		m.cancelDrag()
@@ -784,6 +791,9 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	if m.colorPick != nil {
 		return m.colorPickMouse(msg)
 	}
+	if m.menu != nil {
+		return m.menuMouse(msg)
+	}
 	if m.focus == focusDialog || m.focus == focusConfig || m.rename != nil || m.confirm != nil || m.closing != nil || m.filterInput != nil || m.assign != nil || m.folderPick != nil {
 		m.cancelDrag()
 		return nil
@@ -816,6 +826,15 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 						m.toggleHeader(0) // a click on ▾/▸ folds or unfolds it
 					}
 					m.startDrag(rows[r], ms.X, ms.Y) // a drag if it moves before the release
+				}
+			}
+			if ms.Button == tea.MouseRight && ms.Y >= 2 {
+				// The right-click menu (menu.go) for the row.
+				rows := m.rows()
+				if r, _ := m.rowAt(rows, ms.Y); r >= 0 && r < len(rows) && !rows[r].temp {
+					m.selectRow(rows[r])
+					m.focus = focusSidebar
+					m.openMenu(ms.X, ms.Y)
 				}
 			}
 		}
