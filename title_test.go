@@ -186,7 +186,7 @@ func TestTitleRestart(t *testing.T) {
 
 	reload := func() *Session {
 		t.Helper()
-		if err := saveSessions([]*Session{s}); err != nil {
+		if err := writeSessionsFile([]*Session{s}, nil); err != nil {
 			t.Fatal(err)
 		}
 		data, _ := os.ReadFile(storePath())

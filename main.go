@@ -14,8 +14,11 @@ import (
 var version = "dev"
 
 func main() {
+	forceTemp := false
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "--temp":
+			forceTemp = true
 		case "hook":
 			os.Exit(runHook(os.Args[2:]))
 		case "statusline":
@@ -36,7 +39,10 @@ func main() {
 			fmt.Println(`deckhand - run several AI agent CLIs in one terminal
 
 Usage:
-  deckhand            start the TUI
+  deckhand            start the TUI. If another deckhand is already running
+                      on the same data folder, this one is a temporary window:
+                      it starts empty and its sessions aren't saved.
+  deckhand --temp     start a temporary window even if no other is running
   deckhand config     print the config file path (creates a commented sample).
                       To change settings without editing it, press c in deckhand.
   deckhand notify-test  show a test desktop notification
@@ -51,14 +57,22 @@ State is kept in %LOCALAPPDATA%\deckhand (override with DECKHAND_HOME).`)
 	}
 
 	cfgErr := reloadConfig()
-	m := newModel()
-	if cfgErr != nil {
+	temp, notice := chooseInstance(forceTemp)
+	m := newInstanceModel(temp)
+	switch {
+	case cfgErr != nil:
 		m.setFlash("Config error: " + cfgErr.Error())
 		m.flashAt = m.flashAt.Add(10 * time.Second) // keep it up longer
+	case notice != "":
+		m.setFlash(notice)
+		m.flashAt = m.flashAt.Add(10 * time.Second)
 	}
 	enableKeyRecords()
 	_, err := tea.NewProgram(m).Run()
 	disableKeyRecords()
+	if temp {
+		cleanupTempSessions(m.sessions, 5*time.Second)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "deckhand:", err)
 		os.Exit(1)

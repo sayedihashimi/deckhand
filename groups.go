@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -40,11 +41,59 @@ const noGroupName = "(no group)"
 type group struct {
 	Name      string `json:"name"`
 	Collapsed bool   `json:"collapsed,omitempty"`
+
+	extra extraFields // fields this build doesn't know, kept (store.go)
 }
 
 type groupsFile struct {
 	Groups           []group `json:"groups"`
 	NoGroupCollapsed bool    `json:"no_group_collapsed,omitempty"`
+
+	extra extraFields // fields this build doesn't know, kept (store.go)
+}
+
+// groupJSON and groupsFileJSON are the types without their methods, so
+// the (un)marshalers below don't call themselves.
+type (
+	groupJSON      group
+	groupsFileJSON groupsFile
+)
+
+var (
+	groupKeys      = jsonKeys(reflect.TypeOf(groupJSON{}))
+	groupsFileKeys = jsonKeys(reflect.TypeOf(groupsFileJSON{}))
+)
+
+func (g *group) UnmarshalJSON(data []byte) error {
+	if err := json.Unmarshal(data, (*groupJSON)(g)); err != nil {
+		return err
+	}
+	g.extra = unknownFields(data, groupKeys)
+	return nil
+}
+
+func (g group) MarshalJSON() ([]byte, error) {
+	data, err := json.Marshal(groupJSON(g))
+	if err != nil {
+		return nil, err
+	}
+	return withExtra(data, g.extra)
+}
+
+func (f *groupsFile) UnmarshalJSON(data []byte) error {
+	if err := json.Unmarshal(data, (*groupsFileJSON)(f)); err != nil {
+		return err
+	}
+	f.extra = unknownFields(data, groupsFileKeys)
+	return nil
+}
+
+func (f groupsFile) MarshalJSON() ([]byte, error) {
+	data, err := json.Marshal(groupsFileJSON(f))
+	if err != nil {
+		return nil, err
+	}
+	return withExtra(data, f.extra)
 }
 
 func groupsPath() string { return filepath.Join(dataDir(), "groups.json") }
@@ -58,13 +107,17 @@ func loadGroups() groupsFile {
 	return f
 }
 
-// saveGroups writes groups.json, or removes it when there's nothing to keep.
+// saveGroups writes groups.json, or removes it when there's nothing to
+// keep. A temporary instance doesn't.
 func (m *model) saveGroups() error {
-	f := groupsFile{NoGroupCollapsed: m.noGroupCollapsed}
+	if m.temp {
+		return nil
+	}
+	f := groupsFile{NoGroupCollapsed: m.noGroupCollapsed, extra: m.groupsExtra}
 	for _, g := range m.groups {
 		f.Groups = append(f.Groups, *g)
 	}
-	if len(f.Groups) == 0 && !f.NoGroupCollapsed {
+	if len(f.Groups) == 0 && !f.NoGroupCollapsed && len(f.extra) == 0 {
 		if err := os.Remove(groupsPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
@@ -86,7 +139,7 @@ func (m *model) saveGroups() error {
 
 // saveAll saves the sessions and the groups.
 func (m *model) saveAll() {
-	_ = saveSessions(m.sessions)
+	_ = m.saveSessions()
 	_ = m.saveGroups()
 }
 
@@ -109,8 +162,11 @@ func (s *Session) setGroup(g string) {
 func (m *model) setGroups(f groupsFile) {
 	m.groups = nil
 	m.noGroupCollapsed = f.NoGroupCollapsed
+	m.groupsExtra = f.extra
 	for _, g := range f.Groups {
-		m.addGroup(g.Name, g.Collapsed)
+		if ng := m.addGroup(g.Name, g.Collapsed); ng != nil && ng.extra == nil {
+			ng.extra = g.extra
+		}
 	}
 	for _, s := range m.sessions {
 		if g := s.group(); g != "" && m.groupByName(g) == nil {
@@ -733,6 +789,10 @@ type assignChoice struct {
 }
 
 func (m *model) openAssign() tea.Cmd {
+	if m.temp {
+		m.setFlash(tempGroupsNote)
+		return nil
+	}
 	s := m.current()
 	if s == nil {
 		return nil

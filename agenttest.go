@@ -176,7 +176,7 @@ func (m *model) keepTest() {
 	name := s.Name
 	s.mu.Unlock()
 	s.testing.Store(false)
-	_ = saveSessions(m.sessions)
+	_ = m.saveSessions()
 	if m.cfg != nil {
 		m.cfg.setStatus(fmt.Sprintf("Kept the test session as %q.", name), false)
 	}

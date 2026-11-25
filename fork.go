@@ -85,7 +85,7 @@ func (m *model) forkSelected() tea.Cmd {
 	m.clearFilter() // so the fork shows
 	m.showSelected()
 	m.focus = focusTerminal
-	_ = saveSessions(m.sessions)
+	_ = m.saveSessions()
 	return nil
 }
 

@@ -644,6 +644,10 @@ func (m *model) tryOpen() {
 // saveConfigScreen checks and writes the config file, then applies it.
 func (m *model) saveConfigScreen() tea.Cmd {
 	c := m.cfg
+	if m.temp {
+		c.setStatus("Not saved: "+tempConfigNote+".", true)
+		return nil
+	}
 	if c.loadErr != "" {
 		c.setStatus("Saving is off: the config file can't be read ("+c.loadErr+"). Fix it by hand.", true)
 		return nil
