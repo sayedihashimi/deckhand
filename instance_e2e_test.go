@@ -22,7 +22,7 @@ func sessionFolders(home string) map[string]bool {
 
 // TestE2EInstances runs two deckhands on one data folder: the first is the
 // main instance and the second is temporary. The temporary one starts
-// empty, leaves sessions.json and groups.json alone, keeps working after
+// empty with the new-session dialog open on its folder, leaves sessions.json and groups.json alone, keeps working after
 // main has gone, and deletes its sessions' folders when it quits. A main
 // instance that ended without cleaning up (killed) doesn't stop the next
 // one being main.
@@ -45,14 +45,23 @@ func TestE2EInstances(t *testing.T) {
 	sessionsBefore, _ := os.ReadFile(filepath.Join(home, "sessions.json"))
 	groupsBefore, _ := os.ReadFile(filepath.Join(home, "groups.json"))
 
-	tmp := startHarness(t, exe, env, t.TempDir())
+	// It opens the new-session dialog on the folder it was started in, so
+	// the first session is just enter.
+	start := filepath.Join(t.TempDir(), "temp-start")
+	if err := os.MkdirAll(start, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	tmp := startHarness(t, exe, env, start)
 	tmp.waitFor("deckhand temporary", 10*time.Second)
-	tmp.waitFor("No sessions yet", 5*time.Second)
+	tmp.waitFor("New session", 10*time.Second)
+	tmp.waitFor("temp-start", 5*time.Second)
 
 	// Two sessions: one renamed, one ended with K.
-	for range 2 {
-		tmp.send("n")
-		tmp.waitFor("New session", 5*time.Second)
+	for i := range 2 {
+		if i > 0 {
+			tmp.send("n")
+			tmp.waitFor("New session", 5*time.Second)
+		}
 		tmp.send("\r")
 		tmp.waitFor("PS ", 15*time.Second)
 		tmp.send(keyF5)
@@ -124,6 +133,9 @@ func TestE2ETempFlag(t *testing.T) {
 	env := envWith(home, path)
 	tmp := startHarnessArgs(t, exe, []string{"--temp"}, env, t.TempDir(), 140, 40)
 	tmp.waitFor("deckhand temporary", 10*time.Second)
+	// --temp opens the new-session dialog too; esc leaves the empty list.
+	tmp.waitFor("New session", 10*time.Second)
+	tmp.send("\x1b")
 	tmp.waitFor("No sessions yet", 5*time.Second)
 
 	main := startHarness(t, exe, env, t.TempDir())

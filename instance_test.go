@@ -120,6 +120,51 @@ func TestTempInstanceMarkers(t *testing.T) {
 	}
 }
 
+// A temporary window opens the new-session dialog on the folder it was
+// started from, shown as it's displayed (~ or an alias); esc leaves the
+// empty list. The main instance starts on its list, as before.
+func TestTempInstanceOpensNewDialog(t *testing.T) {
+	tempHome(t)
+	dir := filepath.Join(t.TempDir(), "notes")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	defer func(saved []pathAlias) { pathAliases = saved }(pathAliases)
+	pathAliases = []pathAlias{{prefix: dir, name: "demo"}}
+
+	m := newInstanceModel(true)
+	m.agents = []Agent{{Name: "pwsh"}}
+	m.width, m.height = 120, 30
+	_ = m.Init()
+	if m.dialog == nil || m.focus != focusDialog {
+		t.Fatal("a temporary window should open the new-session dialog")
+	}
+	if got := m.dialog.dir.Value(); got != `demo\` {
+		t.Errorf("folder line %q, want the start folder as displayed", got)
+	}
+	if got := m.dialog.target(); !strings.EqualFold(filepath.Clean(got), dir) {
+		t.Errorf("enter would start in %q, want %q", got, dir)
+	}
+	press(m, tea.KeyPressMsg{Code: tea.KeyEscape})
+	if m.dialog != nil || len(m.sessions) != 0 {
+		t.Errorf("esc should leave an empty list: dialog %v, %d sessions", m.dialog != nil, len(m.sessions))
+	}
+
+	main := newInstanceModel(false)
+	main.agents = []Agent{{Name: "pwsh"}}
+	_ = main.Init()
+	if main.dialog != nil {
+		t.Error("the main instance shouldn't open the dialog on start")
+	}
+
+	// n still opens an empty folder line, in both kinds of window.
+	press(m, tea.KeyPressMsg{Code: 'n', Text: "n"})
+	if m.dialog == nil || m.dialog.dir.Value() != "" {
+		t.Errorf("n should open the dialog with an empty folder line")
+	}
+}
+
 // The config screen opens in a temporary window, but can't save.
 func TestTempInstanceConfigReadOnly(t *testing.T) {
 	home := tempHome(t)

@@ -41,7 +41,8 @@ func main() {
 Usage:
   deckhand            start the TUI. If another deckhand is already running
                       on the same data folder, this one is a temporary window:
-                      it starts empty and its sessions aren't saved.
+                      it opens the new-session dialog on the current folder, and
+                      its sessions aren't saved.
   deckhand --temp     start a temporary window even if no other is running
   deckhand config     print the config file path (creates a commented sample).
                       To change settings without editing it, press c in deckhand.
