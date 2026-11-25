@@ -245,7 +245,7 @@ func TestE2EFolderPicker(t *testing.T) {
 	h.send("\x17") // ctrl+w: back up to the root
 	h.waitFor(`zeta\`, 3*time.Second)
 	h.send("\x1b[B\x1b[B\x1b[B") // ↓↓↓: alpha, alps, zeta
-	h.waitFor("Start in  "+filepath.Join(root, "zeta"), 3*time.Second)
+	h.waitFor("Start in  "+displayPath(filepath.Join(root, "zeta")), 3*time.Second)
 	h.send("\r")
 	h.waitFor("PS ", 15*time.Second)
 	h.waitFor("zeta  pwsh", 3*time.Second) // header: name and agent

@@ -123,7 +123,7 @@ func noticeText(name, agent string, n notice, lastMessage string) (title, body s
 			body = lastMessage
 		}
 	}
-	return title, clip(oneLine(body), 200)
+	return displayPathsIn(title), clip(oneLine(displayPathsIn(body)), 200)
 }
 
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }

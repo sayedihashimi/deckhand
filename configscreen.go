@@ -82,6 +82,7 @@ type configScreen struct {
 	loadErr  string         // the file isn't valid TOML: saving is off
 	checkErr string         // the file loads with an error (fix it here)
 	comments bool           // the file has comments of its own, which a save loses
+	aliases  []pathAlias    // [[paths.alias]], listed only (edited in the file)
 	exists   bool
 
 	agents     []agentConfig
@@ -135,6 +136,7 @@ func newConfigScreen(width int) *configScreen {
 		}
 	}
 	c.comments = hasOwnComments(text)
+	c.aliases, _ = parsePathsConfig(text)
 	c.agents = cfg.Agents
 	n := cfg.Notifications
 	c.notifyOn = n.Enabled == nil || *n.Enabled

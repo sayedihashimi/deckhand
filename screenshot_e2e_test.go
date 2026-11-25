@@ -191,9 +191,11 @@ event PreToolUse Bash | go test ./...
 		t.Fatal(err)
 	}
 
-	// Two custom agents and an editor, for the config screen.
+	// Two custom agents and an editor, for the config screen, and a path
+	// alias: the scene's folders show as src\api and so on, not as the
+	// temporary folder.
 	cfg := filepath.Join(home, "config.toml")
-	_ = os.WriteFile(cfg, []byte(`[[agents]]
+	_ = os.WriteFile(cfg, []byte("[[paths.alias]]\nprefix = '"+src+"'\nname = 'src'\n\n"+`[[agents]]
 name   = "review"
 pwsh   = "Start-Review"
 type   = "claude"
@@ -405,7 +407,7 @@ event Stop
 	h.send(keyF5)
 	h.send("\x1bOR") // F3: hide the list
 	h.waitFor("· Updated the README with the new install", 15*time.Second)
-	h.waitFor("…  "+dir[:3], 5*time.Second) // the folder, after the cut reply
+	h.waitFor("…  "+displayPath(dir)[:2], 5*time.Second) // the folder, after the cut reply
 	time.Sleep(300 * time.Millisecond)
 	shot := screenFromEmulator(h.emu)
 	t.Logf("long reply in the header:\n%s", h.screen())
