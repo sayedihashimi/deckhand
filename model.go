@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -37,6 +38,13 @@ func frameTick() tea.Cmd {
 
 type model struct {
 	sessions    []*Session
+	storeExtra  []json.RawMessage // sessions.json entries this build doesn't load, kept (store.go)
+	groupsExtra extraFields       // groups.json fields this build doesn't know, kept
+
+	// temp is a temporary instance (instance.go): it doesn't load or save
+	// sessions.json and groups.json, and can't save the config.
+	temp bool
+
 	costSavedAt time.Time // when sessions.json was last saved for a cost change
 	sel         int
 	scroll      int
@@ -114,14 +122,23 @@ type confirmPrompt struct {
 	defaultYes bool
 }
 
-func newModel() *model {
+// newModel is the main instance's model: it loads the saved sessions.
+func newModel() *model { return newInstanceModel(false) }
+
+// newInstanceModel makes the model for a main instance, or with temp for a
+// temporary one, which starts with an empty list and saves nothing of it.
+func newInstanceModel(temp bool) *model {
 	m := &model{
-		sessions: loadSessions(),
-		dirty:    &atomic.Bool{},
-		agents:   availableAgents(),
+		dirty:  &atomic.Bool{},
+		agents: availableAgents(),
+		temp:   temp,
 	}
 	m.listHidden = loadPrefs().ListHidden
-	m.setGroups(loadGroups())
+	if !temp {
+		f := readSessionsFile()
+		m.sessions, m.storeExtra = f.sessions, f.extra
+		m.setGroups(loadGroups())
+	}
 	m.keepSelectionVisible() // the first session may be in a collapsed group
 	if _, err := os.Stat(configPath()); err == nil {
 		m.haveConfig = true
@@ -246,6 +263,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.frame++
 		if m.frame%refreshEvery == 0 {
 			now := time.Now()
+			renamed := false
 			for i, s := range m.sessions {
 				s.Refresh(now)
 				if n := s.TakeNotice(); n != nil && !s.testing.Load() && shouldNotify(notifyMode, m.focusKnown, m.windowFocused, i == m.selectedIdx()) {
@@ -254,6 +272,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				s.MaybePoll(now, i == m.selectedIdx())
 				s.MaybePollPR(now)
 				s.MaybeSaveScreen(now)
+				if s.applyTitle() {
+					renamed = true
+				}
+			}
+			if renamed {
+				_ = m.saveSessions()
 			}
 			m.tickTest(now)
 			m.maybeSaveCosts(now)
@@ -439,9 +463,9 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if s := m.current(); s != nil {
 				if name := strings.TrimSpace(m.rename.Value()); name != "" {
 					s.mu.Lock()
-					s.Name = name
+					s.Name, s.NameSource = name, nameUser
 					s.mu.Unlock()
-					_ = saveSessions(m.sessions)
+					_ = m.saveSessions()
 				}
 			}
 			m.rename = nil
@@ -814,9 +838,12 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 }
 
 func (m *model) quit() tea.Cmd {
-	_ = saveSessions(m.sessions)
+	_ = m.saveSessions()
 	// Save each running session's output while its emulator still has it.
-	saveAll(m.sessions)
+	// A temporary instance's sessions are deleted on exit, so it doesn't.
+	if !m.temp {
+		saveAll(m.sessions)
+	}
 	quittingAll.Store(true)
 	for _, s := range m.sessions {
 		s.Kill()
@@ -842,7 +869,7 @@ func (m *model) openSelected() tea.Cmd {
 			m.setFlash("Couldn't start: " + err.Error())
 			return nil
 		}
-		_ = saveSessions(m.sessions)
+		_ = m.saveSessions()
 	}
 	m.focus = focusTerminal
 	return nil
@@ -885,7 +912,7 @@ func (m *model) startLikeSelected() tea.Cmd {
 	m.clearFilter() // so the new session shows
 	m.showSelected()
 	m.focus = focusTerminal
-	_ = saveSessions(m.sessions)
+	_ = m.saveSessions()
 	return nil
 }
 
@@ -981,13 +1008,14 @@ func (m *model) createFromDialog() tea.Cmd {
 	agent := d.agents[d.agentIdx]
 	grp := d.group()
 	remember := func() {
-		p := loadPrefs()
-		p.useDir(dir)
-		p.LastAgent = agent.Name
-		if !inGitRepo(dir) {
-			p.setCodeRepo(dir, codeRepo)
-		}
-		_ = p.save()
+		noGit := !inGitRepo(dir)
+		_ = updatePrefs(func(p *prefs) {
+			p.useDir(dir)
+			p.LastAgent = agent.Name
+			if noGit {
+				p.setCodeRepo(dir, codeRepo)
+			}
+		})
 	}
 	if d.useWorktree() {
 		m.dialog = nil
@@ -1014,7 +1042,7 @@ func (m *model) createFromDialog() tea.Cmd {
 	m.showSelected()
 	m.dialog = nil
 	m.focus = focusTerminal
-	_ = saveSessions(m.sessions)
+	_ = m.saveSessions()
 	remember()
 	return nil
 }
@@ -1268,7 +1296,7 @@ func (d *newDialog) setField(f int) tea.Cmd {
 	if swap {
 		if d.hi >= 0 && d.hi < len(d.sugg) {
 			in := d.input()
-			in.SetValue(d.sugg[d.hi].Path)
+			in.SetValue(displayInput(d.sugg[d.hi].Path))
 			in.CursorEnd()
 			if d.field == fieldRepo {
 				d.repoSet = true
@@ -1292,6 +1320,9 @@ func (d *newDialog) syncRepo() {
 	want := ""
 	if !d.folderIsGit() {
 		want = d.prefs.codeRepoFor(d.target())
+		if want != "" {
+			want = displayInput(want) // resolvePath reads it back
+		}
 	}
 	if d.repo.Value() != want {
 		d.repo.SetValue(want)
@@ -1377,7 +1408,7 @@ func (d *newDialog) update(msg tea.Msg) tea.Cmd {
 				if i < 0 {
 					i = 0
 				}
-				d.setInput(withSep(d.sugg[i].Path))
+				d.setInput(displayInput(withSep(d.sugg[i].Path)))
 			}
 			return nil
 		case "down":
@@ -1395,7 +1426,7 @@ func (d *newDialog) update(msg tea.Msg) tea.Cmd {
 		case "shift+tab":
 			return d.moveField(-1)
 		case "ctrl+w", "ctrl+backspace", "alt+backspace":
-			d.setInput(parentPath(d.input().Value(), d.cwd))
+			d.setInput(displayInput(parentPath(d.input().Value(), d.cwd)))
 			return nil
 		}
 	}
@@ -1432,6 +1463,6 @@ func (m *model) maybeSaveCosts(now time.Time) {
 	}
 	if changed {
 		m.costSavedAt = now
-		_ = saveSessions(m.sessions)
+		_ = m.saveSessions()
 	}
 }

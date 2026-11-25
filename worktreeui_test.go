@@ -166,7 +166,7 @@ func TestDialogCodeRepo(t *testing.T) {
 	// A notes folder: the repo row shows, filled in with the repo last used there.
 	d.setInput(notes)
 	d.update(tea.KeyPressMsg{Code: tea.KeyEnd})
-	if d.folderIsGit() || !d.showRepo() || d.repo.Value() != api || d.gitRepo() != api || !d.useWorktree() {
+	if d.folderIsGit() || !d.showRepo() || d.repo.Value() != displayInput(api) || d.gitRepo() != api || !d.useWorktree() {
 		t.Fatalf("notes folder: repo %q, git %q, fields %v", d.repo.Value(), d.gitRepo(), d.fields())
 	}
 	// ↓ past the suggestions goes to the repo row, then the worktree row.
@@ -222,7 +222,7 @@ func TestDialogRendersWorktreeRows(t *testing.T) {
 	m.dialog.setInput(api)
 	m.dialog.worktree = true
 	screen := ansi.Strip(strings.Join(m.renderDialog(120), "\n"))
-	for _, want := range []string{"Repo", "Worktree", "a new branch and folder for api", "Code repo " + api, "Worktree  in " + api + "-wt"} {
+	for _, want := range []string{"Repo", "Worktree", "a new branch and folder for api", "Code repo " + displayPath(api), "Worktree  in " + displayPath(api) + "-wt"} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("missing %q:\n%s", want, screen)
 		}
@@ -270,7 +270,7 @@ func TestWorktreeSessionLifecycle(t *testing.T) {
 	if !s.preparing.Load() || len(s.PrepLog()) == 0 {
 		t.Error("the new session shows its worktree being made")
 	}
-	if err := saveSessions(m.sessions); err != nil {
+	if err := m.saveSessions(); err != nil {
 		t.Fatal(err)
 	}
 	if data, _ := os.ReadFile(storePath()); strings.Contains(string(data), s.ID) {

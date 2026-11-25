@@ -463,7 +463,10 @@ func (m *model) helpContent(inner, rows int) helpLayout {
 func (m *model) helpTail(inner int) []string {
 	out := []string{"", stHelpGroup.Render("Status icons")}
 	out = append(out, m.statusLegend(inner)...)
-	return append(out, "", stMuted.Render("Config file: ")+configPath()+stMuted.Render("  (c edits it here; deckhand config creates it)"))
+	if m.temp {
+		out = append(out, "", stHelpGroup.Render(tempHelpNote))
+	}
+	return append(out, "", stMuted.Render("Config file: ")+displayPath(configPath())+stMuted.Render("  (c edits it here; deckhand config creates it)"))
 }
 
 // overlayHelp draws the help panel over the main pane's lines (w×h),

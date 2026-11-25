@@ -93,7 +93,7 @@ func TestAgentTestStartsUnsaved(t *testing.T) {
 	if data, _ := os.ReadFile(p); string(data) != testAgentsConfig {
 		t.Errorf("config.toml changed:\n%s", data)
 	}
-	if err := saveSessions(m.sessions); err != nil {
+	if err := m.saveSessions(); err != nil {
 		t.Fatal(err)
 	}
 	if loaded := loadSessions(); len(loaded) != 2 {

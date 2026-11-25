@@ -9,6 +9,9 @@
 //	say <text>                     print a line (\e is ESC, for colours)
 //	print <text>                   print without a newline (\e is ESC, \a is BEL)
 //	reply <tokens> <text>          add an assistant reply to the transcript
+//	                               (\n starts a new line)
+//	title custom|ai <text>         add a custom-title (/rename) or ai-title
+//	                               line to the transcript
 //	event <Name> [Tool] [| input]  send a hook event; input becomes the
 //	                               tool's command (or file_path for Edit/Write/Read)
 //	statusline <usd> [<window> <tokens>]
@@ -117,7 +120,10 @@ func runScript(script string) {
 		case "reply":
 			n, text, _ := strings.Cut(rest, " ")
 			tokens, _ := strconv.Atoi(n)
-			reply(tokens, text)
+			reply(tokens, strings.ReplaceAll(text, `\n`, "\n"))
+		case "title":
+			kind, text, _ := strings.Cut(rest, " ")
+			title(kind, text)
 		case "statusline":
 			statusLine(strings.Fields(rest))
 		case "sleep":
@@ -153,6 +159,21 @@ func reply(tokens int, text string) {
 			"content": []map[string]any{{"type": "text", "text": text}},
 			"usage":   map[string]any{"input_tokens": 2, "cache_creation_input_tokens": 1000, "cache_read_input_tokens": tokens - 1002},
 		},
+	}
+	line, _ := json.Marshal(entry)
+	f, err := os.OpenFile(transcript, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err == nil {
+		_, _ = f.Write(append(line, '\n'))
+		_ = f.Close()
+	}
+}
+
+// title adds a custom-title (/rename, or a launch name) or an ai-title
+// line to the transcript.
+func title(kind, text string) {
+	entry := map[string]any{"type": "ai-title", "aiTitle": text, "sessionId": sessionID}
+	if kind == "custom" {
+		entry = map[string]any{"type": "custom-title", "customTitle": text, "sessionId": sessionID}
 	}
 	line, _ := json.Marshal(entry)
 	f, err := os.OpenFile(transcript, os.O_APPEND|os.O_WRONLY, 0o600)

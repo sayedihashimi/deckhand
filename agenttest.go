@@ -172,11 +172,11 @@ func (m *model) keepTest() {
 	m.test = nil
 	s := t.s
 	s.mu.Lock()
-	s.Name = sessionName(s.Dir)
+	s.Name, s.NameSource = sessionName(s.Dir), nameFolder
 	name := s.Name
 	s.mu.Unlock()
 	s.testing.Store(false)
-	_ = saveSessions(m.sessions)
+	_ = m.saveSessions()
 	if m.cfg != nil {
 		m.cfg.setStatus(fmt.Sprintf("Kept the test session as %q.", name), false)
 	}
@@ -262,13 +262,13 @@ func (m *model) testLines(w int) []string {
 	case testFailed:
 		st = stErrText
 	}
-	line := " " + stSection.Render("Testing") + " " + t.agent.Name + stMuted.Render(" · ") + st.Render(text)
+	line := " " + stSection.Render("Testing") + " " + t.agent.Name + stMuted.Render(" · ") + st.Render(displayPathsIn(text))
 	if !t.stopping {
 		line += stMuted.Render("   ctrl+t keep or discard")
 	}
 	out := []string{fit(line, w)}
 	if hint != "" {
-		out = append(out, fit(stMuted.Render("      "+hint), w))
+		out = append(out, fit(stMuted.Render("      "+displayPathsIn(hint)), w))
 	}
 	if result == testFailed {
 		for _, l := range t.s.LastLines(3) {

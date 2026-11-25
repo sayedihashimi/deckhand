@@ -40,12 +40,14 @@ type listSettings struct {
 	toggleKey  string // as Bubble Tea names it, e.g. "f3" or "ctrl+\\"
 	backKey    string // back to the list from a session; empty means F5
 	statusLine bool   // show the status line while the list is hidden
+	// followTitle: a Claude session's name follows Claude's title (title.go).
+	followTitle bool
 }
 
 var listOpts = defaultListSettings()
 
 func defaultListSettings() listSettings {
-	return listSettings{toggleKey: defaultToggleKey, backKey: defaultBackKey, statusLine: true}
+	return listSettings{toggleKey: defaultToggleKey, backKey: defaultBackKey, statusLine: true, followTitle: true}
 }
 
 // back is the key that goes back to the list ([list] back_key).
@@ -60,6 +62,8 @@ type listConfig struct {
 	ToggleKey  string `toml:"toggle_key,omitempty"`
 	BackKey    string `toml:"back_key,omitempty"`
 	StatusLine *bool  `toml:"status_line,omitempty"`
+	// FollowTitle: Claude sessions take their name from Claude's title.
+	FollowTitle *bool `toml:"follow_claude_title,omitempty"`
 }
 
 // loadListConfig reads [list] from the config file.
@@ -93,6 +97,9 @@ func parseListConfig(text string) (listSettings, error) {
 	}
 	if cfg.List.StatusLine != nil {
 		out.statusLine = *cfg.List.StatusLine
+	}
+	if cfg.List.FollowTitle != nil {
+		out.followTitle = *cfg.List.FollowTitle
 	}
 	key, err := checkToggleKey(cfg.List.ToggleKey)
 	if err != nil {
@@ -220,7 +227,5 @@ func (m *model) setListHidden(hidden bool) {
 	if m.width > 0 && m.height > 0 {
 		m.resizeAll()
 	}
-	p := loadPrefs()
-	p.ListHidden = hidden
-	_ = p.save()
+	_ = updatePrefs(func(p *prefs) { p.ListHidden = hidden })
 }

@@ -106,7 +106,7 @@ func TestE2EDiffPreview(t *testing.T) {
 	// A folder that isn't in git.
 	h.send("j")
 	h.send("d")
-	h.waitFor("Not a git repository: "+plain, 5*time.Second)
+	h.waitFor("Not a git repository: "+displayPath(plain), 5*time.Second)
 	h.send("\x1b")
 	h.waitGone("Not a git repository", 3*time.Second)
 	h.send("q") // nothing is running, so it quits straight away
