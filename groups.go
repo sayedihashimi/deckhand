@@ -41,6 +41,7 @@ const noGroupName = "(no group)"
 type group struct {
 	Name      string `json:"name"`
 	Collapsed bool   `json:"collapsed,omitempty"`
+	Color     string `json:"color,omitempty"` // colors.go: its sessions without a color of their own take it
 
 	extra extraFields // fields this build doesn't know, kept (store.go)
 }
@@ -166,6 +167,7 @@ func (m *model) setGroups(f groupsFile) {
 	for _, g := range f.Groups {
 		if ng := m.addGroup(g.Name, g.Collapsed); ng != nil && ng.extra == nil {
 			ng.extra = g.extra
+			ng.Color = g.Color
 		}
 	}
 	for _, s := range m.sessions {

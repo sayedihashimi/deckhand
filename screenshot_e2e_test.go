@@ -26,6 +26,8 @@ import (
 // header with a long reply (replyScene), the config
 // screen ("c", testing an agent with t), the help opened from it (F1) and the api session's diff
 // preview ("d") below it, the folder picker (o on the worktree session),
+// the color picker (C; the sessions and a group have colors), the
+// right-click menu on the worktree session with its Group submenu,
 // then a session being dragged into a group (the
 // sessions are in two groups). The PR
 // workflow posts it on each pull request.
@@ -148,24 +150,27 @@ event PreToolUse Bash | go test ./...
 		BaseBranch string `json:"base_branch,omitempty"`
 
 		Group string `json:"group,omitempty"`
+		Color string `json:"color,omitempty"`
 	}
 	now := time.Now()
 	list := []saved{
-		{ID: "shot-api", Name: "api", Agent: "claude", Dir: api, Created: now, Claude: "11111111-1111-1111-1111-111111111111", Started: true, Group: "app"},
+		{ID: "shot-api", Name: "api", Agent: "claude", Dir: api, Created: now, Claude: "11111111-1111-1111-1111-111111111111", Started: true, Group: "app", Color: "red"},
 		{ID: "shot-docs", Name: "docs", Agent: "claude", Dir: docs, Created: now, Claude: "22222222-2222-2222-2222-222222222222", Started: true, Group: "app"},
 		{ID: "shot-web", Name: "web", Agent: "claude", Dir: web, Created: now, Claude: "33333333-3333-3333-3333-333333333333", Started: true, Group: "app"},
 		// A worktree session run from a notes folder that isn't git, on
 		// the cli repo: the sidebar shows the marker and the repo's name.
 		{ID: "shot-worktree", Name: "quiet-otter", Agent: "claude", Dir: plans, Created: now, Claude: "44444444-4444-4444-4444-444444444444", Started: true,
-			CodeRepo: cli, RepoRoot: cli, Worktree: wt, Branch: "quiet-otter", BaseBranch: "main", Group: "cli"},
-		{ID: "shot-notes", Name: "notes", Agent: "pwsh", Dir: notes, Created: now, Started: true},
+			CodeRepo: cli, RepoRoot: cli, Worktree: wt, Branch: "quiet-otter", BaseBranch: "main", Group: "cli", Color: "teal"},
+		{ID: "shot-notes", Name: "notes", Agent: "pwsh", Dir: notes, Created: now, Started: true, Color: "#ff9e64"},
 	}
 	data, _ := json.Marshal(list)
 	if err := os.WriteFile(filepath.Join(home, "sessions.json"), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	// Two groups; the shell is in none.
-	if err := os.WriteFile(filepath.Join(home, "groups.json"), []byte(`{"groups":[{"name":"app"},{"name":"cli"}]}`), 0o600); err != nil {
+	// Two groups; the shell is in none. Colors (C): app is purple, which
+	// docs, its fork and web take; api, quiet-otter and the shell have
+	// their own.
+	if err := os.WriteFile(filepath.Join(home, "groups.json"), []byte(`{"groups":[{"name":"app","color":"purple"},{"name":"cli"}]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -305,6 +310,28 @@ editor = 'code "{dir}"'
 	t.Logf("folder picker:\n%s", h.screen())
 	h.send("\x1b")
 	h.waitGone("All folders", 3*time.Second)
+
+	// The color picker (C) on quiet-otter, on its teal; esc closes it.
+	h.send("C")
+	h.waitFor(`Color for "quiet-otter"`, 5*time.Second)
+	time.Sleep(300 * time.Millisecond)
+	colorShot := screenFromEmulator(h.emu)
+	t.Logf("color picker:\n%s", h.screen())
+	h.send("\x1b")
+	h.waitGone(`Color for`, 3*time.Second)
+
+	// The right-click menu on quiet-otter (line 17, 0-based), a worktree
+	// session, with Group ▸ open (↓ to it past Rename and Fork, then →).
+	h.send("\x1b[<2;12;18M\x1b[<2;12;18m")
+	h.waitFor("Create PR", 5*time.Second)
+	h.send("\x1b[B\x1b[B\x1b[B\x1b[C")
+	h.waitFor("New group…", 3*time.Second)
+	time.Sleep(300 * time.Millisecond)
+	menuShot := screenFromEmulator(h.emu)
+	t.Logf("right-click menu:\n%s", h.screen())
+	h.send("\x1b")
+	h.send("\x1b")
+	h.waitGone("Create PR", 3*time.Second)
 	h.send("\x1b[A\x1b[A\x1b[A\x1b[A\x1b[A")
 
 	// The cli group collapsed (space on its header, four rows down), its
@@ -326,8 +353,18 @@ editor = 'code "{dir}"'
 	h.send("\x1b[<0;6;9m") // the release after esc changes nothing
 	h.waitGone("━━━━━━", 3*time.Second)
 
+	// s twice: the state filter on inactive, showing only the sessions
+	// that aren't running. esc clears it.
+	h.send("ss")
+	h.waitFor("filter: inactive", 3*time.Second)
+	time.Sleep(300 * time.Millisecond)
+	stateShot := screenFromEmulator(h.emu)
+	t.Logf("state filter:\n%s", h.screen())
+	h.send("\x1b")
+	h.waitGone("filter: inactive", 3*time.Second)
+
 	// One image: the scene, the restored output, the long reply, the config screen, the
-	// help opened from it, the diff preview, the folder picker and the drag, with a blank row between
+	// help opened from it, the diff preview, the folder picker, the color picker, the right-click menu, the drag and the state filter, with a blank row between
 	// them.
 	blank := make([]termshot.Cell, len(scene[0]))
 	for i := range blank {
@@ -339,7 +376,10 @@ editor = 'code "{dir}"'
 	both = append(append(both, blank), configHelp...)
 	both = append(append(both, blank), diffShot...)
 	both = append(append(both, blank), pickShot...)
+	both = append(append(both, blank), colorShot...)
+	both = append(append(both, blank), menuShot...)
 	both = append(append(both, blank), dragShot...)
+	both = append(append(both, blank), stateShot...)
 	both = append(append(both, blank), replyScene(t, exe, path)...)
 	both = append(append(both, blank), padScene(t, exe, path)...)
 

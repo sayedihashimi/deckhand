@@ -321,6 +321,16 @@ const sampleConfig = `# deckhand agents: each [[agents]] entry shows up in the n
 # [header]
 # reply_width = 40
 
+# C in the list gives the selected session or group a color: a bar at the
+# left of its rows, and its name in the header. These change what the
+# palette's names look like (red, orange, yellow, green, teal, blue, purple,
+# pink, gray). They can't add names: any other color can be typed as hex in
+# the picker.
+#
+# [colors]
+# red  = "#e06c75"
+# blue = "#61afef"
+
 # Paths show the home folder as ~. An alias also hides a folder behind a
 # short name, for demos and screen sharing: with this one,
 # C:\src\notes\features\x shows as notes\features\x. Matching ignores case

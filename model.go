@@ -61,9 +61,11 @@ type model struct {
 	rename      *textinput.Model
 	flash       string
 
-	// Filtering the list ("/" and "@").
+	// Filtering the list ("/", "@" and "s").
 	filter        string
 	attentionOnly bool
+	stateFilter   stateFilter
+	stateHide     *Session         // selected when s was pressed, and hidden by it (visible)
 	filterInput   *textinput.Model // open while typing a filter
 
 	// A press on a session that may become a drag (drag.go).
@@ -79,6 +81,8 @@ type model struct {
 	renameGroup      *group      // the group being renamed (r on a header), with rename
 	assign           *assignBox  // moving a session to a group (a)
 	folderPick       *folderPick // which folder o or t opens (openmulti.go)
+	colorPick        *colorPick  // the color picker (C, colors.go)
+	menu             *ctxMenu    // the right-click menu (menu.go)
 
 	help *helpOverlay // the key help (? or F1), when open
 	diff *diffView    // the diff preview (d), when open
@@ -340,6 +344,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.folderPick != nil {
 			return m, nil
 		}
+		if m.colorPick != nil {
+			if m.colorPick.onHex {
+				var cmd tea.Cmd
+				m.colorPick.hex, cmd = m.colorPick.hex.Update(msg)
+				m.colorPick.err = ""
+				return m, cmd
+			}
+			return m, nil
+		}
 		if m.assign != nil {
 			var cmd tea.Cmd
 			m.assign.input, cmd = m.assign.input.Update(msg)
@@ -442,6 +455,12 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.closeKey(key)
 	}
 
+	if m.menu != nil {
+		if handled, cmd := m.menuKey(key); handled {
+			return m, cmd
+		}
+	}
+
 	// Any key ends a drag; esc only cancels it.
 	if m.drag != nil {
 		m.cancelDrag()
@@ -486,6 +505,10 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	if m.folderPick != nil {
 		return m, m.folderPickKey(k)
+	}
+
+	if m.colorPick != nil {
+		return m, m.colorPickKey(k)
 	}
 
 	if m.rename != nil {
@@ -624,6 +647,8 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "@":
 		m.attentionOnly = !m.attentionOnly
 		m.keepSelectionVisible()
+	case "s":
+		m.cycleStateFilter()
 	case "esc":
 		if m.filtering() {
 			m.clearFilter()
@@ -649,6 +674,8 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "a":
 		return m, m.openAssign()
+	case "C":
+		return m, m.openColorPick()
 	case "shift+enter", "alt+enter":
 		// alt+enter is ESC CR: terminals with shift+enter remapped to send
 		// it (a common setup for Claude Code) deliver shift+enter this way.
@@ -787,6 +814,12 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		m.diffMouse(msg)
 		return nil
 	}
+	if m.colorPick != nil {
+		return m.colorPickMouse(msg)
+	}
+	if m.menu != nil {
+		return m.menuMouse(msg)
+	}
 	if m.focus == focusDialog || m.focus == focusConfig || m.rename != nil || m.confirm != nil || m.closing != nil || m.filterInput != nil || m.assign != nil || m.folderPick != nil {
 		m.cancelDrag()
 		return nil
@@ -822,6 +855,15 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 						m.toggleHeader(0) // a click on ▾/▸ folds or unfolds it
 					}
 					m.startDrag(rows[r], ms.X, ms.Y) // a drag if it moves before the release
+				}
+			}
+			if ms.Button == tea.MouseRight && ms.Y >= 2 {
+				// The right-click menu (menu.go) for the row.
+				rows := m.rows()
+				if r, _ := m.rowAt(rows, ms.Y); r >= 0 && r < len(rows) && !rows[r].temp {
+					m.selectRow(rows[r])
+					m.focus = focusSidebar
+					m.openMenu(ms.X, ms.Y)
 				}
 			}
 		}
@@ -949,6 +991,7 @@ func (m *model) startLikeSelected() tea.Cmd {
 	n := newSession(agent, dir, sessionName(dir))
 	n.override = s.override // a kept test of an agent that may not be saved
 	n.Group = s.group()     // right below it, in its group
+	n.Color = s.color()     // its own color, like a fork's
 	w, h := m.termSize()
 	if err := startSession(n, w, h, false, m.dirty); err != nil {
 		m.setFlash("Couldn't start: " + err.Error())

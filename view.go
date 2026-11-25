@@ -29,6 +29,24 @@ var (
 	stWaitText = lipgloss.NewStyle().Bold(true).Foreground(colWaiting)
 )
 
+// defaultPalette is the colors a session or group can be given by name
+// (colors.go), in the picker's order; [colors] in the config changes how
+// they look. They suit the dark theme above.
+var defaultPalette = []struct{ name, hex string }{
+	{"red", "#f7768e"},
+	{"orange", "#ff9e64"},
+	{"yellow", "#e0af68"},
+	{"green", "#9ece6a"},
+	{"teal", "#73daca"},
+	{"blue", "#7aa2f7"},
+	{"purple", "#bb9af7"},
+	{"pink", "#f5a9d0"},
+	{"gray", "#a9b1d6"},
+}
+
+// dimBackground is what an exited session's color bar is dimmed towards.
+const dimBackground = "#1a1b26"
+
 var spinner = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 func (m *model) statusIcon(sn snapshot) string {
@@ -99,6 +117,9 @@ func (m *model) renderSidebar(w, h int) []string {
 		if m.attentionOnly {
 			parts = append(parts, "@ needs you")
 		}
+		if m.stateFilter != stateAll {
+			parts = append(parts, "filter: "+m.stateFilter.String())
+		}
 		if m.filter != "" {
 			parts = append(parts, "/"+m.filter)
 		}
@@ -164,6 +185,13 @@ func (m *model) renderSidebar(w, h int) []string {
 	now := time.Now()
 	gap, indent := m.dropLineAt()
 	hot, haveHot := m.hotHeader()
+	// With colors in use, each row starts with its color bar (colors.go):
+	// bw is its column, cw the width left for the row.
+	bw := 0
+	if m.colorsInUse() {
+		bw = 1
+	}
+	cw := w - bw
 	for r := m.scroll; r < end; r++ {
 		if r == gap {
 			lines = append(lines, dropLine(w, indent))
@@ -174,7 +202,11 @@ func (m *model) renderSidebar(w, h int) []string {
 				lines = append(lines, strings.Repeat(" ", w))
 			}
 			selected := m.onHeader && !row.temp && row.group == m.selHeader
-			lines = append(lines, m.renderHeader(row, w, selected, haveHot && hot == row.group))
+			head := m.renderHeader(row, cw, selected, haveHot && hot == row.group)
+			if bw > 0 {
+				head = colorBar(m.groupColor(row.group), selected, false) + head
+			}
+			lines = append(lines, head)
 			continue
 		}
 		num++
@@ -200,7 +232,8 @@ func (m *model) renderSidebar(w, h int) []string {
 		}
 		left := stMuted.Render(numText) + " " + m.statusIcon(sn) + " " + nameStyle.Render(s.Name)
 		mark := m.padMark(s, age) // ✎ when its scratch pad has notes
-		row1 := fit(left, w-len(age)-1-ansi.StringWidth(mark)) + mark + stMuted.Render(age) + " "
+		row1 := fit(left, cw-len(age)-1-ansi.StringWidth(mark)) + mark + stMuted.Render(age) + " "
+		pad := "     "[bw:] // rows 2 and 3 line up under the name, bar or not
 
 		detail, isReply := sessionDetail(sn)
 		if sn.info.compacted {
@@ -216,17 +249,21 @@ func (m *model) renderSidebar(w, h int) []string {
 		case isReply && sn.unread:
 			detailStyle = stMuted.Bold(true)
 		}
-		row2 := fit("     "+stMuted.Render(s.Agent+" · ")+detailStyle.Render(detail), w)
-		row3 := fit("     "+infoLine(s, sn, w-6), w)
+		row2 := fit(pad+stMuted.Render(s.Agent+" · ")+detailStyle.Render(detail), cw)
+		row3 := fit(pad+infoLine(s, sn, w-6), cw)
 
 		if selected {
 			marker := lipgloss.NewStyle().Foreground(colAccent).Render("▌")
 			if m.focus == focusTerminal || m.focus == focusPad {
 				marker = lipgloss.NewStyle().Foreground(colMuted).Render("▌")
 			}
-			row1 = marker + onBackground(fit(left, w-len(age)-2-ansi.StringWidth(mark))+mark+stMuted.Render(age)+" ", selBgSeq)
-			row2 = marker + onBackground(fit("    "+stMuted.Render(s.Agent+" · ")+detailStyle.Render(detail), w-1), selBgSeq)
-			row3 = marker + onBackground(fit("    "+infoLine(s, sn, w-6), w-1), selBgSeq)
+			row1 = marker + onBackground(fit(left, cw-len(age)-2-ansi.StringWidth(mark))+mark+stMuted.Render(age)+" ", selBgSeq)
+			row2 = marker + onBackground(fit(pad[1:]+stMuted.Render(s.Agent+" · ")+detailStyle.Render(detail), cw-1), selBgSeq)
+			row3 = marker + onBackground(fit(pad[1:]+infoLine(s, sn, w-6), cw-1), selBgSeq)
+		}
+		if bw > 0 {
+			bar := colorBar(m.sessionColor(s), selected, sn.status == StatusExited)
+			row1, row2, row3 = bar+row1, bar+row2, bar+row3
 		}
 		lines = append(lines, row1, row2, row3)
 	}
@@ -529,7 +566,11 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 		verb = "resume"
 	}
 	// Short details first, so a long folder path is what gets cut off.
-	header := " " + m.statusIcon(sn) + " " + lipgloss.NewStyle().Bold(true).Render(s.Name) +
+	nameStyle := lipgloss.NewStyle().Bold(true)
+	if c := m.sessionColor(s); c != "" {
+		nameStyle = nameStyle.Foreground(lipgloss.Color(c))
+	}
+	header := " " + m.statusIcon(sn) + " " + nameStyle.Render(s.Name) +
 		stMuted.Render("  "+s.Agent)
 	label := historyLabel(hs, verb, time.Now())
 	if label != "" {
@@ -820,6 +861,12 @@ func (m *model) renderFooter(w int) string {
 	if m.folderPick != nil {
 		return fit(stMuted.Render(" ↑↓ choose · enter open · esc cancel"), w)
 	}
+	if m.colorPick != nil {
+		return fit(stMuted.Render(" ↑↓ or a letter pick · tab hex color · enter apply · esc cancel · click a color"), w)
+	}
+	if m.menu != nil {
+		return fit(stMuted.Render(" ↑↓ choose · enter pick · → submenu · esc close · or press an item's key"), w)
+	}
 	if m.help != nil {
 		return fit(stMuted.Render(m.helpFooter()), w)
 	}
@@ -908,6 +955,9 @@ func (m *model) View() tea.View {
 	if m.folderPick != nil {
 		main, cur = m.overlayFolderPick(main, mw), nil
 	}
+	if m.colorPick != nil {
+		main, cur = m.overlayColorPick(main, mw), nil
+	}
 	if m.help != nil {
 		main, cur = m.overlayHelp(main, mw, bodyH), nil
 	}
@@ -924,8 +974,12 @@ func (m *model) View() tea.View {
 		b.WriteString("\n")
 	}
 	b.WriteString(m.renderFooter(m.width))
+	screen := b.String()
+	if m.menu != nil {
+		screen = m.overlayMenu(screen)
+	}
 
-	v := tea.NewView(b.String())
+	v := tea.NewView(screen)
 	v.AltScreen = true
 	// Mouse reporting is needed for the wheel. In Windows Terminal, hold
 	// shift while dragging to select text.
