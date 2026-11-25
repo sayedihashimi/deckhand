@@ -105,8 +105,7 @@ var helpGroups = []helpGroup{
 	}},
 	{helpMouse, []helpEntry{
 		{keys: "wheel", desc: "scroll output or list"},
-		{keys: "click", desc: "select, focus terminal"},
-		{keys: "right-click", desc: "a row's menu of actions"},
+		{keys: "click", desc: "select; right: a menu"},
 		{keys: "drag", desc: "move a session or group"},
 		{keys: "shift+drag", desc: "select text"},
 	}},
