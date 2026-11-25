@@ -75,7 +75,7 @@ var helpGroups = []helpGroup{
 		{keys: "v", desc: "last output / conversation", match: []string{"v"}, footer: "v switch view", short: "v view", when: hintHistory},
 		{keys: "⇧PgUp/Dn", desc: "scroll an exited session", match: []string{"shift+pgup", "shift+pgdown"}},
 		{keys: "/", desc: "filter the list as you type", match: []string{"/"}, footer: "/ filter", short: "/@ filter"},
-		{keys: "@", desc: "only sessions that need you", match: []string{"@"}, footer: "@ needs you", short: "-"},
+		{keys: "@ s", desc: "needs you; s: by state (cycles)", match: []string{"@", "s"}, footer: "@ needs you", short: "-"},
 		{keys: "esc", desc: "clear the filter", match: []string{"esc"}},
 		{keys: "o O t", desc: "editor / Explorer / terminal", match: []string{"o", "O", "t"}, footer: "o editor · O explorer · t terminal", short: "o/O/t open"},
 		{keys: "r", desc: "rename (a session or group)", match: []string{"r"}, footer: "r rename"},

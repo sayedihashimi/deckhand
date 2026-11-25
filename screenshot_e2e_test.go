@@ -338,8 +338,18 @@ editor = 'code "{dir}"'
 	h.send("\x1b[<0;6;9m") // the release after esc changes nothing
 	h.waitGone("━━━━━━", 3*time.Second)
 
+	// s twice: the state filter on inactive, showing only the sessions
+	// that aren't running. esc clears it.
+	h.send("ss")
+	h.waitFor("filter: inactive", 3*time.Second)
+	time.Sleep(300 * time.Millisecond)
+	stateShot := screenFromEmulator(h.emu)
+	t.Logf("state filter:\n%s", h.screen())
+	h.send("\x1b")
+	h.waitGone("filter: inactive", 3*time.Second)
+
 	// One image: the scene, the restored output, the long reply, the config screen, the
-	// help opened from it, the diff preview, the folder picker, the color picker and the drag, with a blank row between
+	// help opened from it, the diff preview, the folder picker, the color picker, the drag and the state filter, with a blank row between
 	// them.
 	blank := make([]termshot.Cell, len(scene[0]))
 	for i := range blank {
@@ -353,6 +363,7 @@ editor = 'code "{dir}"'
 	both = append(append(both, blank), pickShot...)
 	both = append(append(both, blank), colorShot...)
 	both = append(append(both, blank), dragShot...)
+	both = append(append(both, blank), stateShot...)
 	both = append(append(both, blank), replyScene(t, exe, path)...)
 
 	f, err := os.Create(out)

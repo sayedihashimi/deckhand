@@ -7,7 +7,59 @@ import (
 )
 
 // Filtering the session list: "/" filters by text, "@" shows only the
-// sessions that need you or have finished since you last looked.
+// sessions that need you or have finished since you last looked, and "s"
+// shows only the sessions in one state (stateFilter).
+
+// stateFilter is the session list's filter by state, which "s" cycles
+// through: all, active, inactive, waiting.
+type stateFilter int
+
+const (
+	stateAll      stateFilter = iota
+	stateActive               // the process is running: starting, idle, working or waiting
+	stateInactive             // no process: exited (restored sessions too) or error
+	stateWaiting              // blocked on you: a permission prompt or a question
+)
+
+func (f stateFilter) String() string {
+	switch f {
+	case stateActive:
+		return "active"
+	case stateInactive:
+		return "inactive"
+	case stateWaiting:
+		return "waiting"
+	}
+	return "all"
+}
+
+// next is the filter after f: all → active → inactive → waiting → all.
+func (f stateFilter) next() stateFilter { return (f + 1) % 4 }
+
+// matches reports whether a session with status st shows under f.
+func (f stateFilter) matches(st Status) bool {
+	switch f {
+	case stateActive:
+		return st != StatusExited && st != StatusError
+	case stateInactive:
+		return st == StatusExited || st == StatusError
+	case stateWaiting:
+		return st == StatusWaiting
+	}
+	return true
+}
+
+// cycleStateFilter moves the state filter on ("s"). If the selected
+// session doesn't match the new filter it isn't kept (stateHide): the
+// selection moves to the first one shown.
+func (m *model) cycleStateFilter() {
+	m.stateFilter = m.stateFilter.next()
+	m.stateHide = nil
+	if i := m.selectedIdx(); i >= 0 && i < len(m.sessions) && !m.stateFilter.matches(m.sessions[i].Snapshot().status) {
+		m.stateHide = m.sessions[i]
+	}
+	m.keepSelectionVisible()
+}
 
 // matchesFilter reports whether every word of the filter matches the
 // session's name, agent, folder or git branch (ignoring case, letters in
@@ -37,13 +89,21 @@ func filterFields(s *Session) []string {
 
 // visible returns the indexes of the sessions shown in the list. With "@",
 // the selected session stays in the list even once it's been seen, so it
-// doesn't vanish as soon as you select it.
+// doesn't vanish as soon as you select it. The same goes for a state
+// filter, so the selected session doesn't vanish when its state changes,
+// for example when it exits; but not the one that was selected when the
+// filter changed (stateHide).
 func (m *model) visible() []int {
 	out := make([]int, 0, len(m.sessions))
 	for i, s := range m.sessions {
 		if m.attentionOnly && i != m.selectedIdx() {
 			sn := s.Snapshot()
 			if !(sn.status == StatusWaiting || sn.unread) {
+				continue
+			}
+		}
+		if m.stateFilter != stateAll && (i != m.selectedIdx() || s == m.stateHide) {
+			if !m.stateFilter.matches(s.Snapshot().status) {
 				continue
 			}
 		}
@@ -55,7 +115,9 @@ func (m *model) visible() []int {
 	return out
 }
 
-func (m *model) filtering() bool { return m.filter != "" || m.attentionOnly }
+func (m *model) filtering() bool {
+	return m.filter != "" || m.attentionOnly || m.stateFilter != stateAll
+}
 
 // visiblePos is the position of the selection in the visible list, or -1.
 func visiblePos(vis []int, sel int) int {
@@ -213,5 +275,6 @@ func (m *model) keepSelectionVisible() {
 func (m *model) clearFilter() {
 	m.filter = ""
 	m.attentionOnly = false
+	m.stateFilter, m.stateHide = stateAll, nil
 	m.filterInput = nil
 }

@@ -117,6 +117,9 @@ func (m *model) renderSidebar(w, h int) []string {
 		if m.attentionOnly {
 			parts = append(parts, "@ needs you")
 		}
+		if m.stateFilter != stateAll {
+			parts = append(parts, "filter: "+m.stateFilter.String())
+		}
 		if m.filter != "" {
 			parts = append(parts, "/"+m.filter)
 		}
