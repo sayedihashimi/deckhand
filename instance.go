@@ -14,9 +14,10 @@ import (
 // Main and temporary instances (#58), like Notepad's windows. The main
 // instance owns the saved state: it loads sessions.json and groups.json
 // and saves changes. Any deckhand started while a main one is running for
-// the same data folder is temporary: it starts with an empty list, never
-// reads or writes sessions.json or groups.json, and deletes its sessions'
-// folders when it exits. deckhand --temp is always temporary.
+// the same data folder is temporary: it starts with an empty list and the
+// new-session dialog open, never reads or writes sessions.json or
+// groups.json, and deletes its sessions' folders when it exits. deckhand
+// --temp is always temporary.
 //
 // Which one is main is decided by a lock the main instance holds for its
 // whole life: a named mutex on Windows (instance_windows.go), flock on

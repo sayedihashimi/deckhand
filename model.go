@@ -146,7 +146,32 @@ func newInstanceModel(temp bool) *model {
 	return m
 }
 
-func (m *model) Init() tea.Cmd { return frameTick() }
+// Init starts the frame ticks. A temporary window starts ready for a
+// session: the new-session dialog opens on the folder deckhand was started
+// from, so enter starts one there and esc leaves the empty list.
+func (m *model) Init() tea.Cmd {
+	if m.temp && len(m.agents) > 0 && m.dialog == nil {
+		return tea.Batch(frameTick(), m.openNewDialog(true))
+	}
+	return frameTick()
+}
+
+// openNewDialog opens the new-session dialog, as n does. With startFolder,
+// the folder line is filled in with the folder deckhand was started from,
+// in its displayed form (~ or an alias), instead of being left empty.
+func (m *model) openNewDialog(startFolder bool) tea.Cmd {
+	w, _ := m.termSize()
+	m.dialog = newNewDialog(m.agents, w, m.sessions)
+	m.dialog.setGroups(m.groups, m.defaultGroup())
+	if startFolder && m.dialog.cwd != "" {
+		m.dialog.dir.SetValue(displayInput(m.dialog.cwd))
+		m.dialog.dir.CursorEnd()
+		m.dialog.refresh()
+		m.dialog.syncRepo()
+	}
+	m.focus = focusDialog
+	return m.dialog.focusCmd()
+}
 
 // Layout -------------------------------------------------------------------
 
@@ -635,11 +660,7 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.setFlash("No supported CLIs found on PATH")
 			return m, nil
 		}
-		w, _ := m.termSize()
-		m.dialog = newNewDialog(m.agents, w, m.sessions)
-		m.dialog.setGroups(m.groups, m.defaultGroup())
-		m.focus = focusDialog
-		return m, m.dialog.focusCmd()
+		return m, m.openNewDialog(false)
 	case "c":
 		return m, m.openConfigScreen()
 	case "d":
