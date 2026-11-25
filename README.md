@@ -226,6 +226,7 @@ Run `deckhand notify-test` to check that notifications appear. If they don't, ch
 
 - `/` filters the list as you type. It matches the name, agent, folder and branch, ignoring case, and letters in order match too. `enter` or `tab` keeps the filter, `esc` clears it.
 - `@` shows only the sessions that need you or finished since you looked. Press it again to show all.
+- `s` filters by state. Each press moves on: **active** (the process is running: starting, idle, working or waiting), **inactive** (exited, including sessions restored at start that you haven't resumed or restarted yet), **waiting** (blocked on a permission prompt or a question), then back to all. The list header shows it, for example `filter: active`. It combines with `/` and `@`, and the selected session stays in the list while its state changes, until you move off it. Every start begins with all.
 - `tab` selects the next session that needs you, then the next one that finished.
 
 ![The list filtered with /doc: only docs and its fork, docs (fork), are left, in the app group.](docs/img/filter.png)
@@ -253,7 +254,8 @@ Press `?` in the session list, or `F1` anywhere (also inside a session, the new-
 | tab | Select the next session that needs you, then the next one that finished |
 | / | Filter the list as you type. Matches the name, agent, folder and branch, ignoring case; letters in order also match, and every word must match. enter keeps the filter (or opens the session if only one matches), tab keeps it, esc clears it |
 | @ | Show only sessions that need you or finished since you looked (press again to show all) |
-| esc | Clear the filter |
+| s | Filter by state: active, inactive (exited), waiting, then all again |
+| esc | Clear the filters (text, `@` and state) |
 | v | For an exited Claude session, switch between its last output and the conversation from its transcript (see [Output after a restart](#output-after-a-restart)) |
 | shift+PgUp / shift+PgDn | Scroll an exited session's output a page at a time |
 | d | Preview the session's changes as a diff against the default branch (see [Diff preview](#diff-preview)) |
@@ -485,7 +487,7 @@ Sessions can be filed under groups, for example by project, with headers you can
 - **"(no group)"** holds the sessions that aren't in a group. It's always last, and only shows when it has sessions and at least one group exists.
 - **Empty groups** stay, showing `(0)`, so you can move sessions back in. `x` on the header deletes one.
 - **New sessions:** `shift+enter` and `W` put the new session in the same group as the one it came from. `n` picks the selected session's group (or the selected header's); the dialog has a Group row to change it (`←/→`).
-- **Filters:** `/` and `@` search every group. Matching sessions in folded groups show while the filter is on, and headers with no matches hide.
+- **Filters:** `/`, `@` and `s` search every group. Matching sessions in folded groups show while the filter is on, and headers with no matches hide.
 - **Dragging with the mouse:**
   - Drop a session between two sessions of a group, or on the top line of its first session, to put it there. The drop line is indented under the group it lands in.
   - Drop it on a group's header to add it at the end of that group. That works for a folded group too: the header lights up while you're over it, and the group stays folded (its count goes up). Hold it over a folded header for about a second to open the group and drop at an exact place; it folds again if you move on without dropping.

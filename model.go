@@ -60,9 +60,11 @@ type model struct {
 	rename      *textinput.Model
 	flash       string
 
-	// Filtering the list ("/" and "@").
+	// Filtering the list ("/", "@" and "s").
 	filter        string
 	attentionOnly bool
+	stateFilter   stateFilter
+	stateHide     *Session         // selected when s was pressed, and hidden by it (visible)
 	filterInput   *textinput.Model // open while typing a filter
 
 	// A press on a session that may become a drag (drag.go).
@@ -626,6 +628,8 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "@":
 		m.attentionOnly = !m.attentionOnly
 		m.keepSelectionVisible()
+	case "s":
+		m.cycleStateFilter()
 	case "esc":
 		if m.filtering() {
 			m.clearFilter()
