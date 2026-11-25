@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -380,6 +381,7 @@ editor = 'code "{dir}"'
 	both = append(append(both, blank), dragShot...)
 	both = append(append(both, blank), stateShot...)
 	both = append(append(both, blank), replyScene(t, exe, path)...)
+	both = append(append(both, blank), padScene(t, exe, path)...)
 
 	f, err := os.Create(out)
 	if err != nil {
@@ -467,6 +469,66 @@ event Stop
 	shot := screenFromEmulator(h.emu)
 	t.Logf("long reply in the header:\n%s", h.screen())
 	h.send("q")
+	h.send("y")
+	h.waitExit(10 * time.Second)
+	return shot
+}
+
+// padScene is a session with its scratch pad open below the terminal
+// (#73): notes with a line selected by dragging the mouse, ready to send
+// with ctrl+enter. docs, below it, has notes too, so both show ✎.
+func padScene(t *testing.T, exe, path string) termshot.Screen {
+	t.Helper()
+	src := filepath.Join(t.TempDir(), "src")
+	api, docs := filepath.Join(src, "api"), filepath.Join(src, "docs")
+	for _, d := range []string{api, docs} {
+		_ = os.MkdirAll(d, 0o755)
+	}
+	_ = os.WriteFile(filepath.Join(api, "hookapp.txt"), []byte(`event SessionStart
+reply 84200 The redirect loop is fixed; the login tests pass.
+statusline 2.37 200000 84200
+say \e[1m> fix the login redirect loop\e[0m
+say
+say \e[32m●\e[0m Update src/auth/login.ts (+6 -3)
+say \e[32m●\e[0m The redirect loop is fixed; the login tests pass.
+event UserPromptSubmit
+event Stop
+`), 0o644)
+	home := t.TempDir()
+	data, _ := json.Marshal([]map[string]any{
+		{"id": "shot-pad", "name": "api", "agent": "claude", "dir": api, "created": time.Now(),
+			"claude_session_id": "66666666-6666-6666-6666-666666666666", "started": true, "pad_open": true},
+		{"id": "shot-pad-docs", "name": "docs", "agent": "pwsh", "dir": docs, "created": time.Now(), "started": true},
+	})
+	if err := os.WriteFile(filepath.Join(home, "sessions.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	notes := filepath.Join(home, "notes")
+	_ = os.MkdirAll(notes, 0o700)
+	_ = os.WriteFile(filepath.Join(notes, "shot-pad.md"), []byte(`Next for api:
+- ask about retries on the upload client
+- then run the tests with -race
+
+Check that an expired session still redirects to /login once.
+`), 0o600)
+	_ = os.WriteFile(filepath.Join(notes, "shot-pad-docs.md"), []byte("update the install steps\n"), 0o600)
+	cfg := filepath.Join(home, "config.toml")
+	_ = os.WriteFile(cfg, []byte("[[paths.alias]]\nprefix = '"+src+"'\nname = 'src'\n"), 0o644)
+	h := startHarnessSize(t, exe, append(envWith(home, path), "DECKHAND_CONFIG="+cfg), src, 120, 22)
+	h.waitFor("Next for api", 10*time.Second)
+	h.send("1")
+	h.waitFor("The redirect loop is fixed", 15*time.Second)
+	h.send(keyF6) // to the pad
+	h.waitFor("ctrl+enter send", 5*time.Second)
+	// Drag across the last line of notes to select it. SGR columns and rows
+	// are 1-based: the list is 30 wide, then its border and the pad's
+	// margin; the pad's title is on row 15, so its fifth line is row 20.
+	const x0 = 30 + 1 + 1 + 1
+	h.send(fmt.Sprintf("\x1b[<0;%d;20M\x1b[<32;%d;20M\x1b[<0;%d;20m", x0, x0+70, x0+70))
+	time.Sleep(500 * time.Millisecond)
+	shot := screenFromEmulator(h.emu)
+	t.Logf("scratch pad:\n%s", h.screen())
+	h.send(keyF5 + "q")
 	h.send("y")
 	h.waitExit(10 * time.Second)
 	return shot

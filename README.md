@@ -15,6 +15,7 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 - Claude sessions resume after a restart, and every session's last output is kept ([Resuming](#resuming), [Output after a restart](#output-after-a-restart)).
 - Open more windows while one is running, like Notepad: the first keeps the saved list, the others are temporary (`deckhand --temp`) ([More than one window](#more-than-one-window)).
 - Fork a Claude conversation to try another approach (`f`) ([Forking](#forking)).
+- A scratch pad for each session, below its terminal: notes and prompts you draft while the agent works, saved to disk, sent into the session with ctrl+enter (`e`, `F6`) ([Scratch pad](#scratch-pad)).
 - Hide the list to give the session the full width (`F3`), and go back to it from a session with `F5` ([Hiding the session list](#hiding-the-session-list)).
 - Open a session's folder in your editor, Explorer or a new terminal tab (`o`, `O`, `t`) ([Opening a session's folder](#opening-a-sessions-folder)).
 
@@ -49,7 +50,7 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 - [Keys](#keys) · [The config screen](#the-config-screen) · [Custom agents](#custom-agents-your-own-scripts-and-profile-functions)
 - [Diff preview](#diff-preview) · [Worktree sessions](#worktree-sessions) · [Pull requests](#pull-requests) · [Merging](#merging)
 - [Groups](#groups) · [Colors](#colors) · [Hiding the session list](#hiding-the-session-list) · [Opening a session's folder](#opening-a-sessions-folder) · [Path aliases](#path-aliases)
-- [Resuming](#resuming) · [More than one window](#more-than-one-window) · [Forking](#forking) · [Output after a restart](#output-after-a-restart)
+- [Resuming](#resuming) · [More than one window](#more-than-one-window) · [Forking](#forking) · [Scratch pad](#scratch-pad) · [Output after a restart](#output-after-a-restart)
 - [Build](#build) · [Debugging](#debugging)
 
 ## Getting started
@@ -264,13 +265,14 @@ Press `?` in the session list, or `F1` anywhere (also inside a session, the new-
 | n | New session (see below) |
 | W | Start a new worktree session with the same agent and repo, right below the selected one (see [Worktree sessions](#worktree-sessions)) |
 | f | Fork a Claude session: a new session right below it that starts from a copy of its conversation, named `<name> (fork)` (see [Forking](#forking)) |
+| e | Open the session's scratch pad, below its terminal, and type in it. It doesn't start the session (see [Scratch pad](#scratch-pad)) |
 | o | Open the session's folder (its worktree, if it has one) in your editor. With more than one folder, pick one or All folders (see [Opening a session's folder](#opening-a-sessions-folder)) |
 | O | Open the session's folder in Explorer |
 | t | Open a new Windows Terminal tab in the session's folder (its worktree, if it has one). With more than one folder, pick one or All folders (a tab each) |
 | r | Rename the session. On a group header: rename the group |
 | c | Config screen: agents, notifications, the session list, history and open commands (see [The config screen](#the-config-screen)) |
 | K | End the session's process (it stays in the list) |
-| x (or delete) | End and remove the session, after asking (`Y/n`: `enter` answers yes, `n` or `esc` cancels). For a worktree session, its worktree and branch are removed too if the work is merged; otherwise you choose (see [Worktree sessions](#worktree-sessions)). On a group header: delete the group, after asking; its sessions move to "(no group)" and none are removed |
+| x (or delete) | End and remove the session, after asking (`Y/n`: `enter` answers yes, `n` or `esc` cancels). When its scratch pad has notes, they're kept in the archive, or `D` removes the session and deletes them (see [Scratch pad](#scratch-pad)). For a worktree session, its worktree and branch are removed too if the work is merged; otherwise you choose (see [Worktree sessions](#worktree-sessions)). On a group header: delete the group, after asking; its sessions move to "(no group)" and none are removed |
 | F3 | Hide or show the session list (see [Hiding the session list](#hiding-the-session-list)) |
 | F5 (or ctrl+q, ctrl+]) | Show the session list if it's hidden |
 | ? or F1 | Show the keys |
@@ -280,8 +282,9 @@ Press `?` in the session list, or `F1` anywhere (also inside a session, the new-
 
 | Key | Action |
 |---|---|
-| F5 (or ctrl+q, ctrl+]) | Back to the session list, showing it again if it's hidden. Every other key except F3, F5 and F1 goes to the agent. |
+| F5 (or ctrl+q, ctrl+]) | Back to the session list, showing it again if it's hidden. Every other key except F3, F5, F6 and F1 goes to the agent. |
 | F3 | Hide or show the session list, so the session gets the full width |
+| F6 | Open the session's scratch pad, or move to it if it's open (see [Scratch pad](#scratch-pad)). `esc` right after leaving the pad closes it |
 | shift+PgUp / shift+PgDn | Scroll back through the output a page at a time |
 | F1 | Show the keys. deckhand keeps F1, so it doesn't reach the agent. `?` is typed text and goes to the agent. |
 
@@ -298,6 +301,7 @@ Modified keys that plain terminal input can't express, such as shift+enter (a ne
 - **Dragging a session in the list:** press on it and move the pointer to reorder it. A line shows where it will land: on the top of a session it goes above it, on the bottom line below. Releasing moves it there and saves the order, as shift+↑/↓ does (with a filter on, positions count only the sessions you can see). Holding the pointer on the list's header or its last row scrolls the list. `esc`, or releasing over the terminal, cancels. With groups, drag sessions into, out of and between groups, and drag a group's header to move the group (see [Groups](#groups)).
 - **Clicking a group's ▾/▸:** folds or unfolds it.
 - **Clicking in the color picker (`C`):** a color applies it, the hex box starts typing there, and a click outside closes the picker.
+- **In the scratch pad:** a click places the cursor, dragging selects, a double click selects a word and the wheel scrolls it. Mouse events over the pad don't reach the agent.
 - **Selecting text:** deckhand uses mouse reporting, so in Windows Terminal hold **shift** while dragging.
 
 ### New session dialog
@@ -619,6 +623,7 @@ You can run more than one deckhand at a time, like Notepad's windows:
 - In a temporary window the config screen (`c`) shows the config but can't save it, and groups are off (`a` says they're saved only in the main window). Sessions can be colored, but like the sessions the colors aren't saved. Recent folders and the other preferences in `prefs.json` are shared: each change is merged into the file, so neither window undoes the other's.
 - When the main window closes, temporary ones stay temporary. The next deckhand started becomes the main one and shows the saved sessions. A main window that crashed doesn't get in the way: Windows releases its lock (a named mutex per data folder; `deckhand.lock` on other systems) when the process ends.
 - Each data folder (`DECKHAND_HOME`) has its own main window.
+- A temporary window's [scratch pads](#scratch-pad) aren't saved either.
 
 `sessions.json` and `groups.json` keep fields this deckhand doesn't know, so an older build doesn't drop a newer one's data. `state.json` records the format of the saved files; a deckhand that finds a newer format than it knows runs as a temporary window ("sessions were saved by a newer deckhand") instead of overwriting them.
 
@@ -637,6 +642,41 @@ You can run more than one deckhand at a time, like Notepad's windows:
 - The original has to have started at least once, and it can be running or exited. While it's in the middle of a turn (working, or waiting for a permission answer), `f` says to wait for it to finish its turn.
 - Agents that aren't Claude can't fork; `f` says so.
 - A fork of a worktree session works in the same worktree, and shows its branch, but doesn't own it: `x` on the fork only removes the fork from the list, and the worktree stays with the original.
+
+## Scratch pad
+
+Each session has a scratch pad: a small text editor for notes about that session, in a pane below its terminal. Draft a prompt while the agent works, keep a list of what to ask next, then send it into the session.
+
+![The api session with its scratch pad open below its terminal: a few notes, with the last line selected, ready to send with ctrl+enter. api's row in the list shows ✎ because its pad has notes.](docs/img/pad.png)
+
+- `e` in the list opens the selected session's pad and focuses it (an exited session's too, without starting it). Inside a session, `F6` opens the pad, or moves to it when it's open, and `F6` in the pad goes back to the terminal. `esc` in the pad also goes back to the terminal (after dropping a selection, if there is one), and a second `esc` within a second and a half closes the pad. After that, `esc` goes to the agent as usual.
+- The pad takes about a third of the rows (`[pad] height`), and the agent's terminal is resized to the rows that are left. It gets them back when the pad closes. Whether the pad is open is saved for each session, so switching sessions shows each one's own pad, and it's open again after a restart. The pane with the keyboard has the highlighted border.
+- A session with notes shows ✎ on its first line in the list, before its age.
+
+| Key (in the pad) | Action |
+|---|---|
+| ctrl+enter (or alt+enter) | Send the selection, or the whole pad if nothing is selected, then press Enter. Focus stays in the pad, and the text stays there too |
+| ctrl+z / ctrl+y | Undo and redo. Typing is undone a word at a time |
+| ctrl+c, ctrl+x, ctrl+v | Copy and cut the selection, paste. `ctrl+a` selects everything |
+| arrows, home/end, PgUp/PgDn | Move. With ctrl: by word, or to the start or end of the pad. With shift: select |
+| ctrl+backspace, ctrl+delete | Delete a word |
+| ctrl+o | Open the pad's file in your editor (below) |
+| esc, F6 | Back to the terminal (or the list, for an exited session) |
+| F5 | Back to the list |
+
+- **Sending** pastes the text into the session and presses Enter. When the program has turned on bracketed paste (Claude has), the text goes in as one paste, so a prompt of several lines arrives as one message; otherwise it's typed as it is, and each line ends with Enter. It sends mid-turn too: Claude queues it, as it does what you type. An exited session isn't sent anything: the footer says `session has exited · ⏎ resume first`.
+- **ctrl+enter** needs a terminal that reports it: Windows Terminal and WezTerm do (see [Inside a session](#inside-a-session)). Elsewhere, use alt+enter.
+- **Your editor:** `ctrl+o` saves the pad and opens its file with the editor `o` uses (`[open] editor`, else VS Code, else Notepad), with the file's path in place of `{dir}`. When the file changes, deckhand reloads the pad; `ctrl+z` brings back what the pad had before.
+- **Storage:** the notes are a Markdown file per session, `%LOCALAPPDATA%\deckhand\notes\<session id>.md` (under `DECKHAND_HOME` when it's set); nothing is written to your repos. They're saved a second after you stop typing, when you leave the pad, when you switch sessions and when you quit. An empty pad has no file. Each save writes a temporary file and renames it, as `sessions.json` is saved.
+- **Removing a session** (`x`) keeps its notes in `notes\archive\<session id> <name>.md`; answer `D` instead of `y` to delete them. A fork (`f`) or a new session with shift+enter starts with an empty pad.
+
+```toml
+[pad]
+key    = "f6"   # opens the pad and moves between it and the terminal; not a [list] key or F1
+height = 0.33   # a share of the rows, or a number of lines such as 12
+```
+
+Gemini CLI uses F6, so set another `key` if you run it.
 
 ## Output after a restart
 

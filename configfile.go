@@ -21,7 +21,7 @@ const configHeader = `# deckhand config. Written by deckhand's config screen (pr
 `
 
 // reloadConfig reads the config file and applies it: agents, notifications,
-// [open], [list], [history], [worktree], [cost], [info], [header], [colors] and [[paths.alias]]. Settings that fail to load fall back to their defaults;
+// [open], [list], [pad], [history], [worktree], [cost], [info], [header], [colors] and [[paths.alias]]. Settings that fail to load fall back to their defaults;
 // the first error is returned.
 func reloadConfig() error {
 	agents, err := loadAgents()
@@ -32,6 +32,8 @@ func reloadConfig() error {
 	openSettings = openCfg
 	listCfg, listErr := loadListConfig()
 	listOpts = listCfg
+	padCfg, padErr := loadPadConfig() // after [list]: its key can't be one of [list]'s
+	padOpts = padCfg
 	histCfg, histErr := loadHistoryConfig()
 	setHistorySettings(histCfg)
 	wtCfg, wtErr := loadWorktreeConfig()
@@ -46,7 +48,7 @@ func reloadConfig() error {
 	palette = colorsCfg
 	aliases, pathsErr := loadPathsConfig()
 	pathAliases = aliases
-	for _, e := range []error{err, notifyErr, openErr, listErr, histErr, wtErr, costErr, infoErr, headerErr, colorsErr, pathsErr} {
+	for _, e := range []error{err, notifyErr, openErr, listErr, padErr, histErr, wtErr, costErr, infoErr, headerErr, colorsErr, pathsErr} {
 		if e != nil {
 			return e
 		}

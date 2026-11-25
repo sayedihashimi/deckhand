@@ -96,6 +96,23 @@ func handledKeys(t *testing.T) map[string][]string {
 	for name := range configFuncs {
 		t.Errorf("configscreen.go has no %s; update handledKeys", name)
 	}
+	// The scratch pad: padKey, and its editor's keys.
+	padFuncs := map[string]bool{"padKey": true, "editKey": true, "changeKey": true}
+	for _, file := range []string{"pad.go", "padeditor.go"} {
+		pf, err := parser.ParseFile(fset, file, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range pf.Decls {
+			if fn, ok := d.(*ast.FuncDecl); ok && padFuncs[fn.Name.Name] {
+				delete(padFuncs, fn.Name.Name)
+				got[helpPad] = append(got[helpPad], collect(fn.Body)...)
+			}
+		}
+	}
+	for name := range padFuncs {
+		t.Errorf("pad.go and padeditor.go have no %s; update handledKeys", name)
+	}
 	for _, d := range f.Decls {
 		fn, ok := d.(*ast.FuncDecl)
 		if !ok {
@@ -146,7 +163,7 @@ func handledKeys(t *testing.T) map[string][]string {
 // group. If this fails after adding a key, add it to helpGroups in help.go.
 func TestHelpCoversHandledKeys(t *testing.T) {
 	got := handledKeys(t)
-	for _, title := range []string{helpList, helpTerminal, helpDialog, helpDiff, helpConfig} {
+	for _, title := range []string{helpList, helpTerminal, helpDialog, helpDiff, helpConfig, helpPad} {
 		if len(got[title]) < 3 {
 			t.Fatalf("%s: found only %q in model.go; has handleKey changed shape?", title, got[title])
 		}

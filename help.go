@@ -44,6 +44,7 @@ type helpGroup struct {
 const (
 	helpList     = "Session list"
 	helpTerminal = "Inside a session"
+	helpPad      = "Scratch pad (e, F6)"
 	helpDiff     = "Diff preview (d)"
 	helpMouse    = "Mouse"
 	helpDialog   = "New-session dialog"
@@ -68,7 +69,7 @@ var helpGroups = []helpGroup{
 		{keys: "enter", desc: "open (starts or resumes it)", match: []string{"enter", "right", "l"}, footer: "enter open", short: "⏎ open"},
 		{keys: "shift+enter", desc: "new session, same folder", match: []string{"shift+enter", "alt+enter"}, footer: "⇧⏎ new here", short: "⇧⏎ here"},
 		{keys: "n W", desc: "new session; W: new worktree", match: []string{"n", "W"}, footer: "n new"},
-		{keys: "f", desc: "fork: copy the conversation", match: []string{"f"}},
+		{keys: "f e", desc: "fork; e: notes (scratch pad)", match: []string{"f", "e"}},
 		{keys: "1–9", desc: "jump into session N", match: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9"}},
 		{keys: "tab", desc: "next one that needs you", match: []string{"tab"}, footer: "tab next"},
 		{keys: "d p m", desc: "diff; p: push, PR; m: merge", match: []string{"d", "p", "m"}, footer: "d diff", short: "-"},
@@ -91,8 +92,11 @@ var helpGroups = []helpGroup{
 	}},
 	{helpTerminal, []helpEntry{
 		{keys: "F5 ctrl+q ctrl+]", desc: "back to the list", match: []string{defaultBackKey, "ctrl+q", "ctrl+]"}, footer: "F5 list"},
-		{keys: "shift+PgUp/Dn", desc: "scroll back a page", match: []string{"shift+pgup", "shift+pgdown"}},
+		{keys: "shift+PgUp/Dn", desc: "scroll back", match: []string{"shift+pgup", "shift+pgdown"}},
 		{keys: "F3", desc: "hide / show the list", match: []string{defaultToggleKey}, footer: "F3 hide list"},
+		// [pad] key; withListKeys shows the configured one. esc closes the
+		// pad right after leaving it (padTerminalKey).
+		{keys: "F6", desc: "the scratch pad", match: []string{defaultPadKey, "esc"}, footer: "F6 notes"},
 		{keys: "F1", desc: "this help", match: []string{"f1"}, footer: "F1 help"},
 	}},
 	{helpDiff, []helpEntry{
@@ -134,6 +138,19 @@ var helpGroups = []helpGroup{
 		{keys: "↑↓ enter", desc: "picker: choose, pick", match: []string{"up", "down", "tab", "shift+tab", "enter"}, footer: "↑↓ choose · enter pick", when: hintPicker},
 		{keys: "esc", desc: "picker: back to the form", match: []string{"esc"}, footer: "esc back", when: hintPicker},
 		{keys: "k x esc", desc: "test: keep, discard, not now", match: []string{"k", "x", "esc"}, footer: "k keep it as a session · x discard it · esc not now", when: hintTest},
+	}},
+	// The scratch pad: padKey and the editor's editKey and changeKey
+	// (padeditor.go). Last, so the groups before it still show on the
+	// first page of the help opened from the list.
+	{helpPad, []helpEntry{
+		{keys: "ctrl+enter", desc: "send the selection or all (alt+⏎)", match: []string{"ctrl+enter", "alt+enter", "ctrl+j"}, footer: "ctrl+enter send", short: "^⏎ send"},
+		{keys: "ctrl+z ctrl+y", desc: "undo / redo", match: []string{"ctrl+z", "ctrl+y", "ctrl+shift+z"}, footer: "ctrl+z undo", short: "-"},
+		{keys: "ctrl+c x v a", desc: "copy, cut, paste, select all", match: []string{"ctrl+c", "ctrl+insert", "ctrl+x", "shift+delete", "ctrl+v", "shift+insert", "ctrl+a"}},
+		{keys: "arrows ctrl+⌫", desc: "move, delete; shift or drag selects", match: []string{
+			"left", "right", "up", "down", "home", "end", "pgup", "pgdown", "ctrl+left", "ctrl+right", "ctrl+home", "ctrl+end",
+			"enter", "shift+enter", "tab", "backspace", "shift+backspace", "ctrl+h", "delete", "ctrl+backspace", "alt+backspace", "ctrl+w", "ctrl+delete", "alt+delete"}},
+		{keys: "ctrl+o", desc: "open in your editor; reloads", match: []string{"ctrl+o"}, footer: "ctrl+o editor", short: "-"},
+		{keys: "esc F6 F5", desc: "terminal (esc esc closes); list", match: []string{"esc", defaultPadKey, defaultBackKey, "ctrl+q", "ctrl+]"}, footer: "esc terminal · F5 list", short: "esc · F5"},
 	}},
 }
 
@@ -188,6 +205,7 @@ func withListKeys(s string) string {
 	return strings.NewReplacer(
 		keyLabel(defaultToggleKey), keyLabel(listOpts.toggleKey),
 		keyLabel(defaultBackKey), keyLabel(listOpts.back()),
+		keyLabel(defaultPadKey), keyLabel(padOpts.key),
 	).Replace(s)
 }
 
@@ -210,6 +228,8 @@ func (m *model) helpContextFor() string {
 		return helpDialog
 	case focusTerminal:
 		return helpTerminal
+	case focusPad:
+		return helpPad
 	}
 	return helpList
 }
