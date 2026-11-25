@@ -86,7 +86,7 @@ func (m *model) renderConfig(w, h int) []string {
 		if c.statusErr {
 			st = stErrText
 		}
-		foot = append(foot, fit(st.Render("  "+c.status), w))
+		foot = append(foot, fit(st.Render("  "+displayPathsIn(c.status)), w))
 	}
 	if m.temp {
 		foot = append(foot, fit(stWaitText.Render("  "+tempConfigNote), w))
@@ -186,6 +186,12 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 	}
 	add(" "+cfgLabel(cur.kind == rowListStatus, "Status", lw)+chips([]string{"on", "off"}, status, cur.kind == rowListStatus)+
 		stMuted.Render(`  "n need you" in the header while the list is hidden`), true)
+	title := 1
+	if c.listTitle {
+		title = 0
+	}
+	add(" "+cfgLabel(cur.kind == rowListTitle, "Title", lw)+chips([]string{"on", "off"}, title, cur.kind == rowListTitle)+
+		stMuted.Render("  Claude sessions take their name from /rename and Claude's title"), true)
 
 	costSel := map[string]int{costDollars: 0, costTokens: 1, costOff: 2}[c.costShow]
 	add(" "+cfgLabel(cur.kind == rowListCost, "Cost", lw)+chips([]string{"dollars", "tokens", "off"}, costSel, cur.kind == rowListCost)+
@@ -252,6 +258,19 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 	add(" "+cfgLabel(cur.kind == rowTryOpen, "Try it", lw)+chips([]string{"editor", "terminal"}, tryHi, cur.kind == rowTryOpen)+stMuted.Render("  "+tryOn), true)
 
 	add("", false)
+	add(" "+stSection.Render("Path aliases")+stMuted.Render("  shown in place of a folder's path; ~ is the home folder. Edit [[paths.alias]] in config.toml"), false)
+	if len(c.aliases) == 0 {
+		add(stMuted.Render("   None."), false)
+	} else {
+		// Only the names: the prefixes are what the aliases hide.
+		var names []string
+		for _, a := range c.aliases {
+			names = append(names, a.name)
+		}
+		add("   "+strings.Join(names, stMuted.Render(" · ")), false)
+	}
+
+	add("", false)
 	add(" "+cfgLabel(cur.kind == rowSave, "", lw)+button("Save", cur.kind == rowSave)+stMuted.Render("  (ctrl+s)"), true)
 
 	switch cur.kind {
@@ -269,6 +288,8 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 		hint = `back to the list from a session (ctrl+q and ctrl+] always work too), e.g. f5 or f10; empty: ` + keyLabel(defaultBackKey)
 	case rowListStatus, rowHistorySave:
 		hint = "←/→ change"
+	case rowListTitle:
+		hint = "←/→ change · off: a session keeps its folder's name until you rename it with r"
 	case rowListCost:
 		hint = "←/→ change · dollars at API prices (notional on a Pro or Max plan), tokens, or off"
 	case rowListContext:
@@ -294,22 +315,22 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 func agentSummary(a agentConfig) string {
 	var parts []string
 	if a.Pwsh != "" {
-		parts = append(parts, stMuted.Render("PowerShell ")+a.Pwsh)
+		parts = append(parts, stMuted.Render("PowerShell ")+displayPathsIn(a.Pwsh))
 	} else {
 		cmd := a.Command
 		if len(a.Args) > 0 {
 			cmd += " " + joinArgs(a.Args)
 		}
-		parts = append(parts, stMuted.Render("program ")+cmd)
+		parts = append(parts, stMuted.Render("program ")+displayPathsIn(cmd))
 	}
 	if a.Type == "claude" {
 		parts = append(parts, lipgloss.NewStyle().Foreground(colAccent).Render("claude"))
 	}
 	if a.Resume != "" {
-		parts = append(parts, stMuted.Render("resume ")+a.Resume)
+		parts = append(parts, stMuted.Render("resume ")+displayPathsIn(a.Resume))
 	}
 	if _, err := a.toAgent(); err != nil {
-		parts = append(parts, stErrText.Render("✗ "+err.Error()))
+		parts = append(parts, stErrText.Render("✗ "+displayPathsIn(err.Error())))
 	}
 	return strings.Join(parts, stMuted.Render(" · "))
 }

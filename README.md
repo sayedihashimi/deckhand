@@ -22,6 +22,7 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 
 - Status icons for working, needs you and finished, from Claude's hooks ([Status icons](#status-icons)).
 - Under each session, Claude's latest reply or the tool it wants to run, then its branch, pull request, model, context window and cost ([Session details](#session-details), [Cost](#cost)).
+- Claude sessions named after Claude's title for the conversation, its automatic title or `/rename` ([Session names](#session-names)).
 - Desktop notifications when a session needs you or finishes ([Notifications](#notifications)).
 - Filter the list (`/`), show only the sessions that need you (`@`), and jump to the next one (`tab`) ([Finding sessions](#finding-sessions)).
 - Groups with headers you can fold, and reordering with shift+↑/↓ or by dragging with the mouse ([Groups](#groups), [Session list keys](#session-list)).
@@ -42,10 +43,10 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 ## Contents
 
 - [Getting started](#getting-started) · [A typical workflow](#a-typical-workflow)
-- [Status icons](#status-icons) · [Session details](#session-details) · [Cost](#cost) · [Notifications](#notifications) · [Finding sessions](#finding-sessions)
+- [Status icons](#status-icons) · [Session details](#session-details) · [Session names](#session-names) · [Cost](#cost) · [Notifications](#notifications) · [Finding sessions](#finding-sessions)
 - [Keys](#keys) · [The config screen](#the-config-screen) · [Custom agents](#custom-agents-your-own-scripts-and-profile-functions)
 - [Diff preview](#diff-preview) · [Worktree sessions](#worktree-sessions) · [Pull requests](#pull-requests) · [Merging](#merging)
-- [Groups](#groups) · [Hiding the session list](#hiding-the-session-list) · [Opening a session's folder](#opening-a-sessions-folder)
+- [Groups](#groups) · [Hiding the session list](#hiding-the-session-list) · [Opening a session's folder](#opening-a-sessions-folder) · [Path aliases](#path-aliases)
 - [Resuming](#resuming) · [More than one window](#more-than-one-window) · [Forking](#forking) · [Output after a restart](#output-after-a-restart)
 - [Build](#build) · [Debugging](#debugging)
 
@@ -132,7 +133,12 @@ deckhand needs no setup. It works with your existing Claude Code settings and lo
 
 The second line under each session is the agent and what it's doing. For Claude it also shows:
 
-- **Finished:** the start of Claude's reply, in place of "your turn" (the ✓ already says it's your turn). It's the first line of the reply with Markdown removed, cut to fit, and bold until you look at the session. It shows once the turn has ended, never while Claude is still working, so an old reply isn't mistaken for a new one. The session header shows as much of the reply as fits, before the folder.
+- **Finished:** the start of Claude's reply, in place of "your turn" (the ✓ already says it's your turn). It's the first line of the reply with Markdown removed, cut to fit, and bold until you look at the session. It shows once the turn has ended, never while Claude is still working, so an old reply isn't mistaken for a new one. The session header shows the reply too, all its lines joined, before the folder. It takes at most 40 % of the header's width, cut with `…`, so a long reply can't push the folder, worktree and title out of view:
+
+  ```toml
+  [header]
+  reply_width = 40   # percent of the header's width; 0 hides the reply in the header
+  ```
 - **Needs you:** what the tool wants to do, such as `Bash: npm test`.
 
 The third line under each session shows the git branch, then for Claude the model, how full the context window is and what the session has cost:
@@ -161,6 +167,18 @@ The third line under each session shows the git branch, then for Claude the mode
 - **↻ compacted:** after Claude compacts the conversation (`/compact`, or automatically when the context is full), the second line starts with `↻ compacted` until the next reply. deckhand sees it in the transcript, or as a sharp drop in context between two replies (over half, and at least 20k tokens).
 - **Cost:** what the session has cost so far, over all its conversations: `$0.04`, `$1.84`, `$12`. The list header shows what all sessions spent today (since local midnight): `$12.40 today`. When the header is short of room, it drops "today" (`$12.40`), then "n need you" takes its place. The session header shows the cost too. It's kept in `sessions.json`, so an exited session still shows it after a restart. See [Cost](#cost).
 - Details refresh every 3 s for running and selected sessions and every 30 s for the rest, in the background. The session header shows them in full.
+
+## Session names
+
+A session is named after its folder (a worktree session after its branch), and `r` renames it. A Claude session (a custom `type = "claude"` agent too) takes its name from Claude's own title for the conversation, which Claude writes to the transcript:
+
+- Until it's renamed, the name is Claude's automatic title, once Claude has made one. Before that, it's the folder's name.
+- `/rename` in Claude renames the session, and so does `r` in deckhand. The latest of the two wins: a `/rename` replaces an earlier `r`, and a later `r` replaces it again. deckhand doesn't send its name to Claude.
+- A name Claude was started with (for example by a wrapper that passes `--name`) isn't a rename, nor is Claude writing it again on resume, so such a session still gets the automatic title. Claude's title counts as a rename only when it differs from the one before it.
+- `sessions.json` keeps the name and where it came from (`name_source`: `folder`, `ai`, `claude` or `user`), so after a restart the name stays and an older title doesn't come back.
+- A fork keeps its `<name> (fork)` name until you rename it, with `/rename` in the fork or with `r`.
+
+To keep the names deckhand gives, turn **Title** off on the [config screen](#the-config-screen), or set `follow_claude_title = false` under `[list]`. Other agents keep their folder's name.
 
 ## Cost
 
@@ -303,8 +321,9 @@ Press `c` in the session list to set deckhand up without editing `config.toml`. 
 - **Testing an agent:** `t` on an agent, or the form's `[Test]` button, starts the agent as it's edited (saved or not) in a temporary session, `test · <name>`, in the selected session's folder (or the current folder when none is selected). The session appears in the list and is selected, and the config screen stays open with a status line at the top: `starting…` then `running` for a program or shell. For a Claude agent it shows `waiting for Claude's SessionStart hook…`, then `✓ hooks work (SessionStart received)`. If no hook arrives within about 30 s it shows `✗ no hook events yet`, with a hint: a PowerShell agent must call `claude`, not `claude.exe`, so the shim applies, and a program agent must pass deckhand's arguments on. If the agent exits, it shows the exit code and the last lines of output. A test is a real start (for Claude, a real, empty conversation), but nothing is sent to it. When you're done, `ctrl+t` (or `t` on an agent) asks whether to keep it as a normal session, named after its folder (`k`), or discard it (`x`). `esc` leaves the test running. Leaving the config screen during a test asks the same question. A Claude test isn't ended while Claude is still starting: a discard waits until Claude is ready, or until the 30 s timeout, and shows "stopping when Claude is ready…" until then.
 - **Pick from your PowerShell profile:** for a PowerShell agent, "Pick from your PowerShell profile…" (or `ctrl+p`) lists the functions and aliases your profile defines, leaving out PowerShell's own. Type to filter, `enter` to pick. If the function has a `-Resume` parameter, deckhand assumes it starts Claude and suggests `<name> -Resume {id}` as the resume command. Listing them runs PowerShell once with your profile, in the background (at most 10 s).
 - **Notifications:** on or off, when (only while deckhand isn't focused, or always), and a button that sends a test notification.
-- **Session list:** the key that hides and shows the list (empty means `F3`), the key that goes back to the list from a session (empty means `F5`), whether the status line shows while it's hidden, whether cost shows as dollars, tokens or not at all, and whether context shows as a meter, a percentage or tokens. See [Hiding the session list](#hiding-the-session-list) and [Cost](#cost).
+- **Session list:** the key that hides and shows the list (empty means `F3`), the key that goes back to the list from a session (empty means `F5`), whether the status line shows while it's hidden, whether Claude sessions take Claude's title as their name (**Title**, see [Session names](#session-names)), whether cost shows as dollars, tokens or not at all, and whether context shows as a meter, a percentage or tokens. See [Hiding the session list](#hiding-the-session-list) and [Cost](#cost).
 - **History:** whether each session's output is saved for after a restart, and how many lines are kept (empty means 5000). See [Output after a restart](#output-after-a-restart).
+- **Path aliases:** the names of the `[[paths.alias]]` entries, which are edited in the file. See [Path aliases](#path-aliases).
 - **Open:** the editor and terminal commands, with presets (VS Code, Rider, IntelliJ IDEA, VS Code Insiders; Windows Terminal in a new tab or a new window). "Try it" runs the command as typed on the selected session's folder.
 
 Keys: `↑/↓` or `tab`/`shift+tab` move, `←/→` (or `space`, `h`/`l`) change a choice, `enter` confirms (on an agent it edits it, like `e`), `a` adds an agent, `d` (or `delete`) deletes it, `shift+↑/↓` (or `K`/`J`) moves it, `t` tests it (then `ctrl+t` asks: `k` keeps the test session, `x` discards it, `esc` decides later), `ctrl+s` saves, and `esc` leaves (asking first if there are unsaved changes). In the agent form, `↑/↓` or `tab` move between fields, `enter` is done (on `[Test]` it starts a test), `esc` cancels and `ctrl+p` picks from your profile; in the profile picker, type to filter, `↑/↓` choose, `enter` picks and `esc` goes back to the form. `F1` shows all of these, with the config screen's keys first. The title says "unsaved changes" until you save.
@@ -496,6 +515,7 @@ Change the keys, or turn off the status line, on the [config screen](#the-config
 toggle_key  = "f3"     # the default; or "f2", 'ctrl+\' (single quotes keep the \), ...
 back_key    = "f5"     # the default; or "f10", ...
 status_line = true     # false: no "n need you" in the header while the list is hidden
+follow_claude_title = true  # false: Claude's title doesn't rename sessions (see Session names)
 ```
 
 Neither key can be a plain character, or a key deckhand or the agents need (`enter`, `esc`, `tab`, the arrows, `ctrl+q`, `ctrl+]`, `ctrl+c`, `F1`), and the two can't be the same key.
@@ -523,6 +543,23 @@ terminal = 'wt.exe -w 0 nt -d "{dir}"'
 - The program runs in the background without a console window, and deckhand doesn't wait for it. If it can't start, the footer shows "Couldn't open: ...".
 - A `.cmd` or `.bat` file (such as VS Code's `code.cmd`) runs through `cmd.exe` with every argument quoted. A folder with `%` in its name can't be passed to one safely, so deckhand refuses and shows an error.
 
+## Path aliases
+
+deckhand shows the home folder as `~` everywhere it shows a path: the session list, the session header, the new-session dialog and its suggestions, the config screen, the diff preview, worktree, PR and merge messages, help and notifications. For demos and screen sharing, aliases can hide other folders behind a short name too:
+
+```toml
+[[paths.alias]]
+prefix = 'C:\src\notes'     # ~ works here too: '~\src\notes'
+name   = "notes"
+```
+
+With it, `C:\src\notes\features\x` shows as `notes\features\x`.
+
+- Matching ignores case and works only at folder boundaries, so `C:\src\notes2` isn't matched. The longest matching prefix wins, and aliases come before `~`. There are none by default.
+- It's display only: `sessions.json`, the commands deckhand runs and what the agents see keep the real paths. Paths an agent prints in its own terminal aren't changed.
+- The new-session dialog takes real paths, and also `~\…` and an alias followed by `\` (`notes\features`), so the folders it fills in show the same way.
+- The config screen lists the aliases' names (not their prefixes). They're edited in `config.toml`.
+
 ## Resuming
 
 The session list is saved in `%LOCALAPPDATA%\deckhand\sessions.json`. Each Claude session is started with its own `--session-id`, so after you quit and restart deckhand, pressing enter on a Claude session runs `claude --resume <id>`.
@@ -549,7 +586,7 @@ You can run more than one deckhand at a time, like Notepad's windows:
 
 ![docs (fork), right below docs and selected, with docs's conversation on the right. Its second line in the list shows ⑂ docs until it gets a prompt.](docs/img/fork.png)
 
-- The fork is selected and starts at once. It's named `<name> (fork)`, or `(fork 2)` and so on if that name is taken; `r` renames it. Until you send it a prompt, its second line in the list shows `⑂ <original name>`.
+- The fork is selected and starts at once. It's named `<name> (fork)`, or `(fork 2)` and so on if that name is taken; `r` or `/rename` in the fork renames it (Claude's automatic title doesn't). Until you send it a prompt, its second line in the list shows `⑂ <original name>`.
 - Claude makes the copy: deckhand runs `claude --resume <original's id> --fork-session --session-id <new id>`, so the fork has its own Claude session ID and transcript, and the original's conversation isn't changed. `sessions.json` records which session it was forked from (`forked_from`). After a restart, enter resumes the fork's own conversation.
 - A custom `pwsh` agent with `type = "claude"` (such as `smc`) runs its `resume` command with the original's ID, and the [claude shim](#custom-agents-your-own-scripts-and-profile-functions) adds `--fork-session` and the new `--session-id`. Without a `resume` command it can't fork.
 - The original has to have started at least once, and it can be running or exited. While it's in the middle of a turn (working, or waiting for a permission answer), `f` says to wait for it to finish its turn.

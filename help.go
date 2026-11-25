@@ -466,7 +466,7 @@ func (m *model) helpTail(inner int) []string {
 	if m.temp {
 		out = append(out, "", stHelpGroup.Render(tempHelpNote))
 	}
-	return append(out, "", stMuted.Render("Config file: ")+configPath()+stMuted.Render("  (c edits it here; deckhand config creates it)"))
+	return append(out, "", stMuted.Render("Config file: ")+displayPath(configPath())+stMuted.Render("  (c edits it here; deckhand config creates it)"))
 }
 
 // overlayHelp draws the help panel over the main pane's lines (w×h),

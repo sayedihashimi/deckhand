@@ -263,6 +263,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.frame++
 		if m.frame%refreshEvery == 0 {
 			now := time.Now()
+			renamed := false
 			for i, s := range m.sessions {
 				s.Refresh(now)
 				if n := s.TakeNotice(); n != nil && !s.testing.Load() && shouldNotify(notifyMode, m.focusKnown, m.windowFocused, i == m.selectedIdx()) {
@@ -271,6 +272,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				s.MaybePoll(now, i == m.selectedIdx())
 				s.MaybePollPR(now)
 				s.MaybeSaveScreen(now)
+				if s.applyTitle() {
+					renamed = true
+				}
+			}
+			if renamed {
+				_ = m.saveSessions()
 			}
 			m.tickTest(now)
 			m.maybeSaveCosts(now)
@@ -449,7 +456,7 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if s := m.current(); s != nil {
 				if name := strings.TrimSpace(m.rename.Value()); name != "" {
 					s.mu.Lock()
-					s.Name = name
+					s.Name, s.NameSource = name, nameUser
 					s.mu.Unlock()
 					_ = m.saveSessions()
 				}
@@ -1315,7 +1322,7 @@ func (d *newDialog) setField(f int) tea.Cmd {
 	if swap {
 		if d.hi >= 0 && d.hi < len(d.sugg) {
 			in := d.input()
-			in.SetValue(d.sugg[d.hi].Path)
+			in.SetValue(displayInput(d.sugg[d.hi].Path))
 			in.CursorEnd()
 			if d.field == fieldRepo {
 				d.repoSet = true
@@ -1339,6 +1346,9 @@ func (d *newDialog) syncRepo() {
 	want := ""
 	if !d.folderIsGit() {
 		want = d.prefs.codeRepoFor(d.target())
+		if want != "" {
+			want = displayInput(want) // resolvePath reads it back
+		}
 	}
 	if d.repo.Value() != want {
 		d.repo.SetValue(want)
@@ -1424,7 +1434,7 @@ func (d *newDialog) update(msg tea.Msg) tea.Cmd {
 				if i < 0 {
 					i = 0
 				}
-				d.setInput(withSep(d.sugg[i].Path))
+				d.setInput(displayInput(withSep(d.sugg[i].Path)))
 			}
 			return nil
 		case "down":
@@ -1442,7 +1452,7 @@ func (d *newDialog) update(msg tea.Msg) tea.Cmd {
 		case "shift+tab":
 			return d.moveField(-1)
 		case "ctrl+w", "ctrl+backspace", "alt+backspace":
-			d.setInput(parentPath(d.input().Value(), d.cwd))
+			d.setInput(displayInput(parentPath(d.input().Value(), d.cwd)))
 			return nil
 		}
 	}

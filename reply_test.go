@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestReplyLines(t *testing.T) {
@@ -121,5 +123,79 @@ func TestSidebarShowsReply(t *testing.T) {
 	}
 	if strings.Contains(lines, "your turn") {
 		t.Errorf("sidebar still says \"your turn\":\n%s", lines)
+	}
+}
+
+// A long multi-line reply takes at most its share of the header, so the
+// folder after it still shows, at any width.
+func TestHeaderReplyCapped(t *testing.T) {
+	defer func(h headerSettings) { headerOpts = h }(headerOpts)
+	headerOpts = defaultHeaderSettings()
+	m := testModel("docs")
+	s := m.sessions[0]
+	s.Agent = "claude"
+	s.status, s.detail, s.since = StatusIdle, detailYourTurn, time.Now()
+	s.info.lastText = []string{
+		"I updated the README with the new install steps and the config keys.",
+		"Then I ran the unit tests and the e2e tests, and all of them passed.",
+		"Next, the screenshots need regenerating, and the changelog an entry.",
+	}
+	s.info.textAt = time.Now().Add(time.Second)
+	for _, w := range []int{60, 80, 120, 200} {
+		lines, _ := m.renderMain(w, 5)
+		header := ansi.Strip(lines[0])
+		if !strings.Contains(header, s.Dir) {
+			t.Errorf("width %d: the folder is cut off; header: %q", w, header)
+		}
+		r := strings.Index(header, "I updated")
+		if r < 0 {
+			t.Errorf("width %d: no reply; header: %q", w, header)
+			continue
+		}
+		reply := header[r:strings.Index(header, s.Dir)]
+		if got, max := ansi.StringWidth(strings.TrimSpace(reply)), w*defaultReplyWidth/100; got > max {
+			t.Errorf("width %d: reply takes %d cells, want at most %d: %q", w, got, max, reply)
+		}
+		if !strings.Contains(reply, "…") {
+			t.Errorf("width %d: reply isn't cut with …: %q", w, reply)
+		}
+	}
+
+	headerOpts.replyWidth = 0
+	lines, _ := m.renderMain(200, 5)
+	if strings.Contains(lines[0], "I updated") {
+		t.Errorf("reply_width = 0 still shows the reply: %q", ansi.Strip(lines[0]))
+	}
+}
+
+// A short reply takes only the room it needs.
+func TestHeaderReplyShort(t *testing.T) {
+	if got := headerReply([]string{"Done.", "All tests pass."}, 200, 40); got != "  · Done. All tests pass." {
+		t.Errorf("headerReply = %q", got)
+	}
+	if got := headerReply([]string{"Done."}, 4, 40); got != "" {
+		t.Errorf("no room: headerReply = %q, want empty", got)
+	}
+}
+
+func TestParseHeaderConfig(t *testing.T) {
+	for _, c := range []struct {
+		text    string
+		want    int
+		wantErr bool
+	}{
+		{"", defaultReplyWidth, false},
+		{"[header]\nreply_width = 25\n", 25, false},
+		{"[header]\nreply_width = 0\n", 0, false},
+		{"[header]\nreply_width = 101\n", defaultReplyWidth, true},
+		{"[header]\nreply_width = -1\n", defaultReplyWidth, true},
+	} {
+		got, err := parseHeaderConfig(c.text)
+		if (err != nil) != c.wantErr || got.replyWidth != c.want {
+			t.Errorf("%q: got %d, %v; want %d, error %v", c.text, got.replyWidth, err, c.want, c.wantErr)
+		}
+	}
+	if err := checkConfigText("[header]\nreply_width = 200\n"); err == nil {
+		t.Error("checkConfigText accepts reply_width = 200")
 	}
 }

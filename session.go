@@ -23,6 +23,7 @@ import (
 type Session struct {
 	ID              string    `json:"id"`
 	Name            string    `json:"name"`
+	NameSource      string    `json:"name_source,omitempty"` // where Name came from: folder, ai, claude or user (title.go)
 	Agent           string    `json:"agent"`
 	Dir             string    `json:"dir"`
 	Created         time.Time `json:"created"`
@@ -31,6 +32,8 @@ type Session struct {
 	TranscriptPath  string    `json:"transcript_path,omitempty"`
 	ForkedFrom      string    `json:"forked_from,omitempty"` // deckhand ID of the session it was forked from (f)
 	Group           string    `json:"group,omitempty"`       // its group in the list (groups.go); "" for none
+	// Title is the part of Claude's title already applied to Name (title.go).
+	Title *titleSeen `json:"claude_title,omitempty"`
 
 	// Git (see worktree.go). CodeRepo is the repo folder picked for the
 	// session: a code repo beside a start folder that isn't in git, or the
@@ -62,6 +65,7 @@ type Session struct {
 	trStamp  string // transcript size and mtime when last read
 
 	trCost      transcriptCost // the transcript's usage so far; only the poll goroutine uses it
+	trTitle     titleScan      // the transcript's titles so far; only the poll goroutine uses it
 	statusSeq   int64          // the last status line record applied
 	costChanged atomic.Bool    // Cost changed since sessions.json was saved
 
@@ -130,11 +134,12 @@ func (s *Session) agent() (Agent, bool) {
 func newSession(agent Agent, dir, name string) *Session {
 	id := uuid.NewString()
 	s := &Session{
-		ID:      id,
-		Name:    name,
-		Agent:   agent.Name,
-		Dir:     dir,
-		Created: time.Now(),
+		ID:         id,
+		Name:       name,
+		NameSource: nameFolder,
+		Agent:      agent.Name,
+		Dir:        dir,
+		Created:    time.Now(),
 	}
 	if agent.Claude {
 		s.ClaudeSessionID = id
@@ -521,6 +526,7 @@ func (s *Session) MaybePoll(now time.Time, active bool) {
 		}
 		s.mu.Unlock()
 		s.pollCost(now, tr, conv)
+		s.pollTitle(tr)
 		if s.dirty != nil {
 			s.dirty.Store(true)
 		}

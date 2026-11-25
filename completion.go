@@ -128,12 +128,14 @@ func endsWithSep(s string) bool { return strings.HasSuffix(s, `\`) || strings.Ha
 
 func isDriveRoot(p string) bool { return len(p) <= 3 && len(p) >= 2 && p[1] == ':' }
 
-// resolvePath expands ~ and makes the path absolute relative to cwd.
+// resolvePath expands ~ and a path alias ("notes\x", see displayInput) and
+// makes the path absolute relative to cwd.
 func resolvePath(s, cwd string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return cwd
 	}
+	s = expandAlias(s)
 	if strings.HasPrefix(s, "~") {
 		if home, err := os.UserHomeDir(); err == nil {
 			s = home + s[1:]

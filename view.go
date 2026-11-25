@@ -260,6 +260,11 @@ func exitedDetail(detail string, room int) string {
 // shows what the tool wants to do ("Bash: npm test"). isReply is true for
 // the reply, which is bold while unread.
 func sessionDetail(sn snapshot) (text string, isReply bool) {
+	text, isReply = rawSessionDetail(sn)
+	return displayPathsIn(text), isReply
+}
+
+func rawSessionDetail(sn snapshot) (text string, isReply bool) {
 	const perm = "permission: "
 	switch {
 	case len(sn.reply) > 0:
@@ -444,11 +449,10 @@ func headerContext(sn snapshot) string {
 	return contextStyle(pct).Render(fmt.Sprintf("%s/%s context · %.0f%%", tokens, shortTokens(sn.ctxWindow), pct))
 }
 
-// shortDir shows a folder in w cells, keeping its end ("…\src\api").
+// shortDir shows a folder in w cells, keeping its end ("…\src\api"), with
+// its alias or ~ (displayPath).
 func shortDir(dir string, w int) string {
-	if home, _ := os.UserHomeDir(); home != "" && len(dir) >= len(home) && strings.EqualFold(dir[:len(home)], home) {
-		dir = "~" + dir[len(home):]
-	}
+	dir = displayPath(dir)
 	r := []rune(dir)
 	if w > 1 && len(r) > w {
 		return "…" + string(r[len(r)-w+1:])
@@ -544,28 +548,30 @@ func (m *model) renderMain(w, h int) ([]string, *tea.Cursor) {
 	if sn.cost != "" {
 		header += stMuted.Render(" · " + sn.cost)
 	}
-	if len(sn.reply) > 0 {
-		// Before the folder: real paths are long and would push the reply
-		// out of view. Whatever doesn't fit is cut off.
-		header += stMuted.Render("  · " + strings.Join(sn.reply, " "))
+	if r := headerReply(sn.reply, w, headerOpts.replyWidth); r != "" {
+		// Before the folder, so a long path can't push it out of view, but
+		// capped to a share of the width ([header] reply_width) so a long
+		// reply can't push out the folder either.
+		header += stMuted.Render(r)
 	}
-	header += stMuted.Render("  " + s.Dir)
+	header += stMuted.Render("  " + displayPath(s.Dir))
 	if sn.worktree && sn.repoName != "" {
 		s.mu.Lock()
 		wt := s.Worktree
 		s.mu.Unlock()
-		header += stMuted.Render("  worktree " + wt)
+		header += stMuted.Render("  worktree " + displayPath(wt))
 	}
 	switch {
 	case label != "":
 	case !sn.running && sn.exitInfo != "":
-		text := "  " + sn.exitInfo + " · press enter to " + verb + ", shift+enter to start a new one"
+		text := "  " + displayPathsIn(sn.exitInfo) + " · press enter to " + verb + ", shift+enter to start a new one"
 		if hs.canToggle {
 			text += " · v conversation"
 		}
 		header += lipgloss.NewStyle().Foreground(colWorking).Render(text)
 	case sn.title != "":
-		header += stMuted.Render("  — " + sn.title)
+		// Shells often put the folder in the window title.
+		header += stMuted.Render("  — " + displayPathsIn(sn.title))
 	}
 	if off > 0 {
 		back := " · wheel down, shift+PgDn or any key to return"
@@ -743,22 +749,22 @@ func (m *model) renderDialog(w int) []string {
 	if fi, err := os.Stat(target); err != nil || !fi.IsDir() {
 		mark = lipgloss.NewStyle().Foreground(colError).Render("✗ not found")
 	}
-	out = append(out, "", fit(stMuted.Render("   Start in  ")+target+"  "+mark, w))
+	out = append(out, "", fit(stMuted.Render("   Start in  ")+displayPath(target)+"  "+mark, w))
 	if r := d.repoTarget(); d.showRepo() && r != "" {
 		rmark := lipgloss.NewStyle().Foreground(colIdle).Render("✓")
 		if !isDir(r) || !inGitRepo(r) {
 			rmark = lipgloss.NewStyle().Foreground(colError).Render("✗ not a git repo")
 		}
-		out = append(out, fit(stMuted.Render("   Code repo ")+r+"  "+rmark, w))
+		out = append(out, fit(stMuted.Render("   Code repo ")+displayPath(r)+"  "+rmark, w))
 	}
 	if d.useWorktree() {
-		out = append(out, fit(stMuted.Render("   Worktree  in ")+worktreeRoot(worktreeSettings, repoRootGuess(repo))+stMuted.Render(`\<new name>`), w))
+		out = append(out, fit(stMuted.Render("   Worktree  in ")+displayPath(worktreeRoot(worktreeSettings, repoRootGuess(repo)))+stMuted.Render(`\<new name>`), w))
 	}
 	out = append(out, "",
 		fit(stMuted.Render("   tab complete · ↑↓ choose · ctrl+w up a level · ctrl+t worktree · shift+tab back · enter start · esc cancel"), w),
 	)
 	if d.err != "" {
-		out = append(out, "", fit(lipgloss.NewStyle().Foreground(colError).Render("   "+d.err), w))
+		out = append(out, "", fit(lipgloss.NewStyle().Foreground(colError).Render("   "+displayPathsIn(d.err)), w))
 	}
 	return out
 }
@@ -772,18 +778,14 @@ func (m *model) renderSuggestions(w int) []string {
 	if len(d.sugg) == 0 {
 		out = append(out, fit(stMuted.Render(indent+"no matching folders"), w))
 	}
-	home, _ := os.UserHomeDir()
 	for i, sg := range d.sugg {
 		// Folders in the listed directory show just their name; recent
-		// folders show their full path (with ~ for the home folder).
+		// folders show their full path (with its alias or ~, displayPath).
 		path := filepath.Base(sg.Path) + `\`
 		tag := ""
 		if sg.Recent {
 			tag = "  recent"
-			path = sg.Path
-			if home != "" && len(path) >= len(home) && strings.EqualFold(path[:len(home)], home) {
-				path = "~" + path[len(home):]
-			}
+			path = displayPath(sg.Path)
 		}
 		avail := w - len(indent) - 3 - len(tag)
 		if ansi.StringWidth(path) > avail && avail > 4 {
@@ -802,7 +804,7 @@ func (m *model) renderSuggestions(w int) []string {
 
 func (m *model) renderFooter(w int) string {
 	if m.confirm != nil {
-		return fit(stWaitText.Render(" "+m.confirm.text), w)
+		return fit(stWaitText.Render(" "+displayPathsIn(m.confirm.text)), w)
 	}
 	if m.closing != nil {
 		return fit(stWaitText.Render(" k keep the worktree · D delete anyway · esc cancel"), w)
@@ -820,7 +822,7 @@ func (m *model) renderFooter(w int) string {
 		return fit(stMuted.Render(m.diffFooter()), w)
 	}
 	if m.flash != "" && time.Since(m.flashAt) < 4*time.Second {
-		return fit(lipgloss.NewStyle().Foreground(colError).Render(" "+m.flash), w)
+		return fit(lipgloss.NewStyle().Foreground(colError).Render(" "+displayPathsIn(m.flash)), w)
 	}
 	var help string
 	switch m.focus {
