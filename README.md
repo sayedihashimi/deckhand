@@ -27,6 +27,7 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 - Filter the list (`/`), show only the sessions that need you (`@`), and jump to the next one (`tab`) ([Finding sessions](#finding-sessions)).
 - Groups with headers you can fold, and reordering with shift+↑/↓ or by dragging with the mouse ([Groups](#groups), [Session list keys](#session-list)).
 - Colors for sessions and groups (`C`): a bar beside them in the list, and the name in color above the terminal ([Colors](#colors)).
+- A right-click menu on a session or group header, with each action's key beside it ([Mouse](#mouse)).
 
 **Git workflow**
 
@@ -293,6 +294,7 @@ Modified keys that plain terminal input can't express, such as shift+enter (a ne
 
 - **Wheel over the terminal:** scrolls back through the output. Any key, or wheeling back down, returns to the live view. If the app turns on mouse reporting itself (a fullscreen TUI such as Claude's fullscreen renderer), the wheel and clicks go to the app instead, so it scrolls its own view.
 - **Wheel or click in the session list:** moves the selection. Clicking the terminal focuses it.
+- **Right-click in the session list:** selects the session or group header and opens a menu of its actions next to the pointer. Each item shows its key on the right and does exactly what the key does, with the same questions and refusals (`Remove…` still asks, `Fork` mid-turn says to wait). For a session: Color… (`C`), Rename (`r`), Fork (`f`), Group (`a`: a submenu of the groups, `(no group)` and New group…), Open folder (`o`), Open terminal (`t`), then Diff, Create PR and Merge (`d` `p` `m`) for a worktree session, and Remove… (`x`). For a group header: Color…, Rename, Collapse or Expand (`space`) and Delete group. Items that can't apply (Fork on a session that can't be forked, or Rename on `(no group)`) are dimmed. A click or `enter` picks an item, `↑/↓` move, `→` opens the submenu, and `esc`, a click outside or another right-click closes the menu. Pressing an item's key picks it too. Right-clicks on the terminal still go to the agent.
 - **Dragging a session in the list:** press on it and move the pointer to reorder it. A line shows where it will land: on the top of a session it goes above it, on the bottom line below. Releasing moves it there and saves the order, as shift+↑/↓ does (with a filter on, positions count only the sessions you can see). Holding the pointer on the list's header or its last row scrolls the list. `esc`, or releasing over the terminal, cancels. With groups, drag sessions into, out of and between groups, and drag a group's header to move the group (see [Groups](#groups)).
 - **Clicking a group's ▾/▸:** folds or unfolds it.
 - **Clicking in the color picker (`C`):** a color applies it, the hex box starts typing there, and a click outside closes the picker.

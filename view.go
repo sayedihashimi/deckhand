@@ -862,6 +862,9 @@ func (m *model) renderFooter(w int) string {
 	if m.colorPick != nil {
 		return fit(stMuted.Render(" ↑↓ or a letter pick · tab hex color · enter apply · esc cancel · click a color"), w)
 	}
+	if m.menu != nil {
+		return fit(stMuted.Render(" ↑↓ choose · enter pick · → submenu · esc close · or press an item's key"), w)
+	}
 	if m.help != nil {
 		return fit(stMuted.Render(m.helpFooter()), w)
 	}
@@ -966,8 +969,12 @@ func (m *model) View() tea.View {
 		b.WriteString("\n")
 	}
 	b.WriteString(m.renderFooter(m.width))
+	screen := b.String()
+	if m.menu != nil {
+		screen = m.overlayMenu(screen)
+	}
 
-	v := tea.NewView(b.String())
+	v := tea.NewView(screen)
 	v.AltScreen = true
 	// Mouse reporting is needed for the wheel. In Windows Terminal, hold
 	// shift while dragging to select text.
