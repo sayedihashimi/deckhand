@@ -248,12 +248,16 @@ const sampleConfig = `# deckhand agents: each [[agents]] entry shows up in the n
 # session too, so that key no longer reaches the agent). back_key goes back
 # to the list from inside a session; ctrl+q and ctrl+] always do too. While
 # it's hidden, status_line shows how many sessions need you at the end of
-# the header row.
+# the header row. follow_claude_title names Claude sessions after Claude's
+# title for the conversation: its automatic title, then /rename. r still
+# renames a session, and the latest rename wins. false keeps the name a
+# session was given.
 #
 # [list]
-# toggle_key  = "f3"          # the default; or "f2", 'ctrl+\', ...
-# back_key    = "f5"          # the default; or "f10", ...
-# status_line = true
+# toggle_key          = "f3"  # the default; or "f2", 'ctrl+\', ...
+# back_key            = "f5"  # the default; or "f10", ...
+# status_line         = true
+# follow_claude_title = true
 
 # Each session's output (scrollback and screen) is saved to
 # %LOCALAPPDATA%\deckhand\sessions\<id>\screen.ans, so an exited session

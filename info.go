@@ -43,6 +43,10 @@ type sessionInfo struct {
 	// since. compactAt is the context size when a drop was seen.
 	compacted bool
 	compactAt int
+	// titles is what the transcript says about the conversation's title
+	// (title.go); titlesOK once it has been read.
+	titles   transcriptTitles
+	titlesOK bool
 }
 
 // compactedMark goes before the second line's text while compacted.
