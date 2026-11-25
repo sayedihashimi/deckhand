@@ -266,6 +266,16 @@ const sampleConfig = `# deckhand agents: each [[agents]] entry shows up in the n
 # status_line         = true
 # follow_claude_title = true
 
+# The scratch pad: notes for each session in a pane below its terminal (e in
+# the list). key opens it from inside a session and moves between the pad
+# and the terminal; it can't be a [list] key or F1. Gemini CLI uses F6, so
+# pick another key if you run it. height is the pad's share of the rows
+# (0.33) or a number of lines (12).
+#
+# [pad]
+# key    = "f6"               # the default; or "f7", ...
+# height = 0.33
+
 # Each session's output (scrollback and screen) is saved to
 # %LOCALAPPDATA%\deckhand\sessions\<id>\screen.ans, so an exited session
 # still shows it after deckhand restarts. It can include anything printed on

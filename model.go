@@ -28,6 +28,7 @@ const (
 	focusTerminal
 	focusDialog
 	focusConfig
+	focusPad // the session's scratch pad (pad.go)
 )
 
 type frameMsg time.Time
@@ -111,6 +112,9 @@ type model struct {
 
 	// An agent being tested from the config screen (see agenttest.go).
 	test *agentTest
+
+	// The sessions' scratch pads (pad.go), loaded as they're needed.
+	pads *padState
 }
 
 type confirmPrompt struct {
@@ -120,6 +124,9 @@ type confirmPrompt struct {
 	// defaultYes makes enter answer yes too. Only for prompts that are cheap to
 	// get wrong and usually answered yes (x, K); their text ends in Y/n.
 	defaultYes bool
+	// alt answers it with other keys than y (x's D, which also deletes the
+	// session's notes); may be nil.
+	alt map[string]func(m *model) tea.Cmd
 }
 
 // newModel is the main instance's model: it loads the saved sessions.
@@ -308,6 +315,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.maybeSaveCosts(now)
 		}
 		m.dragTick()
+		m.padTick(time.Now())
 		if s := m.current(); s != nil {
 			s.MarkSeen()
 		}
@@ -344,6 +352,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				s.ScrollToBottom()
 				s.Paste(msg.Content)
 			}
+		case focusPad:
+			m.padPaste(msg.Content)
 		case focusDialog:
 			return m, m.dialog.update(msg)
 		case focusConfig:
@@ -395,7 +405,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *model) resizeAll() {
 	w, h := m.termSize()
 	for _, s := range m.sessions {
-		s.Resize(w, h)
+		s.Resize(w, h-m.padRows(s))
 	}
 	if m.dialog != nil {
 		m.dialog.setWidth(w)
@@ -418,6 +428,9 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.confirm = nil
 		if key == "y" || key == "Y" || (key == "enter" && c.defaultYes) {
 			return m, c.action(m)
+		}
+		if a := c.alt[key]; a != nil {
+			return m, a(m)
 		}
 		if c.cancel != nil {
 			c.cancel(m)
@@ -524,6 +537,9 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.focus = focusSidebar
 			return m, nil
 		}
+		if m.padTerminalKey(key) { // the pad key, and esc just after the pad
+			return m, nil
+		}
 		if s := m.current(); s != nil {
 			if !s.Running() {
 				m.focus = focusSidebar
@@ -562,6 +578,9 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case focusConfig:
 		return m, m.configKey(k)
+
+	case focusPad:
+		return m, m.padKey(k)
 	}
 
 	// Sidebar.
@@ -638,6 +657,8 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.worktreeLikeSelected()
 	case "f":
 		return m, m.forkSelected()
+	case "e":
+		return m, m.openPad()
 	case "tab":
 		m.jumpToAttention()
 	case "v":
@@ -701,6 +722,7 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.removeSession(s) // by pointer: the list can change while it asks
 				return nil
 			}}
+			m.padConfirmRemove(s)
 		}
 	case "o":
 		m.openFolder(openEditor)
@@ -774,6 +796,9 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	// the list's wherever they happen, and never reach the agent.
 	if m.drag != nil {
 		m.dragMouse(msg)
+		return nil
+	}
+	if m.padMouse(msg) {
 		return nil
 	}
 
@@ -860,6 +885,7 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 
 func (m *model) quit() tea.Cmd {
 	_ = m.saveSessions()
+	m.saveAllPads()
 	// Save each running session's output while its emulator still has it.
 	// A temporary instance's sessions are deleted on exit, so it doesn't.
 	if !m.temp {
@@ -884,7 +910,7 @@ func (m *model) openSelected() tea.Cmd {
 		return nil // its worktree log shows until the agent starts
 	}
 	if !s.Running() {
-		w, h := m.termSize()
+		w, h := m.sessionSize(s)
 		resume := s.Started // Start ignores it for agents that can't resume
 		if err := s.Start(w, h, resume, m.dirty); err != nil {
 			m.setFlash("Couldn't start: " + err.Error())

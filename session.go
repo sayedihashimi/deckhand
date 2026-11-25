@@ -32,6 +32,7 @@ type Session struct {
 	TranscriptPath  string    `json:"transcript_path,omitempty"`
 	ForkedFrom      string    `json:"forked_from,omitempty"` // deckhand ID of the session it was forked from (f)
 	Group           string    `json:"group,omitempty"`       // its group in the list (groups.go); "" for none
+	PadOpen         bool      `json:"pad_open,omitempty"`    // its scratch pad is open (pad.go)
 	// Title is the part of Claude's title already applied to Name (title.go).
 	Title *titleSeen `json:"claude_title,omitempty"`
 
@@ -87,6 +88,7 @@ type Session struct {
 	// Mouse and scrolling.
 	mouseModes map[ansi.Mode]bool // mouse reporting modes the app has turned on
 	altScroll  bool               // app asked for wheel-as-arrow-keys on the alt screen (mode 1007)
+	bracketed  bool               // app turned on bracketed paste (mode 2004), for the pad's send
 	scrollOff  int                // lines scrolled back from the live view
 	scrollBase int                // scrollback length when scrollOff was last set
 
@@ -221,6 +223,7 @@ func (s *Session) Start(width, height int, resume bool, dirty *atomic.Bool) erro
 	s.keys = keys
 	s.mouseModes = map[ansi.Mode]bool{}
 	s.altScroll = false
+	s.bracketed = false
 	s.scrollOff = 0
 	s.running = true
 	s.Started = true
@@ -605,6 +608,10 @@ func (s *Session) setMode(m ansi.Mode, on bool) {
 	defer s.mu.Unlock()
 	if m == modeAltScroll {
 		s.altScroll = on
+		return
+	}
+	if m == ansi.ModeBracketedPaste {
+		s.bracketed = on
 		return
 	}
 	for _, mm := range mouseReportingModes {
