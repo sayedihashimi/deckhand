@@ -21,7 +21,8 @@ import (
 // folder; two with a pull request, from a fake gh), a fork of one of them
 // (f), plus an exited shell)
 // and saves deckhand's
-// screen as a PNG, with the exited shell's restored output, the config
+// screen as a PNG, with the exited shell's restored output, a session
+// header with a long reply (replyScene), the config
 // screen ("c", testing an agent with t), the help opened from it (F1) and the api session's diff
 // preview ("d") below it, then a session being dragged into a group (the
 // sessions are in two groups). The PR
@@ -190,9 +191,11 @@ event PreToolUse Bash | go test ./...
 		t.Fatal(err)
 	}
 
-	// Two custom agents and an editor, for the config screen.
+	// Two custom agents and an editor, for the config screen, and a path
+	// alias: the scene's folders show as src\api and so on, not as the
+	// temporary folder.
 	cfg := filepath.Join(home, "config.toml")
-	_ = os.WriteFile(cfg, []byte(`[[agents]]
+	_ = os.WriteFile(cfg, []byte("[[paths.alias]]\nprefix = '"+src+"'\nname = 'src'\n\n"+`[[agents]]
 name   = "review"
 pwsh   = "Start-Review"
 type   = "claude"
@@ -308,7 +311,7 @@ editor = 'code "{dir}"'
 	h.send("\x1b[<0;6;9m") // the release after esc changes nothing
 	h.waitGone("━━━━━━", 3*time.Second)
 
-	// One image: the scene, the restored output, the config screen, the
+	// One image: the scene, the restored output, the long reply, the config screen, the
 	// help opened from it, the diff preview and the drag, with a blank row between
 	// them.
 	blank := make([]termshot.Cell, len(scene[0]))
@@ -321,6 +324,7 @@ editor = 'code "{dir}"'
 	both = append(append(both, blank), configHelp...)
 	both = append(append(both, blank), diffShot...)
 	both = append(append(both, blank), dragShot...)
+	both = append(append(both, blank), replyScene(t, exe, path)...)
 
 	f, err := os.Create(out)
 	if err != nil {
@@ -369,6 +373,48 @@ editor = 'code "{dir}"'
 	h.send("q")
 	h.send("y")
 	h.waitExit(10 * time.Second)
+}
+
+// replyScene is a second, smaller scene: one Claude session that has
+// finished with a long, multi-line reply. The session header caps the
+// reply at 40% of its width ([header] reply_width), cut with …, so the
+// folder after it still shows. The list is hidden (F3, with no status
+// line), so the header has the full width.
+func replyScene(t *testing.T, exe, path string) termshot.Screen {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "src", "docs")
+	_ = os.MkdirAll(dir, 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "hookapp.txt"), []byte(`event SessionStart
+reply 48000 Updated the README with the new install steps.\nAdded a section on the config file, with an example for each setting.\nThe links to the changelog and the license work again.
+say \e[1m> document the install steps\e[0m
+event UserPromptSubmit
+event PreToolUse Edit | README.md
+event PostToolUse Edit
+event Stop
+`), 0o644)
+	home := t.TempDir()
+	data, _ := json.Marshal([]map[string]any{{"id": "shot-reply", "name": "docs", "agent": "claude", "dir": dir,
+		"created": time.Now(), "claude_session_id": "55555555-5555-5555-5555-555555555555", "started": true}})
+	if err := os.WriteFile(filepath.Join(home, "sessions.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(home, "config.toml")
+	_ = os.WriteFile(cfg, []byte("[list]\nstatus_line = false\n"), 0o644)
+	h := startHarnessSize(t, exe, append(envWith(home, path), "DECKHAND_CONFIG="+cfg), dir, 120, 6)
+	h.waitFor("docs", 10*time.Second)
+	h.send("1")
+	time.Sleep(700 * time.Millisecond)
+	h.send(keyF5)
+	h.send("\x1bOR") // F3: hide the list
+	h.waitFor("· Updated the README with the new install", 15*time.Second)
+	h.waitFor("…  "+displayPath(dir)[:2], 5*time.Second) // the folder, after the cut reply
+	time.Sleep(300 * time.Millisecond)
+	shot := screenFromEmulator(h.emu)
+	t.Logf("long reply in the header:\n%s", h.screen())
+	h.send("q")
+	h.send("y")
+	h.waitExit(10 * time.Second)
+	return shot
 }
 
 // onGitHub gives a repo an origin on GitHub, which is never fetched: the

@@ -21,7 +21,7 @@ const configHeader = `# deckhand config. Written by deckhand's config screen (pr
 `
 
 // reloadConfig reads the config file and applies it: agents, notifications,
-// [open], [list], [history], [worktree], [cost] and [info]. Settings that fail to load fall back to their defaults;
+// [open], [list], [history], [worktree], [cost], [info], [header] and [[paths.alias]]. Settings that fail to load fall back to their defaults;
 // the first error is returned.
 func reloadConfig() error {
 	agents, err := loadAgents()
@@ -40,7 +40,11 @@ func reloadConfig() error {
 	setCostSettings(costCfg)
 	infoCfg, infoErr := loadInfoConfig()
 	infoOpts = infoCfg
-	for _, e := range []error{err, notifyErr, openErr, listErr, histErr, wtErr, costErr, infoErr} {
+	headerCfg, headerErr := loadHeaderConfig()
+	headerOpts = headerCfg
+	aliases, pathsErr := loadPathsConfig()
+	pathAliases = aliases
+	for _, e := range []error{err, notifyErr, openErr, listErr, histErr, wtErr, costErr, infoErr, headerErr, pathsErr} {
 		if e != nil {
 			return e
 		}
@@ -138,7 +142,13 @@ func checkConfigText(text string) error {
 	if _, err := parseCostConfig(text); err != nil {
 		return err
 	}
-	_, err := parseInfoConfig(text)
+	if _, err := parseInfoConfig(text); err != nil {
+		return err
+	}
+	if _, err := parseHeaderConfig(text); err != nil {
+		return err
+	}
+	_, err := parsePathsConfig(text)
 	return err
 }
 

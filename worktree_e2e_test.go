@@ -300,7 +300,7 @@ resume = "claude --resume {id}"
 	// on it without a worktree: Claude gets the repo itself.
 	h.send("n")
 	h.waitFor("Start in", 5*time.Second)
-	h.waitFor("Code repo "+clone, 3*time.Second)
+	h.waitFor("Code repo "+displayPath(clone), 3*time.Second)
 	h.waitFor("same folder, no new branch", 3*time.Second) // the worktree is off
 	h.send("\r")
 	codeOnly := func(l argsLaunch, what string) {

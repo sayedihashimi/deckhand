@@ -32,7 +32,7 @@ func matchesFilter(filter string, fields ...string) bool {
 func filterFields(s *Session) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return []string{s.Name, s.Agent, filepath.Base(s.Dir), s.Dir, s.info.git.branch}
+	return []string{s.Name, s.Agent, filepath.Base(s.Dir), s.Dir, displayPath(s.Dir), s.info.git.branch}
 }
 
 // visible returns the indexes of the sessions shown in the list. With "@",

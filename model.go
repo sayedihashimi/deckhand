@@ -1301,7 +1301,7 @@ func (d *newDialog) setField(f int) tea.Cmd {
 	if swap {
 		if d.hi >= 0 && d.hi < len(d.sugg) {
 			in := d.input()
-			in.SetValue(d.sugg[d.hi].Path)
+			in.SetValue(displayInput(d.sugg[d.hi].Path))
 			in.CursorEnd()
 			if d.field == fieldRepo {
 				d.repoSet = true
@@ -1325,6 +1325,9 @@ func (d *newDialog) syncRepo() {
 	want := ""
 	if !d.folderIsGit() {
 		want = d.prefs.codeRepoFor(d.target())
+		if want != "" {
+			want = displayInput(want) // resolvePath reads it back
+		}
 	}
 	if d.repo.Value() != want {
 		d.repo.SetValue(want)
@@ -1410,7 +1413,7 @@ func (d *newDialog) update(msg tea.Msg) tea.Cmd {
 				if i < 0 {
 					i = 0
 				}
-				d.setInput(withSep(d.sugg[i].Path))
+				d.setInput(displayInput(withSep(d.sugg[i].Path)))
 			}
 			return nil
 		case "down":
@@ -1428,7 +1431,7 @@ func (d *newDialog) update(msg tea.Msg) tea.Cmd {
 		case "shift+tab":
 			return d.moveField(-1)
 		case "ctrl+w", "ctrl+backspace", "alt+backspace":
-			d.setInput(parentPath(d.input().Value(), d.cwd))
+			d.setInput(displayInput(parentPath(d.input().Value(), d.cwd)))
 			return nil
 		}
 	}

@@ -86,7 +86,7 @@ func (m *model) renderConfig(w, h int) []string {
 		if c.statusErr {
 			st = stErrText
 		}
-		foot = append(foot, fit(st.Render("  "+c.status), w))
+		foot = append(foot, fit(st.Render("  "+displayPathsIn(c.status)), w))
 	}
 	foot = append(foot, fit(stMuted.Render("  "+hint), w))
 
@@ -255,6 +255,19 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 	add(" "+cfgLabel(cur.kind == rowTryOpen, "Try it", lw)+chips([]string{"editor", "terminal"}, tryHi, cur.kind == rowTryOpen)+stMuted.Render("  "+tryOn), true)
 
 	add("", false)
+	add(" "+stSection.Render("Path aliases")+stMuted.Render("  shown in place of a folder's path; ~ is the home folder. Edit [[paths.alias]] in config.toml"), false)
+	if len(c.aliases) == 0 {
+		add(stMuted.Render("   None."), false)
+	} else {
+		// Only the names: the prefixes are what the aliases hide.
+		var names []string
+		for _, a := range c.aliases {
+			names = append(names, a.name)
+		}
+		add("   "+strings.Join(names, stMuted.Render(" · ")), false)
+	}
+
+	add("", false)
 	add(" "+cfgLabel(cur.kind == rowSave, "", lw)+button("Save", cur.kind == rowSave)+stMuted.Render("  (ctrl+s)"), true)
 
 	switch cur.kind {
@@ -299,22 +312,22 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 func agentSummary(a agentConfig) string {
 	var parts []string
 	if a.Pwsh != "" {
-		parts = append(parts, stMuted.Render("PowerShell ")+a.Pwsh)
+		parts = append(parts, stMuted.Render("PowerShell ")+displayPathsIn(a.Pwsh))
 	} else {
 		cmd := a.Command
 		if len(a.Args) > 0 {
 			cmd += " " + joinArgs(a.Args)
 		}
-		parts = append(parts, stMuted.Render("program ")+cmd)
+		parts = append(parts, stMuted.Render("program ")+displayPathsIn(cmd))
 	}
 	if a.Type == "claude" {
 		parts = append(parts, lipgloss.NewStyle().Foreground(colAccent).Render("claude"))
 	}
 	if a.Resume != "" {
-		parts = append(parts, stMuted.Render("resume ")+a.Resume)
+		parts = append(parts, stMuted.Render("resume ")+displayPathsIn(a.Resume))
 	}
 	if _, err := a.toAgent(); err != nil {
-		parts = append(parts, stErrText.Render("✗ "+err.Error()))
+		parts = append(parts, stErrText.Render("✗ "+displayPathsIn(err.Error())))
 	}
 	return strings.Join(parts, stMuted.Render(" · "))
 }

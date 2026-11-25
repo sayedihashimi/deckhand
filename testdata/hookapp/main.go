@@ -9,6 +9,7 @@
 //	say <text>                     print a line (\e is ESC, for colours)
 //	print <text>                   print without a newline (\e is ESC, \a is BEL)
 //	reply <tokens> <text>          add an assistant reply to the transcript
+//	                               (\n starts a new line)
 //	title custom|ai <text>         add a custom-title (/rename) or ai-title
 //	                               line to the transcript
 //	event <Name> [Tool] [| input]  send a hook event; input becomes the
@@ -119,7 +120,7 @@ func runScript(script string) {
 		case "reply":
 			n, text, _ := strings.Cut(rest, " ")
 			tokens, _ := strconv.Atoi(n)
-			reply(tokens, text)
+			reply(tokens, strings.ReplaceAll(text, `\n`, "\n"))
 		case "title":
 			kind, text, _ := strings.Cut(rest, " ")
 			title(kind, text)

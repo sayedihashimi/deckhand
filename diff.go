@@ -440,7 +440,7 @@ func statusTag(f diffFile) string {
 func renderDiff(res diffResult) (lines []string, starts []int) {
 	switch {
 	case res.notGit:
-		return []string{"", stMuted.Render("  Not a git repository: " + res.dir),
+		return []string{"", stMuted.Render("  Not a git repository: " + displayPath(res.dir)),
 			stMuted.Render("  The diff preview needs the session's folder to be in a git repo.")}, nil
 	case res.err != "":
 		return []string{"", lipgloss.NewStyle().Foreground(colError).Render("  Couldn't read the diff. " + clean(res.err))}, nil
@@ -635,7 +635,7 @@ func (m *model) renderDiffView(w, h int) []string {
 		end := min(v.scroll+v.rows, n)
 		header += stMuted.Render(fmt.Sprintf("  lines %d–%d of %d", v.scroll+1, end, n))
 	}
-	header += stMuted.Render("  " + v.dir)
+	header += stMuted.Render("  " + displayPath(v.dir))
 	out := []string{fit(header, w)}
 	body, start := v.lines, v.scroll
 	if v.loading {
