@@ -32,6 +32,7 @@ type Session struct {
 	TranscriptPath  string    `json:"transcript_path,omitempty"`
 	ForkedFrom      string    `json:"forked_from,omitempty"` // deckhand ID of the session it was forked from (f)
 	Group           string    `json:"group,omitempty"`       // its group in the list (groups.go); "" for none
+	Color           string    `json:"color,omitempty"`       // its color in the list (colors.go): a palette name or "#rrggbb"
 	// Title is the part of Claude's title already applied to Name (title.go).
 	Title *titleSeen `json:"claude_title,omitempty"`
 

@@ -63,7 +63,7 @@ var helpGroups = []helpGroup{
 		{keys: "↑↓ j k", desc: "select a session", match: []string{"up", "k", "down", "j"}, footer: "↑↓ select", short: "↑↓"},
 		{keys: "home end", desc: "first / last (also g, G)", match: []string{"home", "g", "end", "G"}},
 		{keys: "⇧↑↓ ⇧home/end", desc: "move the session or group", match: []string{"shift+up", "shift+down", "shift+home", "shift+end"}},
-		{keys: "a", desc: "move the session to a group", match: []string{"a"}},
+		{keys: "a C", desc: "move to a group; C: color it", match: []string{"a", "C"}},
 		{keys: "space ←→", desc: "on a group: fold / unfold", match: []string{"space", "left"}},
 		{keys: "enter", desc: "open (starts or resumes it)", match: []string{"enter", "right", "l"}, footer: "enter open", short: "⏎ open"},
 		{keys: "shift+enter", desc: "new session, same folder", match: []string{"shift+enter", "alt+enter"}, footer: "⇧⏎ new here", short: "⇧⏎ here"},
@@ -102,6 +102,7 @@ var helpGroups = []helpGroup{
 	{helpMouse, []helpEntry{
 		{keys: "wheel", desc: "scroll output or list"},
 		{keys: "click", desc: "select, focus terminal"},
+		{keys: "right-click", desc: "a row's menu of actions"},
 		{keys: "drag", desc: "move a session or group"},
 		{keys: "shift+drag", desc: "select text"},
 	}},

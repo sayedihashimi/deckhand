@@ -26,6 +26,8 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 - Desktop notifications when a session needs you or finishes ([Notifications](#notifications)).
 - Filter the list (`/`), show only the sessions that need you (`@`), and jump to the next one (`tab`) ([Finding sessions](#finding-sessions)).
 - Groups with headers you can fold, and reordering with shift+↑/↓ or by dragging with the mouse ([Groups](#groups), [Session list keys](#session-list)).
+- Colors for sessions and groups (`C`): a bar beside them in the list, and the name in color above the terminal ([Colors](#colors)).
+- A right-click menu on a session or group header, with each action's key beside it ([Mouse](#mouse)).
 
 **Git workflow**
 
@@ -46,7 +48,7 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 - [Status icons](#status-icons) · [Session details](#session-details) · [Session names](#session-names) · [Cost](#cost) · [Notifications](#notifications) · [Finding sessions](#finding-sessions)
 - [Keys](#keys) · [The config screen](#the-config-screen) · [Custom agents](#custom-agents-your-own-scripts-and-profile-functions)
 - [Diff preview](#diff-preview) · [Worktree sessions](#worktree-sessions) · [Pull requests](#pull-requests) · [Merging](#merging)
-- [Groups](#groups) · [Hiding the session list](#hiding-the-session-list) · [Opening a session's folder](#opening-a-sessions-folder) · [Path aliases](#path-aliases)
+- [Groups](#groups) · [Colors](#colors) · [Hiding the session list](#hiding-the-session-list) · [Opening a session's folder](#opening-a-sessions-folder) · [Path aliases](#path-aliases)
 - [Resuming](#resuming) · [More than one window](#more-than-one-window) · [Forking](#forking) · [Output after a restart](#output-after-a-restart)
 - [Build](#build) · [Debugging](#debugging)
 
@@ -244,6 +246,7 @@ Press `?` in the session list, or `F1` anywhere (also inside a session, the new-
 | shift+↑/↓ | Move the selected session up or down one place, or drag it with the mouse. The order is saved, so it's the same after a restart. With a filter on, it moves past the next session you can see, skipping hidden ones |
 | shift+home/end | Move the selected session to the top or the bottom (with a filter on: just before the first, or after the last, session you can see). With groups, to the top or the bottom of its group |
 | a | Move the selected session to a group: type to filter the groups or to name a new one, ↑/↓ choose, enter moves it. `(no group)` takes it out of its group (see [Groups](#groups)) |
+| C | Give the selected session a color, or on a group header the group: pick from the palette (↑/↓ or a name's first letter), `none`, or `tab` to type a hex color; enter applies, esc cancels (see [Colors](#colors)) |
 | space, ←/→ | On a group header: fold or unfold the group (← folds, → unfolds; `enter` also switches). ← on a session in a group selects its header |
 | enter (or → or l) | Type into the session; starts or resumes it if it isn't running |
 | shift+enter | Start a new session with the same agent and folder, right below the selected one. The selected session is left as it is, so its conversation can still be resumed. Claude gets a fresh conversation; a custom agent runs its normal command, not its `resume` one. ESC enter (what a remapped shift+enter sends) does the same. Where a terminal sends plain enter for shift+enter, it acts like enter |
@@ -291,8 +294,10 @@ Modified keys that plain terminal input can't express, such as shift+enter (a ne
 
 - **Wheel over the terminal:** scrolls back through the output. Any key, or wheeling back down, returns to the live view. If the app turns on mouse reporting itself (a fullscreen TUI such as Claude's fullscreen renderer), the wheel and clicks go to the app instead, so it scrolls its own view.
 - **Wheel or click in the session list:** moves the selection. Clicking the terminal focuses it.
+- **Right-click in the session list:** selects the session or group header and opens a menu of its actions next to the pointer. Each item shows its key on the right and does exactly what the key does, with the same questions and refusals (`Remove…` still asks, `Fork` mid-turn says to wait). For a session: Color… (`C`), Rename (`r`), Fork (`f`), Group (`a`: a submenu of the groups, `(no group)` and New group…), Open folder (`o`), Open terminal (`t`), then Diff, Create PR and Merge (`d` `p` `m`) for a worktree session, and Remove… (`x`). For a group header: Color…, Rename, Collapse or Expand (`space`) and Delete group. Items that can't apply (Fork on a session that can't be forked, or Rename on `(no group)`) are dimmed. A click or `enter` picks an item, `↑/↓` move, `→` opens the submenu, and `esc`, a click outside or another right-click closes the menu. Pressing an item's key picks it too. Right-clicks on the terminal still go to the agent.
 - **Dragging a session in the list:** press on it and move the pointer to reorder it. A line shows where it will land: on the top of a session it goes above it, on the bottom line below. Releasing moves it there and saves the order, as shift+↑/↓ does (with a filter on, positions count only the sessions you can see). Holding the pointer on the list's header or its last row scrolls the list. `esc`, or releasing over the terminal, cancels. With groups, drag sessions into, out of and between groups, and drag a group's header to move the group (see [Groups](#groups)).
 - **Clicking a group's ▾/▸:** folds or unfolds it.
+- **Clicking in the color picker (`C`):** a color applies it, the hex box starts typing there, and a click outside closes the picker.
 - **Selecting text:** deckhand uses mouse reporting, so in Windows Terminal hold **shift** while dragging.
 
 ### New session dialog
@@ -492,6 +497,25 @@ Sessions can be filed under groups, for example by project, with headers you can
 
 Automatic grouping by repo or folder (`[list] group_by`) isn't there yet.
 
+## Colors
+
+`C` in the list gives the selected session a color, so you can see at a glance which sessions belong together, or which are for a client, a demo or a side project. The session gets a bar (`┃`) in its color at the left of its three rows, and its name in the header above the terminal is drawn in the color.
+
+- **The picker:** the palette (`red`, `orange`, `yellow`, `green`, `teal`, `blue`, `purple`, `pink`, `gray`), `none`, and a box for any hex color (`#rrggbb`, or `#rgb`). `↑/↓` or a name's first letter picks one (press `p` again for the next name with that letter), `tab` moves to the hex box, `enter` applies and `esc` cancels. A value that isn't a color is refused, with a hint. Each choice shows a swatch, and the hex box shows the color as you type it. You can also click a color.
+- **The bar:** the status icon, the name and the details keep their own colors, so the status stays readable. The bar stays on the selected row, over the highlight, and an exited session's bar is dimmed. Sessions without a color have a blank column there, so the names line up. With no colors at all, the list has no bar column and looks as before.
+- **Groups:** `C` on a group header colors the group; the header gets the bar too. Sessions in the group without a color of their own take the group's; a session's own color wins. `none` on a session makes it take the group's color again, and `none` on the group takes the color off its sessions. `(no group)` can't have a color.
+- **Forks and copies:** `f` and `shift+enter` give the new session the original's own color (and it's in the same group, so it takes the group's otherwise).
+- **Where it's saved:** `"color"` on each session in `sessions.json` and on each group in `groups.json`, as the name (`"red"`) or the hex value (`"#ff00aa"`). An older deckhand ignores it, and keeps it.
+- **The palette:** `[colors]` in the config changes what a name looks like. It can't add names: give any other color as hex.
+
+  ```toml
+  [colors]
+  red  = "#e06c75"
+  blue = "#61afef"
+  ```
+
+Not colored: notifications, the Windows Terminal tab and the pane border.
+
 ## Hiding the session list
 
 Press `F3` to hide the session list and give the selected session the full window width. Press it again to show the list. It works the same in the list and inside a session, where `F3` no longer reaches the agent. Claude Code binds no function keys by default, Codex uses `F2` and Gemini CLI uses `F4`, `F6`–`F9` and `F12`, so `F3` is free in all three, and neither Windows Terminal nor WezTerm binds it. The first default, `ctrl+\`, is 1Password's global shortcut on Windows, so it never reached deckhand on machines running 1Password. You can choose another key in the config (below).
@@ -592,7 +616,7 @@ You can run more than one deckhand at a time, like Notepad's windows:
 - The first one started is the **main** window. It shows the saved sessions and saves changes to them, as described above.
 - Any deckhand started while the main one is running is a **temporary** window. It says `temporary` next to "deckhand" in the list header, and its title is `deckhand (temporary)`. It starts with an empty list and opens the new-session dialog on the folder it was started from, so enter starts a session there and esc leaves the list empty. Its sessions aren't saved: when it closes, they're gone from deckhand. Their Claude conversations still exist, and `claude --resume <id>` resumes one. Quitting asks first only when sessions are running, as in the main window.
 - `deckhand --temp` starts a temporary window even when no main one is running (for a demo, say).
-- In a temporary window the config screen (`c`) shows the config but can't save it, and groups are off (`a` says they're saved only in the main window). Recent folders and the other preferences in `prefs.json` are shared: each change is merged into the file, so neither window undoes the other's.
+- In a temporary window the config screen (`c`) shows the config but can't save it, and groups are off (`a` says they're saved only in the main window). Sessions can be colored, but like the sessions the colors aren't saved. Recent folders and the other preferences in `prefs.json` are shared: each change is merged into the file, so neither window undoes the other's.
 - When the main window closes, temporary ones stay temporary. The next deckhand started becomes the main one and shows the saved sessions. A main window that crashed doesn't get in the way: Windows releases its lock (a named mutex per data folder; `deckhand.lock` on other systems) when the process ends.
 - Each data folder (`DECKHAND_HOME`) has its own main window.
 
