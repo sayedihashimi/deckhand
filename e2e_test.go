@@ -144,7 +144,15 @@ func envWith(home, path string) []string {
 		// wantKeyRecords); tests that act like one set WT_SESSION or
 		// TERM_PROGRAM themselves (wtEnv, weztermEnv).
 		switch k {
-		case "DECKHAND_HOME", "CLAUDE_CONFIG_DIR", "WT_SESSION", "TERM_PROGRAM", "DECKHAND_SESSION_ID", "DECKHAND_KEY_RECORDS":
+		case "CLAUDE_CONFIG_DIR", "WT_SESSION", "TERM_PROGRAM":
+			continue
+		}
+		// Nor deckhand's own variables, which are set when the tests run
+		// inside a deckhand session (DECKHAND_HOME, DECKHAND_SESSION_ID,
+		// DECKHAND_CLAUDE_SETTINGS, DECKHAND_SHIM, ...). Tests that need
+		// one append it themselves. DECKHAND_DEBUG is kept, for debugging
+		// a test.
+		if strings.HasPrefix(k, "DECKHAND_") && k != "DECKHAND_DEBUG" {
 			continue
 		}
 		if path != "" && k == "PATH" {

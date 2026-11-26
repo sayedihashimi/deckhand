@@ -72,12 +72,14 @@ var helpGroups = []helpGroup{
 		{keys: "f e", desc: "fork; e: notes (scratch pad)", match: []string{"f", "e"}},
 		{keys: "1–9", desc: "jump into session N", match: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9"}},
 		{keys: "tab", desc: "next one that needs you", match: []string{"tab"}, footer: "tab next"},
+		// [list] history_back_key and history_forward_key; withListKeys
+		// shows the configured ones.
+		{keys: "F7 F8 alt+←→", desc: "back / forward (visited)", match: []string{defaultHistoryBackKey, defaultHistoryForwardKey, "alt+left", "alt+right"}},
 		{keys: "d p m", desc: "diff; p: push, PR; m: merge", match: []string{"d", "p", "m"}, footer: "d diff", short: "-"},
 		{keys: "v", desc: "last output / conversation", match: []string{"v"}, footer: "v switch view", short: "v view", when: hintHistory},
 		{keys: "⇧PgUp/Dn", desc: "scroll an exited session", match: []string{"shift+pgup", "shift+pgdown"}},
-		{keys: "/", desc: "filter the list as you type", match: []string{"/"}, footer: "/ filter", short: "/@ filter"},
+		{keys: "/ esc", desc: "filter as you type; esc: clear", match: []string{"/", "esc"}, footer: "/ filter", short: "/@ filter"},
 		{keys: "@ s", desc: "needs you; s: by state (cycles)", match: []string{"@", "s"}, footer: "@ needs you", short: "-"},
-		{keys: "esc", desc: "clear the filter", match: []string{"esc"}},
 		{keys: "o O t", desc: "editor / Explorer / terminal", match: []string{"o", "O", "t"}, footer: "o editor · O explorer · t terminal", short: "o/O/t open"},
 		{keys: "r", desc: "rename (a session or group)", match: []string{"r"}, footer: "r rename"},
 		{keys: "c", desc: "settings (config screen)", match: []string{"c"}, footer: "c config"},
@@ -93,11 +95,11 @@ var helpGroups = []helpGroup{
 	{helpTerminal, []helpEntry{
 		{keys: "F5 ctrl+q ctrl+]", desc: "back to the list", match: []string{defaultBackKey, "ctrl+q", "ctrl+]"}, footer: "F5 list"},
 		{keys: "shift+PgUp/Dn", desc: "scroll back", match: []string{"shift+pgup", "shift+pgdown"}},
-		{keys: "F3", desc: "hide / show the list", match: []string{defaultToggleKey}, footer: "F3 hide list"},
+		{keys: "F7 F8", desc: "back / forward", match: []string{defaultHistoryBackKey, defaultHistoryForwardKey}},
+		{keys: "F3", desc: "hide / show list", match: []string{defaultToggleKey}, footer: "F3 hide list"},
 		// [pad] key; withListKeys shows the configured one. esc closes the
 		// pad right after leaving it (padTerminalKey).
-		{keys: "F6", desc: "the scratch pad", match: []string{defaultPadKey, "esc"}, footer: "F6 notes"},
-		{keys: "F1", desc: "this help", match: []string{"f1"}, footer: "F1 help"},
+		{keys: "F6 F1", desc: "notes; F1: help", match: []string{defaultPadKey, "esc", "f1"}, footer: "F6 notes · F1 help"},
 	}},
 	{helpDiff, []helpEntry{
 		{keys: "n N", desc: "next / previous file", match: []string{"n", "N", "up", "k", "down", "j", "pgup", "shift+pgup", "pgdown", "shift+pgdown", "space", "home", "g", "end", "G"}},
@@ -106,8 +108,8 @@ var helpGroups = []helpGroup{
 	{helpMouse, []helpEntry{
 		{keys: "wheel", desc: "scroll output or list"},
 		{keys: "click", desc: "select; right: a menu"},
-		{keys: "drag", desc: "move a session or group"},
-		{keys: "shift+drag", desc: "select text"},
+		{keys: "drag", desc: "move; shift: select text"},
+		{keys: "side", desc: "back / forward buttons"},
 	}},
 	{helpDialog, []helpEntry{
 		{keys: "tab ↑↓", desc: "complete, pick a folder", match: []string{"tab", "up", "down"}},
@@ -197,14 +199,16 @@ func joinHints(title string, short bool, keep func(helpEntry) bool) string {
 	return " " + strings.Join(parts, " · ")
 }
 
-// withListKeys puts the configured toggle and back keys in place of the
-// defaults (F3 and F5) in a help text. It's one pass, so swapped keys stay
+// withListKeys puts the configured toggle, back, pad and history keys in
+// place of the defaults (F3, F5, F6, F7 and F8) in a help text. It's one pass, so swapped keys stay
 // swapped.
 func withListKeys(s string) string {
 	return strings.NewReplacer(
 		keyLabel(defaultToggleKey), keyLabel(listOpts.toggleKey),
 		keyLabel(defaultBackKey), keyLabel(listOpts.back()),
 		keyLabel(defaultPadKey), keyLabel(padOpts.key),
+		keyLabel(defaultHistoryBackKey), keyLabel(listOpts.historyBack()),
+		keyLabel(defaultHistoryForwardKey), keyLabel(listOpts.historyForward()),
 	).Replace(s)
 }
 
