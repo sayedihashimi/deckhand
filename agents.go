@@ -253,7 +253,11 @@ const sampleConfig = `# deckhand agents: each [[agents]] entry shows up in the n
 
 # The session list. toggle_key hides and shows it from anywhere (inside a
 # session too, so that key no longer reaches the agent). back_key goes back
-# to the list from inside a session; ctrl+q and ctrl+] always do too. While
+# to the list from inside a session; ctrl+q and ctrl+] always do too.
+# history_back_key and history_forward_key go back and forward through the
+# sessions you've visited, like a browser, in the list and inside a session
+# (alt+left and alt+right do too, in the list). Gemini CLI uses F7 and F8,
+# so pick others if you run it. The four keys must be different. While
 # it's hidden, status_line shows how many sessions need you at the end of
 # the header row. follow_claude_title names Claude sessions after Claude's
 # title for the conversation: its automatic title, then /rename. r still
@@ -263,6 +267,8 @@ const sampleConfig = `# deckhand agents: each [[agents]] entry shows up in the n
 # [list]
 # toggle_key          = "f3"  # the default; or "f2", 'ctrl+\', ...
 # back_key            = "f5"  # the default; or "f10", ...
+# history_back_key    = "f7"  # the default; or "f9", ...
+# history_forward_key = "f8"  # the default; or "f12", ...
 # status_line         = true
 # follow_claude_title = true
 
@@ -273,7 +279,7 @@ const sampleConfig = `# deckhand agents: each [[agents]] entry shows up in the n
 # (0.33) or a number of lines (12).
 #
 # [pad]
-# key    = "f6"               # the default; or "f7", ...
+# key    = "f6"               # the default; or "f10", ...
 # height = 0.33
 
 # Each session's output (scrollback and screen) is saved to

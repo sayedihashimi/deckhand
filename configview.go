@@ -170,16 +170,14 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 
 	add("", false)
 	add(" "+stSection.Render("Session list")+stMuted.Render("  one key hides and shows it, in the list and inside a session"), false)
-	keyLine := " " + cfgLabel(cur.kind == rowListKey, "Hide key", lw) + c.listKey.View()
-	if _, err := checkToggleKey(c.listKey.Value()); err != nil {
-		keyLine += "  " + stErrText.Render("✗ "+err.Error())
+	for _, b := range c.keyBoxes() {
+		label := map[cfgRowKind]string{rowListKey: "Hide key", rowListBackKey: "Back key", rowListHistBack: "History ←", rowListHistFwd: "History →"}[b.kind]
+		line := " " + cfgLabel(cur.kind == b.kind, label, lw) + b.in.View()
+		if err := c.keyErr(b.kind); err != nil {
+			line += "  " + stErrText.Render("✗ "+err.Error())
+		}
+		add(line, true)
 	}
-	add(keyLine, true)
-	backLine := " " + cfgLabel(cur.kind == rowListBackKey, "Back key", lw) + c.backKey.View()
-	if err := c.backKeyErr(); err != nil {
-		backLine += "  " + stErrText.Render("✗ "+err.Error())
-	}
-	add(backLine, true)
 	status := 1
 	if c.listStatus {
 		status = 0
@@ -289,6 +287,10 @@ func (m *model) renderConfigMain(w int) (lines []string, focusLine int, hint str
 		hint = `a key name, e.g. ctrl+\, f2 or f3; empty: ` + keyLabel(defaultToggleKey)
 	case rowListBackKey:
 		hint = `back to the list from a session (ctrl+q and ctrl+] always work too), e.g. f5 or f10; empty: ` + keyLabel(defaultBackKey)
+	case rowListHistBack:
+		hint = `back to the session you were in before, in the list and inside a session (alt+← too, in the list), e.g. f7 or f9; empty: ` + keyLabel(defaultHistoryBackKey)
+	case rowListHistFwd:
+		hint = `forward again after going back (alt+→ too, in the list), e.g. f8 or f12; empty: ` + keyLabel(defaultHistoryForwardKey)
 	case rowListStatus, rowHistorySave:
 		hint = "←/→ change"
 	case rowListTitle:

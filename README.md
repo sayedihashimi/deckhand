@@ -26,6 +26,7 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 - Claude sessions named after Claude's title for the conversation, its automatic title or `/rename` ([Session names](#session-names)).
 - Desktop notifications when a session needs you or finishes ([Notifications](#notifications)).
 - Filter the list (`/`), show only the sessions that need you (`@`), and jump to the next one (`tab`) ([Finding sessions](#finding-sessions)).
+- Go back and forward through the sessions you've visited, like a browser (`F7`, `F8`) ([Back and forward](#back-and-forward)).
 - Groups with headers you can fold, and reordering with shift+↑/↓ or by dragging with the mouse ([Groups](#groups), [Session list keys](#session-list)).
 - Colors for sessions and groups (`C`): a bar beside them in the list, and the name in color above the terminal ([Colors](#colors)).
 - A right-click menu on a session or group header, with each action's key beside it ([Mouse](#mouse)).
@@ -46,7 +47,7 @@ It runs your normal Windows `claude.exe` (and `codex`, `gemini`, `pwsh`, `cmd`) 
 ## Contents
 
 - [Getting started](#getting-started) · [A typical workflow](#a-typical-workflow)
-- [Status icons](#status-icons) · [Session details](#session-details) · [Session names](#session-names) · [Cost](#cost) · [Notifications](#notifications) · [Finding sessions](#finding-sessions)
+- [Status icons](#status-icons) · [Session details](#session-details) · [Session names](#session-names) · [Cost](#cost) · [Notifications](#notifications) · [Finding sessions](#finding-sessions) · [Back and forward](#back-and-forward)
 - [Keys](#keys) · [The config screen](#the-config-screen) · [Custom agents](#custom-agents-your-own-scripts-and-profile-functions)
 - [Diff preview](#diff-preview) · [Worktree sessions](#worktree-sessions) · [Pull requests](#pull-requests) · [Merging](#merging)
 - [Groups](#groups) · [Colors](#colors) · [Hiding the session list](#hiding-the-session-list) · [Opening a session's folder](#opening-a-sessions-folder) · [Path aliases](#path-aliases)
@@ -232,6 +233,26 @@ Run `deckhand notify-test` to check that notifications appear. If they don't, ch
 
 ![The list filtered with /doc: only docs and its fork, docs (fork), are left, in the app group.](docs/img/filter.png)
 
+## Back and forward
+
+deckhand remembers the sessions you've visited, like a browser's history. `F7` goes back to the session you were in before and `F8` goes forward again, both in the list and inside a session (deckhand keeps them, like `F5` and `F6`, so they don't reach the agent). In the list, `alt+←` and `alt+→` do the same. Inside a session they still go to the agent, because they move by word in Claude's input.
+
+- **A visit** is every change of the selected session, however it happens: the arrows, a click, `enter`, `tab`, a new session or a fork. A group header isn't a visit, and selecting the same session again adds nothing.
+- **As in a browser,** going somewhere new after going back drops the sessions ahead. At either end nothing happens, and the footer says `No earlier session` or `No later session`.
+- **The view stays the same:** in the list, the selection moves; inside a session, you land in the other session's terminal (or in the list, when that session isn't running).
+- **Removed sessions** drop out of the history, and **sessions a filter hides** (`/`, `@`, `s`) are skipped; the filter stays on. A session in a folded group opens its group.
+- The history holds the last 100 visits. It's kept in memory only, so a restart starts with an empty one.
+
+**The mouse's side buttons** (back and forward) do the same anywhere in deckhand's window, the terminal included, and never reach the agent. Windows Terminal and WezTerm don't send these buttons to apps, so in them only the keys work. A mouse's own software (Logitech Options, for example) can map the side buttons to `F7` and `F8`.
+
+Change the keys on the [config screen](#the-config-screen) or in the config file. Like the other `[list]` keys, they can't be a plain character or a key deckhand or the agents need, and they can't be the same as the hide, back or [scratch pad](#scratch-pad) key. Gemini CLI uses `F7` and `F8`, so pick others if you run it:
+
+```toml
+[list]
+history_back_key    = "f7"   # the default; or "f9", ...
+history_forward_key = "f8"   # the default; or "f12", ...
+```
+
 ## Keys
 
 Press `?` in the session list, or `F1` anywhere (also inside a session, the new-session dialog and the config screen), for a summary of the keys, the status icons and where the config file is. The keys for where you pressed it come first, in full; the other groups follow in two columns as far as they fit, and `↑/↓` scrolls to the rest (the last line says how many more groups there are). `esc`, `?`, `F1` or `q` closes it and goes back to where you were, with nothing lost.
@@ -253,6 +274,7 @@ Press `?` in the session list, or `F1` anywhere (also inside a session, the new-
 | shift+enter | Start a new session with the same agent and folder, right below the selected one. The selected session is left as it is, so its conversation can still be resumed. Claude gets a fresh conversation; a custom agent runs its normal command, not its `resume` one. ESC enter (what a remapped shift+enter sends) does the same. Where a terminal sends plain enter for shift+enter, it acts like enter |
 | 1–9 | Jump straight into session N |
 | tab | Select the next session that needs you, then the next one that finished |
+| F7 / F8, or alt+←/→ | Back and forward through the sessions you've visited (see [Back and forward](#back-and-forward)) |
 | / | Filter the list as you type. Matches the name, agent, folder and branch, ignoring case; letters in order also match, and every word must match. enter keeps the filter (or opens the session if only one matches), tab keeps it, esc clears it |
 | @ | Show only sessions that need you or finished since you looked (press again to show all) |
 | s | Filter by state: active, inactive (exited), waiting, then all again |
@@ -282,7 +304,8 @@ Press `?` in the session list, or `F1` anywhere (also inside a session, the new-
 
 | Key | Action |
 |---|---|
-| F5 (or ctrl+q, ctrl+]) | Back to the session list, showing it again if it's hidden. Every other key except F3, F5, F6 and F1 goes to the agent. |
+| F5 (or ctrl+q, ctrl+]) | Back to the session list, showing it again if it's hidden. Every other key except F3, F5, F6, F7, F8 and F1 goes to the agent. |
+| F7 / F8 | Back and forward through the sessions you've visited, landing in that session's terminal (see [Back and forward](#back-and-forward)). alt+←/→ go to the agent |
 | F3 | Hide or show the session list, so the session gets the full width |
 | F6 | Open the session's scratch pad, or move to it if it's open (see [Scratch pad](#scratch-pad)). `esc` right after leaving the pad closes it |
 | shift+PgUp / shift+PgDn | Scroll back through the output a page at a time |
@@ -297,6 +320,7 @@ Modified keys that plain terminal input can't express, such as shift+enter (a ne
 
 - **Wheel over the terminal:** scrolls back through the output. Any key, or wheeling back down, returns to the live view. If the app turns on mouse reporting itself (a fullscreen TUI such as Claude's fullscreen renderer), the wheel and clicks go to the app instead, so it scrolls its own view.
 - **Wheel or click in the session list:** moves the selection. Clicking the terminal focuses it.
+- **Side buttons (back and forward):** go back and forward through the sessions you've visited, anywhere in the window, like `F7` and `F8`. They never reach the agent. Windows Terminal and WezTerm don't send them (see [Back and forward](#back-and-forward)).
 - **Right-click in the session list:** selects the session or group header and opens a menu of its actions next to the pointer. Each item shows its key on the right and does exactly what the key does, with the same questions and refusals (`Remove…` still asks, `Fork` mid-turn says to wait). For a session: Color… (`C`), Rename (`r`), Fork (`f`), Group (`a`: a submenu of the groups, `(no group)` and New group…), Open folder (`o`), Open terminal (`t`), then Diff, Create PR and Merge (`d` `p` `m`) for a worktree session, and Remove… (`x`). For a group header: Color…, Rename, Collapse or Expand (`space`) and Delete group. Items that can't apply (Fork on a session that can't be forked, or Rename on `(no group)`) are dimmed. A click or `enter` picks an item, `↑/↓` move, `→` opens the submenu, and `esc`, a click outside or another right-click closes the menu. Pressing an item's key picks it too. Right-clicks on the terminal still go to the agent.
 - **Dragging a session in the list:** press on it and move the pointer to reorder it. A line shows where it will land: on the top of a session it goes above it, on the bottom line below. Releasing moves it there and saves the order, as shift+↑/↓ does (with a filter on, positions count only the sessions you can see). Holding the pointer on the list's header or its last row scrolls the list. `esc`, or releasing over the terminal, cancels. With groups, drag sessions into, out of and between groups, and drag a group's header to move the group (see [Groups](#groups)).
 - **Clicking a group's ▾/▸:** folds or unfolds it.
@@ -332,7 +356,7 @@ Press `c` in the session list to set deckhand up without editing `config.toml`. 
 - **Testing an agent:** `t` on an agent, or the form's `[Test]` button, starts the agent as it's edited (saved or not) in a temporary session, `test · <name>`, in the selected session's folder (or the current folder when none is selected). The session appears in the list and is selected, and the config screen stays open with a status line at the top: `starting…` then `running` for a program or shell. For a Claude agent it shows `waiting for Claude's SessionStart hook…`, then `✓ hooks work (SessionStart received)`. If no hook arrives within about 30 s it shows `✗ no hook events yet`, with a hint: a PowerShell agent must call `claude`, not `claude.exe`, so the shim applies, and a program agent must pass deckhand's arguments on. If the agent exits, it shows the exit code and the last lines of output. A test is a real start (for Claude, a real, empty conversation), but nothing is sent to it. When you're done, `ctrl+t` (or `t` on an agent) asks whether to keep it as a normal session, named after its folder (`k`), or discard it (`x`). `esc` leaves the test running. Leaving the config screen during a test asks the same question. A Claude test isn't ended while Claude is still starting: a discard waits until Claude is ready, or until the 30 s timeout, and shows "stopping when Claude is ready…" until then.
 - **Pick from your PowerShell profile:** for a PowerShell agent, "Pick from your PowerShell profile…" (or `ctrl+p`) lists the functions and aliases your profile defines, leaving out PowerShell's own. Type to filter, `enter` to pick. If the function has a `-Resume` parameter, deckhand assumes it starts Claude and suggests `<name> -Resume {id}` as the resume command. Listing them runs PowerShell once with your profile, in the background (at most 10 s).
 - **Notifications:** on or off, when (only while deckhand isn't focused, or always), and a button that sends a test notification.
-- **Session list:** the key that hides and shows the list (empty means `F3`), the key that goes back to the list from a session (empty means `F5`), whether the status line shows while it's hidden, whether Claude sessions take Claude's title as their name (**Title**, see [Session names](#session-names)), whether cost shows as dollars, tokens or not at all, and whether context shows as a meter, a percentage or tokens. See [Hiding the session list](#hiding-the-session-list) and [Cost](#cost).
+- **Session list:** the key that hides and shows the list (empty means `F3`), the key that goes back to the list from a session (empty means `F5`), the keys that go back and forward through the visited sessions (**History ←** and **History →**, empty means `F7` and `F8`, see [Back and forward](#back-and-forward)), whether the status line shows while it's hidden, whether Claude sessions take Claude's title as their name (**Title**, see [Session names](#session-names)), whether cost shows as dollars, tokens or not at all, and whether context shows as a meter, a percentage or tokens. See [Hiding the session list](#hiding-the-session-list) and [Cost](#cost).
 - **History:** whether each session's output is saved for after a restart, and how many lines are kept (empty means 5000). See [Output after a restart](#output-after-a-restart).
 - **Path aliases:** the names of the `[[paths.alias]]` entries, which are edited in the file. See [Path aliases](#path-aliases).
 - **Open:** the editor and terminal commands, with presets (VS Code, Rider, IntelliJ IDEA, VS Code Insiders; Windows Terminal in a new tab or a new window), and what `o` and `t` do for a session with more than one folder (Folders: `ask`, `all` or `first`). "Try it" runs the command as typed on the selected session's folder.
@@ -548,7 +572,7 @@ status_line = true     # false: no "n need you" in the header while the list is 
 follow_claude_title = true  # false: Claude's title doesn't rename sessions (see Session names)
 ```
 
-Neither key can be a plain character, or a key deckhand or the agents need (`enter`, `esc`, `tab`, the arrows, `ctrl+q`, `ctrl+]`, `ctrl+c`, `F1`), and the two can't be the same key.
+Neither key can be a plain character, or a key deckhand or the agents need (`enter`, `esc`, `tab`, the arrows, `ctrl+q`, `ctrl+]`, `ctrl+c`, `F1`), and the two can't be the same key, or the same as the history keys (`F7`, `F8`, see [Back and forward](#back-and-forward)) or the scratch pad's key.
 
 ## Opening a session's folder
 

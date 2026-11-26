@@ -82,19 +82,18 @@ func parsePadConfig(text string, list listSettings) (padSettings, error) {
 	if err := setPadHeight(&out, cfg.Pad.Height); err != nil {
 		return out, fmt.Errorf("%s: pad.height %w", configPath(), err)
 	}
-	key, err := checkListKey(cfg.Pad.Key, "f6 or f7")
+	key, err := checkListKey(cfg.Pad.Key, "f6 or f10")
 	if err != nil {
 		return out, fmt.Errorf("%s: pad.key %w", configPath(), err)
 	}
 	if key != "" {
 		out.key = key
 	}
-	if out.key == list.toggleKey || out.key == list.back() {
+	if _, clash, found := firstClash(append([]listKey{{"key", out.key}}, list.keys()...)); found {
 		// The default can clash too, with a [list] key set to F6: then the
 		// pad has no key until one is set (e still opens it).
-		bad := out.key
 		out.key = ""
-		return out, fmt.Errorf("%s: pad.key is %s, the same as a [list] key; they must be different keys", configPath(), keyLabel(bad))
+		return out, fmt.Errorf("%s: pad.key is %s, the same as list.%s; they must be different keys", configPath(), keyLabel(clash.key), clash.name)
 	}
 	return out, nil
 }

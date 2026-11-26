@@ -27,6 +27,8 @@ const (
 	rowNotifyTest
 	rowListKey
 	rowListBackKey
+	rowListHistBack
+	rowListHistFwd
 	rowListStatus
 	rowListTitle
 	rowListCost
@@ -92,6 +94,9 @@ type configScreen struct {
 	notifyWhen string
 	listKey    textinput.Model // [list] toggle_key
 	backKey    textinput.Model // [list] back_key
+	histBack   textinput.Model // [list] history_back_key
+	histFwd    textinput.Model // [list] history_forward_key
+	padKey     string          // [pad] key, which [list]'s keys can't be (not edited here)
 	listStatus bool            // [list] status_line
 	listTitle  bool            // [list] follow_claude_title
 	costShow   string          // [cost] show
@@ -119,6 +124,8 @@ func newConfigScreen(width int) *configScreen {
 	c := &configScreen{path: configPath(), raw: map[string]any{}}
 	c.listKey = newCfgInput(`default: ` + keyLabel(defaultToggleKey))
 	c.backKey = newCfgInput(`default: ` + keyLabel(defaultBackKey))
+	c.histBack = newCfgInput(`default: ` + keyLabel(defaultHistoryBackKey))
+	c.histFwd = newCfgInput(`default: ` + keyLabel(defaultHistoryForwardKey))
 	c.histLines = newCfgInput(fmt.Sprintf("default: %d", maxHistoryLines))
 	c.editor = newCfgInput(`e.g. code "{dir}"`)
 	c.terminal = newCfgInput(`default: ` + defaultTerminal)
@@ -150,6 +157,16 @@ func newConfigScreen(width int) *configScreen {
 	}
 	c.listKey.SetValue(cfg.List.ToggleKey)
 	c.backKey.SetValue(cfg.List.BackKey)
+	c.histBack.SetValue(cfg.List.HistoryBackKey)
+	c.histFwd.SetValue(cfg.List.HistoryForwardKey)
+	c.padKey = defaultPadKey
+	if pad, ok := c.raw["pad"].(map[string]any); ok {
+		if k, ok := pad["key"].(string); ok {
+			if k, err := checkListKey(k, ""); err == nil && k != "" {
+				c.padKey = k
+			}
+		}
+	}
 	c.listStatus = cfg.List.StatusLine == nil || *cfg.List.StatusLine
 	c.listTitle = cfg.List.FollowTitle == nil || *cfg.List.FollowTitle
 	c.costShow, _ = checkCostShow(cfg.Cost.Show)
@@ -189,6 +206,8 @@ func (c *configScreen) setWidth(w int) {
 	c.terminal.SetWidth(iw)
 	c.listKey.SetWidth(min(iw, 24))
 	c.backKey.SetWidth(min(iw, 24))
+	c.histBack.SetWidth(min(iw, 24))
+	c.histFwd.SetWidth(min(iw, 24))
 	c.histLines.SetWidth(min(iw, 24))
 	if c.form != nil {
 		c.form.setWidth(iw)
@@ -210,14 +229,23 @@ func (c *configScreen) settings() configFile {
 	if k, err := checkBackKey(backKey); err == nil {
 		backKey = k
 	}
+	histBack := strings.TrimSpace(c.histBack.Value())
+	if k, err := checkHistoryBackKey(histBack); err == nil {
+		histBack = k
+	}
+	histFwd := strings.TrimSpace(c.histFwd.Value())
+	if k, err := checkHistoryForwardKey(histFwd); err == nil {
+		histFwd = k
+	}
 	save := c.histSave
 	return configFile{
 		Agents:        c.agents,
 		Notifications: notifyConfig{Enabled: &on, When: c.notifyWhen},
-		List:          listConfig{ToggleKey: listKey, BackKey: backKey, StatusLine: &status, FollowTitle: &title},
-		History:       historyConfig{Save: &save, Lines: c.historyLines()},
-		Cost:          costConfig{Show: c.costShow},
-		Info:          infoConfig{Context: c.ctxShow},
+		List: listConfig{ToggleKey: listKey, BackKey: backKey, HistoryBackKey: histBack, HistoryForwardKey: histFwd,
+			StatusLine: &status, FollowTitle: &title},
+		History: historyConfig{Save: &save, Lines: c.historyLines()},
+		Cost:    costConfig{Show: c.costShow},
+		Info:    infoConfig{Context: c.ctxShow},
 		Open: openConfig{
 			Editor:   strings.TrimSpace(c.editor.Value()),
 			Terminal: strings.TrimSpace(c.terminal.Value()),
@@ -226,19 +254,60 @@ func (c *configScreen) settings() configFile {
 	}
 }
 
-// backKeyErr is what's wrong with the back key box, if anything: a key it
-// can't be, or the same key as the toggle key.
-func (c *configScreen) backKeyErr() error {
-	back, err := checkBackKey(c.backKey.Value())
-	if err != nil {
-		return err
+// cfgKeyBox is one of the [list] key boxes, in the order they're shown.
+type cfgKeyBox struct {
+	kind  cfgRowKind
+	in    *textinput.Model
+	check func(string) (string, error)
+	def   string
+	name  string // as other boxes' errors call it: "the hide key"
+}
+
+func (c *configScreen) keyBoxes() []cfgKeyBox {
+	return []cfgKeyBox{
+		{rowListKey, &c.listKey, checkToggleKey, defaultToggleKey, "the hide key"},
+		{rowListBackKey, &c.backKey, checkBackKey, defaultBackKey, "the back key"},
+		{rowListHistBack, &c.histBack, checkHistoryBackKey, defaultHistoryBackKey, "the history back key"},
+		{rowListHistFwd, &c.histFwd, checkHistoryForwardKey, defaultHistoryForwardKey, "the history forward key"},
 	}
-	toggle, err := checkToggleKey(c.listKey.Value())
-	if err != nil {
-		return nil // the toggle key's own error says so
+}
+
+// keyErr is what's wrong with a [list] key box, if anything: a key it can't
+// be, the same key as a box above it, or the pad's key ([pad] key).
+// keyBox is the text box of a [list] key row.
+func (c *configScreen) keyBox(kind cfgRowKind) *textinput.Model {
+	for _, b := range c.keyBoxes() {
+		if b.kind == kind {
+			return b.in
+		}
 	}
-	if checkListKeys(toggle, back) != nil {
-		return fmt.Errorf("can't be %s, the hide key", keyLabel(cmp.Or(back, defaultBackKey)))
+	return nil
+}
+
+func (c *configScreen) keyErr(kind cfgRowKind) error {
+	boxes := c.keyBoxes()
+	keys := make([]string, len(boxes)) // "" for a box with an error
+	for i, b := range boxes {
+		k, err := b.check(b.in.Value())
+		if b.kind == kind && err != nil {
+			return err
+		}
+		if err != nil {
+			continue
+		}
+		keys[i] = cmp.Or(k, b.def)
+		if b.kind != kind {
+			continue
+		}
+		for j := range i {
+			if keys[j] == keys[i] {
+				return fmt.Errorf("can't be %s, %s", keyLabel(keys[i]), boxes[j].name)
+			}
+		}
+		if keys[i] == c.padKey {
+			return fmt.Errorf("can't be %s, the scratch pad's key ([pad] key)", keyLabel(keys[i]))
+		}
+		return nil
 	}
 	return nil
 }
@@ -283,7 +352,7 @@ func (c *configScreen) rows() []cfgRow {
 		rows = append(rows, cfgRow{rowAgent, i})
 	}
 	for _, k := range []cfgRowKind{rowAddAgent, rowNotifyEnabled, rowNotifyWhen, rowNotifyTest,
-		rowListKey, rowListBackKey, rowListStatus, rowListTitle, rowListCost, rowListContext, rowHistorySave, rowHistoryLines, rowEditor, rowEditorPreset, rowTerminal, rowTerminalPreset, rowOpenMulti, rowTryOpen, rowSave} {
+		rowListKey, rowListBackKey, rowListHistBack, rowListHistFwd, rowListStatus, rowListTitle, rowListCost, rowListContext, rowHistorySave, rowHistoryLines, rowEditor, rowEditorPreset, rowTerminal, rowTerminalPreset, rowOpenMulti, rowTryOpen, rowSave} {
 		rows = append(rows, cfgRow{kind: k})
 	}
 	return rows
@@ -302,12 +371,18 @@ func (c *configScreen) focusRow(i int) tea.Cmd {
 	c.terminal.Blur()
 	c.listKey.Blur()
 	c.backKey.Blur()
+	c.histBack.Blur()
+	c.histFwd.Blur()
 	c.histLines.Blur()
 	switch c.current().kind {
 	case rowListKey:
 		return c.listKey.Focus()
 	case rowListBackKey:
 		return c.backKey.Focus()
+	case rowListHistBack:
+		return c.histBack.Focus()
+	case rowListHistFwd:
+		return c.histFwd.Focus()
 	case rowHistoryLines:
 		return c.histLines.Focus()
 	case rowEditor:
@@ -339,13 +414,11 @@ func (c *configScreen) validate() error {
 		}
 		seen[a.Name] = true
 	}
-	if _, err := checkToggleKey(c.listKey.Value()); err != nil {
-		c.row = c.rowOf(rowListKey)
-		return fmt.Errorf("toggle key %w", err)
-	}
-	if err := c.backKeyErr(); err != nil {
-		c.row = c.rowOf(rowListBackKey)
-		return fmt.Errorf("back key %w", err)
+	for _, b := range c.keyBoxes() {
+		if err := c.keyErr(b.kind); err != nil {
+			c.row = c.rowOf(b.kind)
+			return fmt.Errorf("%s %w", strings.TrimPrefix(b.name, "the "), err)
+		}
 	}
 	if err := c.historyLinesErr(); err != nil {
 		c.row = c.rowOf(rowHistoryLines)
@@ -508,14 +581,11 @@ func (m *model) configKey(k tea.KeyPressMsg) tea.Cmd {
 				return configStatusMsg{"Sent a test notification. If it didn't appear, check Windows' notification settings and Do Not Disturb.", false}
 			}
 		}
-	case rowListKey, rowListBackKey:
+	case rowListKey, rowListBackKey, rowListHistBack, rowListHistFwd:
 		if key == "enter" {
 			return c.move(1)
 		}
-		in := &c.listKey
-		if row.kind == rowListBackKey {
-			in = &c.backKey
-		}
+		in := c.keyBox(row.kind)
 		var cmd tea.Cmd
 		*in, cmd = in.Update(k)
 		return cmd
@@ -1069,10 +1139,8 @@ func (c *configScreen) updateInputs(msg tea.Msg) tea.Cmd {
 		in = c.form.input(c.form.field)
 	default:
 		switch c.current().kind {
-		case rowListKey:
-			in = &c.listKey
-		case rowListBackKey:
-			in = &c.backKey
+		case rowListKey, rowListBackKey, rowListHistBack, rowListHistFwd:
+			in = c.keyBox(c.current().kind)
 		case rowHistoryLines:
 			in = &c.histLines
 		case rowEditor:

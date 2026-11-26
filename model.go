@@ -119,6 +119,9 @@ type model struct {
 
 	// The sessions' scratch pads (pad.go), loaded as they're needed.
 	pads *padState
+
+	// The sessions visited, for back and forward (visits.go).
+	visits visitHistory
 }
 
 type confirmPrompt struct {
@@ -235,6 +238,14 @@ func (m *model) setFlash(s string) {
 // Update ---------------------------------------------------------------------
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	mm, cmd := m.updateMsg(msg)
+	if _, frame := msg.(frameMsg); !frame {
+		m.noteVisit() // the selection can only change on other messages
+	}
+	return mm, cmd
+}
+
+func (m *model) updateMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -551,6 +562,12 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Back and forward through the visited sessions (F7 and F8), in the
+	// list and inside a session; they don't reach the agent.
+	if cmd, ok := m.historyKey(key); ok {
+		return m, cmd
+	}
+
 	switch m.focus {
 	case focusTerminal:
 		if key == listOpts.back() || key == "ctrl+q" || key == "ctrl+]" {
@@ -610,6 +627,10 @@ func (m *model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch key {
 	case listOpts.back(), "ctrl+q", "ctrl+]":
 		m.setListHidden(false)
+	case "alt+left", "alt+right":
+		// Back and forward, like F7 and F8, in the list only: inside a
+		// session they're the agent's (Claude moves by word).
+		return m, m.historyMove(map[string]int{"alt+left": -1, "alt+right": 1}[key])
 	case "up", "k":
 		m.moveSel(-1)
 	case "down", "j":
@@ -804,6 +825,15 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	sw := m.sidebarWidth()
 	if m.listHidden {
 		sw = 0 // no sidebar: everything goes to the terminal
+	}
+
+	// The side buttons go back and forward through the visited sessions,
+	// anywhere in the window, and never reach the agent.
+	if dir := historyButton(ms.Button); dir != 0 {
+		if _, press := msg.(tea.MouseClickMsg); press && !m.historyBlocked() && m.drag == nil {
+			return m.historyMove(dir)
+		}
+		return nil
 	}
 
 	if m.help != nil {

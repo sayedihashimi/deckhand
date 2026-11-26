@@ -431,6 +431,25 @@ func TestConfigScreenListSettings(t *testing.T) {
 	}
 	m.cfg.backKey.SetValue("")
 	typeText(m, "F10")
+	m.handleKey(key("enter")) // to the history back key row
+	if m.cfg.current().kind != rowListHistBack {
+		t.Fatalf("enter should move to the history back row, at %v", m.cfg.current())
+	}
+	// The history keys can't be the keys above them, or the pad's key.
+	typeText(m, "f10")
+	m.handleKey(key("ctrl+s"))
+	if !m.cfg.statusErr || m.cfg.current().kind != rowListHistBack || !strings.Contains(m.cfg.status, "the back key") {
+		t.Fatalf("history back = back key: status %q, row %v", m.cfg.status, m.cfg.current())
+	}
+	m.cfg.histBack.SetValue("")
+	m.handleKey(key("enter")) // to the history forward key row
+	typeText(m, "f6")
+	m.handleKey(key("ctrl+s"))
+	if !m.cfg.statusErr || m.cfg.current().kind != rowListHistFwd || !strings.Contains(m.cfg.status, "pad") {
+		t.Fatalf("history forward = pad key: status %q, row %v", m.cfg.status, m.cfg.current())
+	}
+	m.cfg.histFwd.SetValue("")
+	typeText(m, "F9")
 	m.handleKey(key("enter")) // to the status line row
 	if m.cfg.current().kind != rowListStatus {
 		t.Fatalf("enter should move to the status row, at %v", m.cfg.current())
@@ -441,10 +460,10 @@ func TestConfigScreenListSettings(t *testing.T) {
 		t.Fatalf("save: %q", m.cfg.status)
 	}
 	data, _ := os.ReadFile(p)
-	if !strings.Contains(string(data), `toggle_key = "f3"`) || !strings.Contains(string(data), `back_key = "f10"`) || !strings.Contains(string(data), "status_line = false") {
+	if !strings.Contains(string(data), `toggle_key = "f3"`) || !strings.Contains(string(data), `back_key = "f10"`) || !strings.Contains(string(data), `history_forward_key = "f9"`) || strings.Contains(string(data), "history_back_key") || !strings.Contains(string(data), "status_line = false") {
 		t.Errorf("config.toml:\n%s", data)
 	}
-	if listOpts.toggleKey != "f3" || listOpts.backKey != "f10" || listOpts.statusLine {
+	if listOpts.toggleKey != "f3" || listOpts.backKey != "f10" || listOpts.historyBack() != "f7" || listOpts.historyForward() != "f9" || listOpts.statusLine {
 		t.Errorf("listOpts not reloaded: %+v", listOpts)
 	}
 	// Opening the screen again shows what was saved.

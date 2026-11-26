@@ -36,7 +36,9 @@ func TestParsePadConfig(t *testing.T) {
 		isErr bool
 	}{
 		{"", padSettings{key: "f6", share: 0.33}, false},
-		{"[pad]\nkey = 'F7'\nheight = 0.5\n", padSettings{key: "f7", share: 0.5}, false},
+		{"[pad]\nkey = 'F10'\nheight = 0.5\n", padSettings{key: "f10", share: 0.5}, false},
+		{"[pad]\nkey = 'f7'\n", padSettings{share: 0.33}, true}, // the history back key
+		{"[pad]\nkey = 'f8'\n", padSettings{share: 0.33}, true}, // the history forward key
 		{"[pad]\nheight = 12\n", padSettings{key: "f6", lines: 12}, false},
 		{"[pad]\nheight = 12.0\n", padSettings{key: "f6", lines: 12}, false},
 		{"[pad]\nheight = 2\n", padSettings{key: "f6", share: 0.33}, true},

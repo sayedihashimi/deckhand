@@ -35,10 +35,20 @@ const defaultToggleKey = "f3"
 // is next to F1 and F3, and F10 means "menu" in other apps.
 const defaultBackKey = "f5"
 
+// Back and forward through the visited sessions (visits.go): F7 and F8 by
+// default, in the list and inside a session. Gemini CLI uses F7 and F8 too,
+// so its users may want others.
+const (
+	defaultHistoryBackKey    = "f7"
+	defaultHistoryForwardKey = "f8"
+)
+
 // listSettings come from [list] in the config file.
 type listSettings struct {
 	toggleKey  string // as Bubble Tea names it, e.g. "f3" or "ctrl+\\"
 	backKey    string // back to the list from a session; empty means F5
+	histBack   string // back through the visited sessions; empty means F7
+	histFwd    string // forward through them; empty means F8
 	statusLine bool   // show the status line while the list is hidden
 	// followTitle: a Claude session's name follows Claude's title (title.go).
 	followTitle bool
@@ -47,7 +57,7 @@ type listSettings struct {
 var listOpts = defaultListSettings()
 
 func defaultListSettings() listSettings {
-	return listSettings{toggleKey: defaultToggleKey, backKey: defaultBackKey, statusLine: true, followTitle: true}
+	return listSettings{toggleKey: defaultToggleKey, backKey: defaultBackKey, histBack: defaultHistoryBackKey, histFwd: defaultHistoryForwardKey, statusLine: true, followTitle: true}
 }
 
 // back is the key that goes back to the list ([list] back_key).
@@ -58,10 +68,55 @@ func (o listSettings) back() string {
 	return o.backKey
 }
 
+// historyBack is the key that goes back through the visited sessions
+// ([list] history_back_key).
+func (o listSettings) historyBack() string {
+	if o.histBack == "" {
+		return defaultHistoryBackKey
+	}
+	return o.histBack
+}
+
+// historyForward is history_forward_key.
+func (o listSettings) historyForward() string {
+	if o.histFwd == "" {
+		return defaultHistoryForwardKey
+	}
+	return o.histFwd
+}
+
+// listKey is one of [list]'s keys, by its name in the config file.
+type listKey struct{ name, key string }
+
+// keys are [list]'s keys, with the defaults for the ones not set. The pad
+// key can't be any of them, and they can't be each other (firstClash).
+func (o listSettings) keys() []listKey {
+	toggle := o.toggleKey
+	if toggle == "" {
+		toggle = defaultToggleKey
+	}
+	return []listKey{{"toggle_key", toggle}, {"back_key", o.back()}, {"history_back_key", o.historyBack()}, {"history_forward_key", o.historyForward()}}
+}
+
+// firstClash finds two keys that are the same key, if any.
+func firstClash(keys []listKey) (a, b listKey, found bool) {
+	for i := range keys {
+		for j := i + 1; j < len(keys); j++ {
+			if keys[i].key == keys[j].key {
+				return keys[i], keys[j], true
+			}
+		}
+	}
+	return listKey{}, listKey{}, false
+}
+
 type listConfig struct {
-	ToggleKey  string `toml:"toggle_key,omitempty"`
-	BackKey    string `toml:"back_key,omitempty"`
-	StatusLine *bool  `toml:"status_line,omitempty"`
+	ToggleKey string `toml:"toggle_key,omitempty"`
+	BackKey   string `toml:"back_key,omitempty"`
+	// Back and forward through the visited sessions.
+	HistoryBackKey    string `toml:"history_back_key,omitempty"`
+	HistoryForwardKey string `toml:"history_forward_key,omitempty"`
+	StatusLine        *bool  `toml:"status_line,omitempty"`
 	// FollowTitle: Claude sessions take their name from Claude's title.
 	FollowTitle *bool `toml:"follow_claude_title,omitempty"`
 }
@@ -78,8 +133,9 @@ func loadListConfig() (listSettings, error) {
 	return parseListConfig(string(data))
 }
 
-// reservedListKeys can't be the toggle key or the back key: deckhand or the
-// agents need them. Each also can't be the other one (checkListKeys).
+// reservedListKeys can't be [list]'s keys (toggle, back and the history
+// keys): deckhand or the agents need them. They also can't be each other
+// (firstClash).
 var reservedListKeys = map[string]bool{
 	"ctrl+q": true, "ctrl+]": true, "ctrl+c": true, "enter": true, "esc": true,
 	"tab": true, "shift+tab": true, "space": true, "backspace": true,
@@ -109,14 +165,29 @@ func parseListConfig(text string) (listSettings, error) {
 	if err != nil {
 		return out, fmt.Errorf("%s: list.back_key %w", configPath(), err)
 	}
-	if err := checkListKeys(key, back); err != nil {
-		return out, fmt.Errorf("%s: list.toggle_key and back_key %w", configPath(), err)
+	histBack, err := checkHistoryBackKey(cfg.List.HistoryBackKey)
+	if err != nil {
+		return out, fmt.Errorf("%s: list.history_back_key %w", configPath(), err)
+	}
+	histFwd, err := checkHistoryForwardKey(cfg.List.HistoryForwardKey)
+	if err != nil {
+		return out, fmt.Errorf("%s: list.history_forward_key %w", configPath(), err)
+	}
+	set := listSettings{toggleKey: key, backKey: back, histBack: histBack, histFwd: histFwd}
+	if a, b, found := firstClash(set.keys()); found {
+		return out, fmt.Errorf("%s: list.%s and %s are both %s; they must be different keys", configPath(), a.name, b.name, keyLabel(a.key))
 	}
 	if key != "" {
 		out.toggleKey = key
 	}
 	if back != "" {
 		out.backKey = back
+	}
+	if histBack != "" {
+		out.histBack = histBack
+	}
+	if histFwd != "" {
+		out.histFwd = histFwd
 	}
 	return out, nil
 }
@@ -132,6 +203,16 @@ func checkBackKey(s string) (string, error) {
 	return checkListKey(s, "f5 or f10")
 }
 
+// checkHistoryBackKey is checkToggleKey for history_back_key.
+func checkHistoryBackKey(s string) (string, error) {
+	return checkListKey(s, "f7 or f9")
+}
+
+// checkHistoryForwardKey is checkToggleKey for history_forward_key.
+func checkHistoryForwardKey(s string) (string, error) {
+	return checkListKey(s, "f8 or f12")
+}
+
 func checkListKey(s, try string) (string, error) {
 	key := strings.ToLower(strings.TrimSpace(s))
 	if key != "" && (utf8.RuneCountInString(key) == 1 || reservedListKeys[key]) {
@@ -139,22 +220,6 @@ func checkListKey(s, try string) (string, error) {
 		return "", fmt.Errorf("can't be %q (it's needed for typing or by deckhand); try %s", s, try)
 	}
 	return key, nil
-}
-
-// checkListKeys refuses a toggle key and back key that are the same key,
-// once empty values become the defaults. Both are already normalized. The
-// error reads after "toggle_key and back_key".
-func checkListKeys(toggle, back string) error {
-	if toggle == "" {
-		toggle = defaultToggleKey
-	}
-	if back == "" {
-		back = defaultBackKey
-	}
-	if toggle == back {
-		return fmt.Errorf("are both %s; they must be different keys", keyLabel(back))
-	}
-	return nil
 }
 
 // keyLabel is how a key is shown in hints: "f2" becomes "F2".

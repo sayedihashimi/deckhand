@@ -128,9 +128,9 @@ func TestE2EConfigHelp(t *testing.T) {
 	h.waitFor("press c to set up deckhand", 10*time.Second)
 	h.send("c")
 	h.waitFor("+ Add agent", 5*time.Second)
-	// Down to the editor command (+ Add agent, 3 notification rows, 6 list
+	// Down to the editor command (+ Add agent, 3 notification rows, 8 list
 	// rows, 2 history rows) and type into it.
-	h.send(strings.Repeat("\x1b[B", 12))
+	h.send(strings.Repeat("\x1b[B", 14))
 	h.send("e2e-editor {dir}")
 	h.waitFor("e2e-editor {dir}", 3*time.Second)
 	// It has to be the editor field, not another text field on the way.
